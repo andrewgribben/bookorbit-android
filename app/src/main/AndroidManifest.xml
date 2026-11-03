@@ -10,6 +10,8 @@
     <!-- Book downloads run as a WorkManager foreground service so leaving the app doesn't stop them. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- "Set cover as wallpaper" (manual and "follow current book"). Normal, install-time only. -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
 
     <application
         android:name=".app.BookOrbitApplication"

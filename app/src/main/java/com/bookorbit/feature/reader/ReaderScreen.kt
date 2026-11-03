@@ -323,6 +323,10 @@ fun ReaderScreen(
                 vm.updateSettings(updated)
                 controller.applyStyles(updated)
             },
+            onSetWallpaper = {
+                settingsVisible = false
+                vm.setCoverAsWallpaper()
+            },
             onDismiss = { settingsVisible = false },
         )
     }

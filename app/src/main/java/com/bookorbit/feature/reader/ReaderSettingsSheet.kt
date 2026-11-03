@@ -40,6 +40,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 fun ReaderSettingsSheet(
     settings: ReaderSettings,
     onChange: (ReaderSettings) -> Unit,
+    onSetWallpaper: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -109,6 +110,10 @@ fun ReaderSettingsSheet(
                         label = { Text(stringResource(font.label)) },
                     )
                 }
+            }
+
+            androidx.compose.material3.TextButton(onClick = onSetWallpaper) {
+                Text(stringResource(R.string.wallpaper_set_as_wallpaper))
             }
         }
     }

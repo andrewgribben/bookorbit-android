@@ -159,6 +159,10 @@
     <string name="view_on_goodreads">View on Goodreads</string>
     <string name="with_notes">With notes</string>
     <string name="write_a_note">Write a note</string>
+    <string name="wallpaper_set_as_wallpaper">Set cover as wallpaper</string>
+    <string name="wallpaper_result_set">Wallpaper set</string>
+    <string name="wallpaper_result_no_cover">This book has no cover to use</string>
+    <string name="wallpaper_result_failed">Couldn\'t set the wallpaper</string>
     <string name="x">%1$sx</string>
     <string name="you_don_t_have_access">You don\'t have access to any libraries yet.</string>
     <string name="about">About</string>
@@ -446,6 +450,8 @@
     <string name="reader_interface_web">Server web reader</string>
     <string name="settings_reading_fullscreen">Full-screen reading</string>
     <string name="settings_reading_fullscreen_desc">Hide the status and navigation bars in ebooks, PDFs, and comics. Swipe from the screen edge to reveal them.</string>
+    <string name="settings_cover_wallpaper_follow">Cover as wallpaper: follow current book</string>
+    <string name="settings_cover_wallpaper_follow_desc">Set the current book\'s cover as your wallpaper whenever you leave the app</string>
     <string name="reader_web_unavailable">The server web reader could not be opened. Check your connection or open this book in the app.</string>
     <string name="reader_renderer_unavailable">The reader stopped unexpectedly. You can try opening it again.</string>
     <string name="reader_open_app">Open in App</string>
