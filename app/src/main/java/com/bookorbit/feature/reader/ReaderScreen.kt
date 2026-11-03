@@ -278,7 +278,11 @@ fun ReaderScreen(
                         onOpenSpeed = { showSpeedSheet = true },
                         onOpenSleepTimer = { showSleepTimerSheet = true },
                     )
-                    ReaderBottomBarContent.PROGRESS -> Text("${ui.percentage}%", color = Color.White.copy(alpha = 0.8f))
+                    ReaderBottomBarContent.PROGRESS -> ReadingProgressBar(
+                        chapterTitle = ui.chapterTitle,
+                        percentage = ui.percentage,
+                        onSeek = { controller.goToFraction(it.toDouble()) },
+                    )
                 }
             }
         }

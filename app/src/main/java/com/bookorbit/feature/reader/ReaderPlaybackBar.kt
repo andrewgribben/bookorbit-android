@@ -21,8 +21,16 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,6 +48,33 @@ import com.bookorbit.feature.player.speedLabel
  * see [ReaderBottomBarContentTest].
  */
 enum class ReaderBottomBarContent { PROGRESS, NARRATION_PLAYER }
+
+/** Narration off: chapter + percentage line and a scrubber that jumps on release (approved mockup). */
+@Composable
+fun ReadingProgressBar(chapterTitle: String?, percentage: Int, onSeek: (Float) -> Unit, modifier: Modifier = Modifier) {
+    var dragging by remember { mutableStateOf<Float?>(null) }
+    val shown = dragging ?: (percentage / 100f)
+    val description = stringResource(R.string.reading_position)
+    Column(modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                chapterTitle.orEmpty(),
+                color = Color.White.copy(alpha = 0.85f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text("${(shown * 100).toInt()}%", color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(start = 8.dp))
+        }
+        Slider(
+            value = shown.coerceIn(0f, 1f),
+            onValueChange = { dragging = it },
+            onValueChangeFinished = { dragging?.let(onSeek); dragging = null },
+            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = 0.3f)),
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = description },
+        )
+    }
+}
 
 fun readerBottomBarContent(narrationOn: Boolean): ReaderBottomBarContent =
     if (narrationOn) ReaderBottomBarContent.NARRATION_PLAYER else ReaderBottomBarContent.PROGRESS
