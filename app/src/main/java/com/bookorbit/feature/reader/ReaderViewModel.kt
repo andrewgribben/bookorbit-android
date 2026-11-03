@@ -103,6 +103,9 @@ class ReaderViewModel @Inject constructor(
         /** App-wide tap/gesture Controls (owner decisions 2 and 5): device-only, no Global/This-
          * book scope - shared verbatim with the comic reader's own Controls tab. */
         val controlsSettings: ReaderControlsSettings = ReaderControlsSettings(),
+        /** The open book's own page-progression direction, from foliate's `view.book.dir`; used
+         * to mirror Controls tap zones for RTL/manga content (owner decision - not device locale). */
+        val isRtl: Boolean = false,
     ) {
         /** What's actually applied to the reader: the book's own snapshot, else Global. */
         val effective: ReaderSettings get() = effectiveSettings(globalSettings, bookState)
@@ -208,8 +211,8 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun onLoaded(toc: List<TocItem>, title: String?, hasMediaOverlay: Boolean = false) {
-        _ui.update { it.copy(loaded = true, toc = toc, chapterTitle = it.chapterTitle ?: title, hasMediaOverlay = hasMediaOverlay) }
+    fun onLoaded(toc: List<TocItem>, title: String?, hasMediaOverlay: Boolean = false, isRtl: Boolean = false) {
+        _ui.update { it.copy(loaded = true, toc = toc, chapterTitle = it.chapterTitle ?: title, hasMediaOverlay = hasMediaOverlay, isRtl = isRtl) }
     }
 
     // --- narration player controls (stage 4) ---
