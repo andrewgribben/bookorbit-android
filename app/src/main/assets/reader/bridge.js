@@ -121,6 +121,7 @@ function themeCSS(s) {
 
 // Only reached when `s.useBookLayout` is false (see themeCSS doc above). Every rule here used to
 // be unconditional in the pre-stage-2 generateCSS; now it is the opt-in "my own settings" layer.
+// Font size moved out to fontSizeCSS() below (owner decision, stage 4) - it applies either way.
 function overrideCSS(s) {
   const fontFamilyRule = s.fontFamily
     ? `body { font-family: ${s.fontFamily} !important; } body * { font-family: inherit !important; }`
@@ -130,7 +131,6 @@ function overrideCSS(s) {
     : '';
   return `
     @media screen {
-      html { font-size: ${s.fontSize}px; }
       ${fontFamilyRule}
     }
     html { line-height: ${s.lineHeight}; hanging-punctuation: allow-end last; orphans: 2; widows: 2; }
@@ -144,8 +144,17 @@ function overrideCSS(s) {
   `;
 }
 
+// Owner decision (stage 4): font size stays adjustable even with "Use book layout" on - only
+// family/line-height/paragraph-spacing/justify/hyphenate (overrideCSS above) still follow the
+// publisher's own layout. Sets only the root `html` font-size, with no `!important` and no
+// descendant selector, so the publisher's own em/%/rem-based sizing further down the document
+// still scales proportionally from this root instead of being clobbered.
+function fontSizeCSS(s) {
+  return `@media screen { html { font-size: ${s.fontSize}px; } }`;
+}
+
 function generateCSS(s) {
-  return themeCSS(s) + (s.useBookLayout ? '' : overrideCSS(s));
+  return themeCSS(s) + fontSizeCSS(s) + (s.useBookLayout ? '' : overrideCSS(s));
 }
 
 // Ported from useReaderState.applyToRenderer.
@@ -160,15 +169,13 @@ function applyStyles(settings) {
   r.setAttribute('max-inline-size', `${s.maxInlineSize}px`);
   r.setAttribute('max-block-size', `${s.maxBlockSize}px`);
   // Four independent page margins (paginator.js was extended from one `margin` attribute to
-  // these four, see that file's comments) - margins are a user layout setting, part of the
-  // override layer like the rest of Layout tab, so they only take their reader-chosen values
-  // when book layout is off; book layout on always uses the publisher's own in-page spacing by
-  // falling back to the built-in default margin (still needed as a safe frame around the page).
-  const m = s.useBookLayout ? DEFAULT_SETTINGS : s;
-  r.setAttribute('margin-top', `${m.marginTop}px`);
-  r.setAttribute('margin-bottom', `${m.marginBottom}px`);
-  r.setAttribute('margin-left', `${m.marginLeft}px`);
-  r.setAttribute('margin-right', `${m.marginRight}px`);
+  // these four, see that file's comments). Owner decision (stage 4): paginator margins are the
+  // reader's own page frame, not publisher CSS, so they always apply - unlike the rest of the
+  // Layout tab (flow/column count), margins are never tied to "Use book layout".
+  r.setAttribute('margin-top', `${s.marginTop}px`);
+  r.setAttribute('margin-bottom', `${s.marginBottom}px`);
+  r.setAttribute('margin-left', `${s.marginLeft}px`);
+  r.setAttribute('margin-right', `${s.marginRight}px`);
   r.setAttribute('flow', s.flow);
   if (typeof r.setStyles === 'function') r.setStyles(generateCSS(s));
 }
