@@ -56,9 +56,10 @@ sealed interface ReaderEvent {
     data class SearchProgress(val progress: Double) : ReaderEvent
     data class SearchDone(val total: Int, val capped: Boolean) : ReaderEvent
 
-    /** The parsed Media Overlay timeline, sent in response to a `narrationPrepare` command. */
-    data class NarrationReady(val timeline: NarrationTimeline) : ReaderEvent
-    data class NarrationFailed(val message: String) : ReaderEvent
+    /** The parsed Media Overlay timeline, sent in response to a `narrationPrepare` command.
+     * [generation] echoes the command's generation so a stale reply can be told apart. */
+    data class NarrationReady(val timeline: NarrationTimeline, val generation: Int) : ReaderEvent
+    data class NarrationFailed(val message: String, val generation: Int) : ReaderEvent
 }
 
 object ReaderBridge {
@@ -138,10 +139,14 @@ object ReaderBridge {
             "annotationTap" -> obj["cfi"]?.jsonPrimitive?.contentOrNull?.let {
                 ReaderEvent.AnnotationTap(it, parseRect(obj["rect"]))
             }
-            "narrationTimeline" -> parseNarrationTimeline(obj)?.let { ReaderEvent.NarrationReady(it) }
-                ?: ReaderEvent.NarrationFailed("Couldn't read this book's narration")
+            "narrationTimeline" -> {
+                val generation = obj["generation"]?.jsonPrimitive?.intOrNull ?: 0
+                parseNarrationTimeline(obj)?.let { ReaderEvent.NarrationReady(it, generation) }
+                    ?: ReaderEvent.NarrationFailed("Couldn't read this book's narration", generation)
+            }
             "narrationTimelineError" -> ReaderEvent.NarrationFailed(
                 obj["message"]?.jsonPrimitive?.contentOrNull ?: "Couldn't read this book's narration",
+                obj["generation"]?.jsonPrimitive?.intOrNull ?: 0,
             )
             else -> null
         }

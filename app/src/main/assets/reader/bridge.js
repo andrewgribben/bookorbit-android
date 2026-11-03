@@ -146,6 +146,14 @@ const DEFAULT_ACTIVE_CLASS = '-epub-media-overlay-active';
 /** `activeClass`/`playbackActiveClass` for the book currently open, or null without narration. */
 let narrationActiveClass = null;
 let narrationPlaybackActiveClass = null;
+/** Bumped by a new `narrationPrepare` or a `narrationCancelPrepare`; a `buildNarrationTimeline`
+ * run that sees this move on before it resolves is abandoned - its result is never posted. */
+let narrationPrepareToken = 0;
+/** `performance.now()` of the last navigation NOT driven by narration's own follow-the-audio
+ * `goTo` (see `view._narrationNav` in foliate/view.js) - i.e. a real manual page turn. */
+let lastManualNavAt = -Infinity;
+/** How long a manual page turn pauses narration's auto-follow before it resumes. */
+const NARRATION_FOLLOW_PAUSE_MS = 10_000;
 
 // Ported from epub.js's internal (unexported) `parseClock`/`resolveURL` - MediaOverlay#loadSMIL
 // uses the same two helpers, but they're module-private, so narration timing is parsed
@@ -184,55 +192,44 @@ function resolveSmilRef(url, relativeTo) {
 
 /** Builds the whole book's narration timeline by parsing every section's SMIL file, in natural
  * reading order. `audioSrcs` are EPUB-internal zip paths the host extracts with the same
- * resolution foliate itself uses for `book.loadBlob`, so they double as zip entry names. */
+ * resolution foliate itself uses for `book.loadBlob`, so they double as zip entry names.
+ *
+ * SMIL files are fetched with bounded parallelism (small batches, in order) rather than one at a
+ * time, which matters for books with many sections; results are still assembled in section order
+ * so the timeline itself is deterministic regardless of which fetch in a batch finishes first. */
+const SMIL_BATCH_SIZE = 6;
+
 async function buildNarrationTimeline() {
   const book = view?.book;
   if (!book) return null;
   const sections = book.sections ?? [];
   const audioSrcs = [];
   const audioIndexBySrc = new Map();
+
+  const sectionIndices = [];
+  for (let i = 0; i < sections.length; i++) {
+    if (sections[i]?.mediaOverlay?.href) sectionIndices.push(i);
+  }
+
+  // Parse every section's SMIL into its own ordered list of pars first (parallel, in batches),
+  // then flatten in section order - so a later section finishing first can't reorder the timeline.
+  const parsedBySection = new Map();
+  for (let start = 0; start < sectionIndices.length; start += SMIL_BATCH_SIZE) {
+    const batch = sectionIndices.slice(start, start + SMIL_BATCH_SIZE);
+    const results = await Promise.all(batch.map((sectionIndex) => parseSectionSmil(book, sections[sectionIndex])));
+    batch.forEach((sectionIndex, i) => parsedBySection.set(sectionIndex, results[i]));
+  }
+
   const items = [];
-
-  for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
-    const mo = sections[sectionIndex]?.mediaOverlay;
-    if (!mo?.href) continue;
-    let xmlText;
-    try {
-      xmlText = await book.loadText(mo.href);
-    } catch {
-      continue;
-    }
-    if (!xmlText) continue;
-    let doc;
-    try {
-      doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-    } catch {
-      continue;
-    }
-    if (doc.getElementsByTagName('parsererror').length) continue;
-
-    let pars = [...doc.getElementsByTagNameNS(SMIL_NS, 'par')];
-    if (pars.length === 0) pars = [...doc.getElementsByTagName('par')];
-
-    for (const par of pars) {
-      const children = [...par.children];
-      const textEl = children.find((c) => c.localName === 'text');
-      const audioEl = children.find((c) => c.localName === 'audio');
-      if (!textEl || !audioEl) continue;
-      const textHref = resolveSmilRef(textEl.getAttribute('src'), mo.href);
-      const audioSrc = resolveSmilRef(audioEl.getAttribute('src'), mo.href);
-      if (!textHref || !audioSrc) continue;
-      const beginSec = parseSmilClock(audioEl.getAttribute('clipBegin')) ?? 0;
-      const clipEnd = audioEl.getAttribute('clipEnd');
-      const endSec = clipEnd ? parseSmilClock(clipEnd) ?? null : null;
-
-      let audioIndex = audioIndexBySrc.get(audioSrc);
+  for (const sectionIndex of sectionIndices) {
+    for (const par of parsedBySection.get(sectionIndex) ?? []) {
+      let audioIndex = audioIndexBySrc.get(par.audioSrc);
       if (audioIndex === undefined) {
         audioIndex = audioSrcs.length;
-        audioSrcs.push(audioSrc);
-        audioIndexBySrc.set(audioSrc, audioIndex);
+        audioSrcs.push(par.audioSrc);
+        audioIndexBySrc.set(par.audioSrc, audioIndex);
       }
-      items.push({ sectionIndex, textHref, beginSec, endSec, audioIndex });
+      items.push({ sectionIndex, textHref: par.textHref, beginSec: par.beginSec, endSec: par.endSec, audioIndex });
     }
   }
 
@@ -257,6 +254,46 @@ async function buildNarrationTimeline() {
     playbackActiveClass: book.media?.playbackActiveClass || null,
     startTextHref,
   };
+}
+
+/** Parses one section's SMIL file into its `<par>` entries. Never throws - an unreadable or
+ * malformed SMIL file just contributes no entries, so one bad section can't sink the whole book. */
+async function parseSectionSmil(book, section) {
+  const mo = section?.mediaOverlay;
+  if (!mo?.href) return [];
+  let xmlText;
+  try {
+    xmlText = await book.loadText(mo.href);
+  } catch {
+    return [];
+  }
+  if (!xmlText) return [];
+  let doc;
+  try {
+    doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  } catch {
+    return [];
+  }
+  if (doc.getElementsByTagName('parsererror').length) return [];
+
+  let pars = [...doc.getElementsByTagNameNS(SMIL_NS, 'par')];
+  if (pars.length === 0) pars = [...doc.getElementsByTagName('par')];
+
+  const out = [];
+  for (const par of pars) {
+    const children = [...par.children];
+    const textEl = children.find((c) => c.localName === 'text');
+    const audioEl = children.find((c) => c.localName === 'audio');
+    if (!textEl || !audioEl) continue;
+    const textHref = resolveSmilRef(textEl.getAttribute('src'), mo.href);
+    const audioSrc = resolveSmilRef(audioEl.getAttribute('src'), mo.href);
+    if (!textHref || !audioSrc) continue;
+    const beginSec = parseSmilClock(audioEl.getAttribute('clipBegin')) ?? 0;
+    const clipEnd = audioEl.getAttribute('clipEnd');
+    const endSec = clipEnd ? parseSmilClock(clipEnd) ?? null : null;
+    out.push({ textHref, audioSrc, beginSec, endSec });
+  }
+  return out;
 }
 
 /** Injects a default highlight style for the book's active-overlay class into a freshly loaded
@@ -569,6 +606,9 @@ function createView() {
 
   view.addEventListener('relocate', (e) => {
     const d = e.detail ?? {};
+    // Narration following the audio dispatches its own goTo with `_narrationNav` set (see
+    // foliate/view.js); anything else reaching here is the user turning pages themselves.
+    if (!view._narrationNav) lastManualNavAt = performance.now();
     post({
       type: 'relocate',
       cfi: d.cfi ?? null,
@@ -718,16 +758,31 @@ window.__readerCommand = (json) => {
     case 'clearSearch':
       clearSearch();
       break;
-    case 'narrationPrepare':
+    case 'narrationPrepare': {
+      const generation = cmd.generation;
+      const token = ++narrationPrepareToken;
       void buildNarrationTimeline()
         .then((timeline) => {
-          if (timeline) post({ type: 'narrationTimeline', ...timeline });
-          else post({ type: 'narrationTimelineError', message: "Couldn't read this book's narration" });
+          if (token !== narrationPrepareToken) return; // abandoned - a newer prepare or a cancel.
+          if (timeline) post({ type: 'narrationTimeline', generation, ...timeline });
+          else post({ type: 'narrationTimelineError', generation, message: "Couldn't read this book's narration" });
         })
-        .catch((e) => post({ type: 'narrationTimelineError', message: e?.message ?? "Couldn't read this book's narration" }));
+        .catch((e) => {
+          if (token !== narrationPrepareToken) return;
+          post({ type: 'narrationTimelineError', generation, message: e?.message ?? "Couldn't read this book's narration" });
+        });
+      break;
+    }
+    case 'narrationCancelPrepare':
+      narrationPrepareToken++;
       break;
     case 'narrationHighlight':
-      if (cmd.textHref) view.mediaOverlay?.dispatchEvent(new CustomEvent('highlight', { detail: { text: cmd.textHref } }));
+      if (cmd.textHref && view.mediaOverlay) {
+        // Pause auto-follow (keep drawing the highlight, just don't page-turn to it) for a while
+        // after the user last turned a page themselves.
+        view.pauseNarrationFollow = performance.now() - lastManualNavAt < NARRATION_FOLLOW_PAUSE_MS;
+        view.mediaOverlay.dispatchEvent(new CustomEvent('highlight', { detail: { text: cmd.textHref } }));
+      }
       break;
     case 'narrationUnhighlight':
       view.mediaOverlay?.dispatchEvent(new CustomEvent('unhighlight'));

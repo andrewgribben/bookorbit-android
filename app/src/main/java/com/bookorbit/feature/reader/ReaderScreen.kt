@@ -104,8 +104,8 @@ fun ReaderScreen(
                 is ReaderEvent.Selection -> vm.onSelection(event.text, event.cfi, event.rect)
                 ReaderEvent.SelectionCleared -> vm.onSelectionCleared()
                 is ReaderEvent.AnnotationTap -> vm.onAnnotationTap(event.cfi, event.rect)
-                is ReaderEvent.NarrationReady -> vm.onNarrationReady(event.timeline)
-                is ReaderEvent.NarrationFailed -> vm.onNarrationFailed(event.message)
+                is ReaderEvent.NarrationReady -> vm.onNarrationReady(event.timeline, event.generation)
+                is ReaderEvent.NarrationFailed -> vm.onNarrationFailed(event.message, event.generation)
             }
         }
     }
@@ -115,7 +115,8 @@ fun ReaderScreen(
     LaunchedEffect(Unit) {
         vm.commands.collect { cmd ->
             when (cmd) {
-                ReaderViewModel.ReaderCommand.NarrationPrepare -> controller.narrationPrepare()
+                is ReaderViewModel.ReaderCommand.NarrationPrepare -> controller.narrationPrepare(cmd.generation)
+                ReaderViewModel.ReaderCommand.NarrationCancelPrepare -> controller.narrationCancelPrepare()
                 is ReaderViewModel.ReaderCommand.NarrationHighlight -> controller.narrationHighlight(cmd.textHref)
                 ReaderViewModel.ReaderCommand.NarrationUnhighlight -> controller.narrationUnhighlight()
             }
