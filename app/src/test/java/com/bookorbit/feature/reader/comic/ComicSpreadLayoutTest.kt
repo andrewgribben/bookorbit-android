@@ -180,4 +180,27 @@ class ComicSpreadLayoutTest {
         assertTrue(isWidePageAspect(1200, 1000))
         assertFalse(isWidePageAspect(100, 0))
     }
+
+    @Test
+    fun `comicPageRangeLabel shows a single 1-based page number`() {
+        assertEquals("12", comicPageRangeLabel(listOf(11)))
+    }
+
+    @Test
+    fun `comicPageRangeLabel shows a spread's range, sorted low-to-high regardless of order`() {
+        assertEquals("12-13", comicPageRangeLabel(listOf(11, 12)))
+        // RTL spreads store the pages reading-order (right page first); the label stays low-to-high.
+        assertEquals("12-13", comicPageRangeLabel(listOf(12, 11)))
+    }
+
+    @Test
+    fun `comicPageRangeLabel falls back to page 1 for an empty list`() {
+        assertEquals("1", comicPageRangeLabel(emptyList()))
+    }
+
+    @Test
+    fun `comicPageCounterLabel appends the total`() {
+        assertEquals("12 / 48", comicPageCounterLabel(listOf(11), 48))
+        assertEquals("12-13 / 48", comicPageCounterLabel(listOf(11, 12), 48))
+    }
 }

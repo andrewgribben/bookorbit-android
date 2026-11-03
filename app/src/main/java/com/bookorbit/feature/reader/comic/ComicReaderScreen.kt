@@ -12,26 +12,39 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.FormatTextdirectionLToR
 import androidx.compose.material.icons.automirrored.filled.FormatTextdirectionRToL
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -63,21 +76,46 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.bookorbit.ui.LocalImageUrls
 import com.bookorbit.feature.reader.ReaderControlsSettings
+import com.bookorbit.feature.reader.ReaderSystemBarsEffect
 import com.bookorbit.feature.reader.TapAction
 import com.bookorbit.feature.reader.resolveTapAction
 import kotlinx.coroutines.launch
 
 private const val MAX_ZOOM = 4f
+private const val MIN_TAP_TARGET_DP = 48
+
+/**
+ * Current navigation position for the comic reader's bottom bar: both the slider's own index
+ * space (spread index in Paged mode, item index in the infinite modes - see [onSeek]) and the
+ * page-counter label text, published by whichever page composable ([ComicPagedPages] or
+ * [ComicScrollStrip]) is active, mirroring the [androidx.compose.runtime.MutableState]-ref
+ * pattern already used for [com.bookorbit.feature.reader.PageTurnKey] below.
+ */
+private data class ComicNavState(
+    val position: Float = 0f,
+    val maxPosition: Float = 0f,
+    val label: String = "",
+    val onSeek: (Int) -> Unit = {},
+)
 
 /**
  * Comic reader for CBZ, CBR and CB7: a pager/scroll strip over page images (from a downloaded CBZ,
  * or rendered by the server) driven by [ComicReaderSettings] (reading mode, page view, fit,
  * direction, spreads, background, keep screen on) - pinch-to-zoom, double-tap zoom and tap zones
  * to turn pages in Paged mode, a page slider, and the Configure sheet (Layout/Spreads/Theme).
+ *
+ * Chrome (task 1): a top bar (back, title + "Page N of M" subtitle, direction toggle, Pages grid,
+ * Configure) and a bottom bar (first/previous/slider/next/last + "N / M"), both insets-aware for
+ * display cutouts (e.g. the Fold's inner-screen punch-hole). The "Show menu" tap action toggles
+ * both bars AND the system bars immersively, via the same [ReaderSystemBarsEffect] the ebook
+ * reader uses. Task 2 adds the Pages thumbnail grid ([ComicPagesGridSheet]) and the transient
+ * "Resumed at page N" note with a Start over action.
  */
 @Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 fun ComicReaderScreen(
     onBack: () -> Unit,
+    fullscreen: Boolean = false,
     vm: ComicReaderViewModel = hiltViewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -89,6 +127,12 @@ fun ComicReaderScreen(
         view.keepScreenOn = settings.keepScreenOn
         onDispose { view.keepScreenOn = false }
     }
+
+    // Tapping "Show menu" toggles the reader's own chrome and Android's system bars together,
+    // exactly like the ebook reader (ReaderScreen.kt) - see readerWantsSystemBarsVisible for the
+    // precise rule. ReaderDestination no longer applies its own screen-agnostic immersive effect
+    // for the comic reader now that this screen owns it directly.
+    ReaderSystemBarsEffect(fullscreen = fullscreen, chromeVisible = chromeVisible)
 
     // Volume keys and hardware arrows turn pages while this screen is showing (task 2); the
     // actual handler is whatever the current scroll mode's composable below installs (pager vs.
@@ -103,7 +147,21 @@ fun ComicReaderScreen(
         com.bookorbit.feature.reader.ReaderKeyBindings.setVolumeKeysEnabled(ui.controlsSettings.volumeKeysTurnPages)
     }
 
+    // First/last (task 1) and the Pages grid + resume note's "jump to page N" (task 2) all share
+    // this one 0-based page request, consumed by whichever page composable is active below.
+    val jumpToPage = remember { mutableStateOf<Int?>(null) }
+    val nav = remember { mutableStateOf(ComicNavState()) }
+
+    // Pressing Pages (task 1's top bar) opens the grid - wired to ComicPagesGridSheet in task 2.
+    var showPagesGrid by remember { mutableStateOf(false) }
+
     val backgroundColor = comicBackgroundColor(settings)
+
+    // Bars must clear both the status/navigation bars AND the display cutout (camera punch-hole)
+    // - see ReaderScreen.kt's identical comment for why plain statusBarsPadding() isn't enough on
+    // the Fold's inner screen.
+    val topBarInsets = WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout)
+    val bottomBarInsets = WindowInsets.navigationBarsIgnoringVisibility.union(WindowInsets.displayCutout)
 
     Box(Modifier.fillMaxSize().background(backgroundColor)) {
         when {
@@ -115,32 +173,41 @@ fun ComicReaderScreen(
                     Button(onClick = onBack, modifier = Modifier.padding(start = 12.dp)) { Text(stringResource(R.string.back)) }
                 }
             }
-            else -> ComicPages(ui, settings, vm, onToggleChrome = { chromeVisible = !chromeVisible }, pageTurnHandler = pageTurnHandler)
+            else -> ComicPages(
+                ui = ui,
+                settings = settings,
+                vm = vm,
+                onToggleChrome = { chromeVisible = !chromeVisible },
+                pageTurnHandler = pageTurnHandler,
+                jumpToPage = jumpToPage,
+                nav = nav,
+            )
         }
 
-        if (chromeVisible) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xCC0A0A0A))
-                    .statusBarsPadding()
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back), tint = Color.White) }
-                Text(ui.title.orEmpty(), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                IconButton(onClick = vm::toggleDirection) {
-                    Icon(
-                        if (settings.direction == ComicDirection.RTL) Icons.AutoMirrored.Filled.FormatTextdirectionRToL else Icons.AutoMirrored.Filled.FormatTextdirectionLToR,
-                        contentDescription = stringResource(if (settings.direction == ComicDirection.RTL) R.string.comic_dir_rtl else R.string.comic_dir_ltr),
-                        tint = Color.White,
-                    )
-                }
-                IconButton(onClick = vm::openConfigureSheet) {
-                    Icon(Icons.Filled.Tune, contentDescription = stringResource(R.string.cr_configure), tint = Color.White)
-                }
-            }
+        if (chromeVisible && ui.error == null) {
+            ComicTopBar(
+                title = ui.title.orEmpty(),
+                pageSubtitle = stringResource(R.string.cr_page_of, comicPageRangeLabel(listOf(ui.currentPage)), ui.pageCount.coerceAtLeast(1)),
+                direction = settings.direction,
+                insets = topBarInsets,
+                onBack = onBack,
+                onToggleDirection = vm::toggleDirection,
+                onOpenPagesGrid = { showPagesGrid = true },
+                onOpenConfigure = vm::openConfigureSheet,
+            )
+
+            ComicBottomBar(
+                nav = nav.value,
+                rtl = settings.direction == ComicDirection.RTL,
+                insets = bottomBarInsets,
+                onFirst = { jumpToPage.value = 0 },
+                onPrevious = { pageTurnHandler.value(com.bookorbit.feature.reader.PageTurnKey.PREVIOUS) },
+                onNext = { pageTurnHandler.value(com.bookorbit.feature.reader.PageTurnKey.NEXT) },
+                onLast = { jumpToPage.value = (ui.pageCount - 1).coerceAtLeast(0) },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         }
+
     }
 
     if (ui.showConfigureSheet) {
@@ -160,6 +227,113 @@ fun ComicReaderScreen(
         )
     }
 }
+
+/** Top bar: Back, title + "Page N of M" subtitle, direction toggle, Pages grid, Configure. */
+@Composable
+private fun ComicTopBar(
+    title: String,
+    pageSubtitle: String,
+    direction: ComicDirection,
+    insets: WindowInsets,
+    onBack: () -> Unit,
+    onToggleDirection: () -> Unit,
+    onOpenPagesGrid: () -> Unit,
+    onOpenConfigure: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(Color(0xCC0A0A0A))
+            .windowInsetsPadding(insets)
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onBack, modifier = Modifier.minTapTarget()) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back), tint = Color.White)
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+            Text(title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                pageSubtitle,
+                color = Color.White.copy(alpha = 0.75f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+        IconButton(onClick = onToggleDirection, modifier = Modifier.minTapTarget()) {
+            Icon(
+                if (direction == ComicDirection.RTL) Icons.AutoMirrored.Filled.FormatTextdirectionRToL else Icons.AutoMirrored.Filled.FormatTextdirectionLToR,
+                contentDescription = stringResource(if (direction == ComicDirection.RTL) R.string.comic_dir_rtl else R.string.comic_dir_ltr),
+                tint = Color.White,
+            )
+        }
+        IconButton(onClick = onOpenPagesGrid, modifier = Modifier.minTapTarget()) {
+            Icon(Icons.Filled.GridView, contentDescription = stringResource(R.string.cr_pages), tint = Color.White)
+        }
+        IconButton(onClick = onOpenConfigure, modifier = Modifier.minTapTarget()) {
+            Icon(Icons.Filled.Tune, contentDescription = stringResource(R.string.cr_configure), tint = Color.White)
+        }
+    }
+}
+
+/** Bottom bar: first, previous, slider (mirrored for RTL), next, last, "N / M". Shared by Paged
+ * and both infinite modes via [ComicNavState], published by whichever is active. */
+@Composable
+private fun ComicBottomBar(
+    nav: ComicNavState,
+    rtl: Boolean,
+    insets: WindowInsets,
+    onFirst: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onLast: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier
+            .fillMaxWidth()
+            .background(Color(0xCC0A0A0A))
+            .windowInsetsPadding(insets)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            IconButton(onClick = onFirst, modifier = Modifier.minTapTarget()) {
+                Icon(Icons.Filled.SkipPrevious, contentDescription = stringResource(R.string.cr_first_page), tint = Color.White)
+            }
+            IconButton(onClick = onPrevious, modifier = Modifier.minTapTarget()) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = stringResource(R.string.cr_previous_page), tint = Color.White)
+            }
+            var dragging by remember { mutableFloatStateOf(-1f) }
+            val shown = if (dragging >= 0) dragging else nav.position
+            Slider(
+                value = shown.coerceIn(0f, nav.maxPosition.coerceAtLeast(0f)),
+                onValueChange = { dragging = it },
+                onValueChangeFinished = {
+                    nav.onSeek(dragging.toInt())
+                    dragging = -1f
+                },
+                valueRange = 0f..nav.maxPosition.coerceAtLeast(0f),
+                enabled = nav.maxPosition > 0f,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = MIN_TAP_TARGET_DP.dp)
+                    .graphicsLayer { scaleX = if (rtl) -1f else 1f },
+            )
+            IconButton(onClick = onNext, modifier = Modifier.minTapTarget()) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = stringResource(R.string.cr_next_page), tint = Color.White)
+            }
+            IconButton(onClick = onLast, modifier = Modifier.minTapTarget()) {
+                Icon(Icons.Filled.SkipNext, contentDescription = stringResource(R.string.cr_last_page), tint = Color.White)
+            }
+        }
+        Text(nav.label, color = Color.White.copy(alpha = 0.85f))
+    }
+}
+
+/** Ensures a touch target is at least the Material 48dp minimum. */
+private fun Modifier.minTapTarget(): Modifier = this.then(Modifier.heightIn(min = MIN_TAP_TARGET_DP.dp).widthIn(min = MIN_TAP_TARGET_DP.dp))
 
 /** Background colours matching the web's `bgColor`, plus the app-only AMOLED True black. */
 private fun comicBackgroundColor(settings: ComicReaderSettings): Color = when {
@@ -183,11 +357,13 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPages(
     vm: ComicReaderViewModel,
     onToggleChrome: () -> Unit,
     pageTurnHandler: androidx.compose.runtime.MutableState<(com.bookorbit.feature.reader.PageTurnKey) -> Unit>,
+    jumpToPage: androidx.compose.runtime.MutableState<Int?>,
+    nav: androidx.compose.runtime.MutableState<ComicNavState>,
 ) {
     when (settings.scrollMode) {
-        ComicScrollMode.PAGINATED -> ComicPagedPages(ui, settings, vm, onToggleChrome, pageTurnHandler)
-        ComicScrollMode.INFINITE -> ComicScrollStrip(ui, settings, vm, gap = 16.dp, pageTurnHandler = pageTurnHandler)
-        ComicScrollMode.LONG_STRIP -> ComicScrollStrip(ui, settings, vm, gap = 0.dp, pageTurnHandler = pageTurnHandler)
+        ComicScrollMode.PAGINATED -> ComicPagedPages(ui, settings, vm, onToggleChrome, pageTurnHandler, jumpToPage, nav)
+        ComicScrollMode.INFINITE -> ComicScrollStrip(ui, settings, vm, gap = 16.dp, pageTurnHandler = pageTurnHandler, jumpToPage = jumpToPage, nav = nav)
+        ComicScrollMode.LONG_STRIP -> ComicScrollStrip(ui, settings, vm, gap = 0.dp, pageTurnHandler = pageTurnHandler, jumpToPage = jumpToPage, nav = nav)
     }
 }
 
@@ -200,6 +376,8 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPagedPages(
     vm: ComicReaderViewModel,
     onToggleChrome: () -> Unit,
     pageTurnHandler: androidx.compose.runtime.MutableState<(com.bookorbit.feature.reader.PageTurnKey) -> Unit>,
+    jumpToPage: androidx.compose.runtime.MutableState<Int?>,
+    nav: androidx.compose.runtime.MutableState<ComicNavState>,
 ) {
     val rtl = settings.direction == ComicDirection.RTL
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -230,6 +408,12 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPagedPages(
                 spreads.getOrNull(index)?.let {
                     lastAnchor = it.anchorPage
                     vm.onPageChanged(it.anchorPage)
+                    nav.value = ComicNavState(
+                        position = index.toFloat(),
+                        maxPosition = (spreads.size - 1).coerceAtLeast(0).toFloat(),
+                        label = comicPageCounterLabel(it.pages, ui.pageCount),
+                        onSeek = { target -> scope.launch { pagerState.scrollToPage(target) } },
+                    )
                 }
             }
         }
@@ -248,6 +432,15 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPagedPages(
                     }
                 }
             }
+        }
+
+        // First/last (task 1) and the Pages grid + resume note's Start over (task 2): jump to a
+        // 0-based PAGE, resolved to its containing spread.
+        LaunchedEffect(jumpToPage.value, layout) {
+            val target = jumpToPage.value ?: return@LaunchedEffect
+            val targetIndex = layout.spreadIndexForPage(target).coerceIn(0, (spreads.size - 1).coerceAtLeast(0))
+            pagerState.scrollToPage(targetIndex)
+            jumpToPage.value = null
         }
 
         HorizontalPager(
@@ -292,34 +485,6 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPagedPages(
                 }
             }
         }
-
-        Column(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Color(0xCC0A0A0A))
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            if (spreads.size > 1) {
-                var dragging by remember { mutableFloatStateOf(-1f) }
-                val shown = if (dragging >= 0) dragging else pagerState.currentPage.toFloat()
-                Slider(
-                    value = shown,
-                    onValueChange = { dragging = it },
-                    onValueChangeFinished = {
-                        val target = dragging.toInt()
-                        dragging = -1f
-                        scope.launch { pagerState.scrollToPage(target) }
-                    },
-                    valueRange = 0f..(spreads.size - 1).toFloat(),
-                    modifier = Modifier.graphicsLayer { scaleX = if (rtl) -1f else 1f },
-                )
-            }
-            val shownPage = (spreads.getOrNull(pagerState.currentPage)?.anchorPage ?: 0) + 1
-            Text("$shownPage / ${ui.pageCount}", color = Color.White.copy(alpha = 0.85f))
-        }
     }
 }
 
@@ -359,12 +524,22 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicScrollStrip(
     vm: ComicReaderViewModel,
     gap: androidx.compose.ui.unit.Dp,
     pageTurnHandler: androidx.compose.runtime.MutableState<(com.bookorbit.feature.reader.PageTurnKey) -> Unit>,
+    jumpToPage: androidx.compose.runtime.MutableState<Int?>,
+    nav: androidx.compose.runtime.MutableState<ComicNavState>,
 ) {
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = ui.initialPage)
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.firstVisibleItemIndex }.collect { vm.onPageChanged(it) }
-    }
     val scrollScope = androidx.compose.runtime.rememberCoroutineScope()
+    LaunchedEffect(listState, ui.pageCount) {
+        snapshotFlow { listState.firstVisibleItemIndex }.collect { page ->
+            vm.onPageChanged(page)
+            nav.value = ComicNavState(
+                position = page.toFloat(),
+                maxPosition = (ui.pageCount - 1).coerceAtLeast(0).toFloat(),
+                label = comicPageCounterLabel(listOf(page), ui.pageCount),
+                onSeek = { target -> scrollScope.launch { listState.scrollToItem(target.coerceIn(0, (ui.pageCount - 1).coerceAtLeast(0))) } },
+            )
+        }
+    }
     // Volume keys / hardware arrows (task 2): "next/previous scrolls by one screen" in the
     // infinite modes - each item fills the viewport width end-to-end, so one item is one screen.
     LaunchedEffect(listState, ui.pageCount) {
@@ -378,6 +553,14 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicScrollStrip(
                 }
             }
         }
+    }
+
+    // First/last (task 1) and the Pages grid + resume note's Start over (task 2): scroll straight
+    // to the requested item - there's no spread indirection in the infinite modes.
+    LaunchedEffect(jumpToPage.value, ui.pageCount) {
+        val target = jumpToPage.value ?: return@LaunchedEffect
+        listState.scrollToItem(target.coerceIn(0, (ui.pageCount - 1).coerceAtLeast(0)))
+        jumpToPage.value = null
     }
 
     var scale by remember { mutableFloatStateOf(1f) }
@@ -464,7 +647,7 @@ private fun SpreadPageImage(source: ComicPageSource, page: Int, fitMode: ComicFi
     )
 }
 
-private fun comicPageModel(source: ComicPageSource, page: Int, imageUrls: com.bookorbit.core.network.ImageUrls, context: android.content.Context): Any =
+internal fun comicPageModel(source: ComicPageSource, page: Int, imageUrls: com.bookorbit.core.network.ImageUrls, context: android.content.Context): Any =
     when (source) {
         is ComicPageSource.Server -> imageUrls.comicPage(source.fileId, page)
         is ComicPageSource.Local -> LocalComicPage(source.archive, page).let { local ->

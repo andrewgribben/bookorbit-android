@@ -32,11 +32,11 @@ fun ReaderDestination(kind: ReaderKind, onBack: () -> Unit, vm: ReaderHostViewMo
     var useApp by rememberSaveable { mutableStateOf(false) }
     val prefs = preferences ?: return
     val usingNativeEbookScreen = kind == ReaderKind.EBOOK && (prefs.readerInterface != ReaderInterface.SERVER_WEB || useApp)
-    // The native ebook screen (ReaderScreen) owns its own system-bars effect, synced to its
-    // chrome-tap toggle (see ReaderScreen's systemBarsVisible/readerWantsSystemBarsVisible), so it
-    // opts out of this screen-agnostic "hide for the whole visit" effect used by every other path
-    // (server web view, PDF, comic — none of which tie system bars to an in-reader chrome toggle).
-    if (!usingNativeEbookScreen) {
+    // The native ebook screen (ReaderScreen) and the comic reader (ComicReaderScreen) each own
+    // their own system-bars effect, synced to their own chrome-tap toggle (ReaderSystemBarsEffect),
+    // so they opt out of this screen-agnostic "hide for the whole visit" effect used by every
+    // other path (server web view, PDF — neither ties system bars to an in-reader chrome toggle).
+    if (!usingNativeEbookScreen && kind != ReaderKind.COMIC) {
         ImmersiveReaderEffect(prefs.fullscreen)
     }
     if (prefs.readerInterface == ReaderInterface.SERVER_WEB && !useApp) {
@@ -45,7 +45,7 @@ fun ReaderDestination(kind: ReaderKind, onBack: () -> Unit, vm: ReaderHostViewMo
         when (kind) {
             ReaderKind.EBOOK -> ReaderScreen(onBack, fullscreen = prefs.fullscreen)
             ReaderKind.PDF -> PdfReaderScreen(onBack)
-            ReaderKind.COMIC -> ComicReaderScreen(onBack)
+            ReaderKind.COMIC -> ComicReaderScreen(onBack, fullscreen = prefs.fullscreen)
         }
     }
 }

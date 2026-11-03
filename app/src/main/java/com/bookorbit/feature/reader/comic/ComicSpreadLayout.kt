@@ -197,3 +197,19 @@ fun isWidePageAspect(widthPx: Int, heightPx: Int): Boolean {
     if (heightPx <= 0) return false
     return widthPx.toDouble() / heightPx.toDouble() >= DEFAULT_WIDE_PAGE_RATIO_THRESHOLD
 }
+
+/**
+ * Chrome label formatting (task 1, PLAN.md "Chrome"): a 1-based page number, or a page RANGE
+ * for a two-page spread (e.g. "12-13"), with no total attached - used for the top bar's
+ * "Page 12 of 48" subtitle. [pages] is a spread's 0-based page list (1 or 2 entries); callers
+ * pass a single-element list for infinite/no-gaps mode, where there is no spread.
+ */
+fun comicPageRangeLabel(pages: List<Int>): String {
+    if (pages.isEmpty()) return "1"
+    val lo = pages.min() + 1
+    val hi = pages.max() + 1
+    return if (lo == hi) "$lo" else "$lo-$hi"
+}
+
+/** The bottom bar's "12 / 48" (or "12-13 / 48" for a spread) counter text. */
+fun comicPageCounterLabel(pages: List<Int>, pageCount: Int): String = "${comicPageRangeLabel(pages)} / $pageCount"
