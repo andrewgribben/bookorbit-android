@@ -47,6 +47,8 @@
     <string name="dark">Dark</string>
     <string name="decrease">Decrease</string>
     <string name="reading_position">Reading position</string>
+    <string name="reader_history_back">Back to previous location</string>
+    <string name="reader_history_forward">Forward to next location</string>
     <string name="decrease_named">Decrease %1$s</string>
     <string name="increase_named">Increase %1$s</string>
     <string name="default_speed">Default speed</string>

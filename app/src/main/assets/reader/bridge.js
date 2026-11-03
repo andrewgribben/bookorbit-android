@@ -649,12 +649,19 @@ function attachDocHandlers(doc, index) {
 }
 
 /* ----------------------------------------------------------- create view */
+function postHistory() {
+  post({ type: 'history', canGoBack: !!view?.history?.canGoBack, canGoForward: !!view?.history?.canGoForward });
+}
+
 function createView() {
   if (view) return view;
   view = document.createElement('foliate-view');
   view.setAttribute('id', 'foliate');
   view.style.cssText = 'width:100%;height:100%;display:block;';
   container.appendChild(view);
+
+  // Jumps (TOC, links, search, scrubber) push history; page turns don't. Mirrors Readest's back/forward.
+  view.history.addEventListener('index-change', postHistory);
 
   view.addEventListener('load', () => {
     // The paginator swaps its internal view in a microtask after 'load'; defer so
@@ -765,6 +772,7 @@ async function finishOpen(meta) {
     }
   }
   if (!navigated) await view.goTo(0).catch(() => {});
+  postHistory();
 }
 
 async function openBook(meta, parts) {
@@ -860,6 +868,12 @@ window.__readerCommand = (json) => {
       break;
     case 'prev':
       view.prev?.();
+      break;
+    case 'historyBack':
+      view.history?.back();
+      break;
+    case 'historyForward':
+      view.history?.forward();
       break;
     case 'next':
       view.next?.();

@@ -32,6 +32,12 @@ class ReaderBridgeEventsTest {
     }
 
     @Test
+    fun `parses history availability`() {
+        assertEquals(ReaderEvent.History(canGoBack = true, canGoForward = false), ReaderBridge.parseEvent("""{"type":"history","canGoBack":true,"canGoForward":false}"""))
+        assertEquals(ReaderEvent.History(canGoBack = false, canGoForward = false), ReaderBridge.parseEvent("""{"type":"history"}"""))
+    }
+
+    @Test
     fun `parses selection cleared and annotation tap`() {
         assertTrue(ReaderBridge.parseEvent("""{"type":"selectionCleared"}""") === ReaderEvent.SelectionCleared)
         val tap = ReaderBridge.parseEvent("""{"type":"annotationTap","cfi":"epubcfi(/6/2)","rect":null}""") as ReaderEvent.AnnotationTap

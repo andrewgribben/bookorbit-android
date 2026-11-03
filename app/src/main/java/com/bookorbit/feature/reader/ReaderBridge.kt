@@ -49,6 +49,7 @@ sealed interface ReaderEvent {
     data class Tap(val x: Double) : ReaderEvent
     data class Selection(val text: String, val cfi: String?, val rect: ViewportRect?) : ReaderEvent
     data object SelectionCleared : ReaderEvent
+    data class History(val canGoBack: Boolean, val canGoForward: Boolean) : ReaderEvent
     data class AnnotationTap(val cfi: String, val rect: ViewportRect?) : ReaderEvent
 
     /** A batch of matches from one section ([label] is its chapter). */
@@ -117,6 +118,10 @@ object ReaderBridge {
                 cfi = obj["cfi"]?.jsonPrimitive?.contentOrNull,
                 fraction = obj["fraction"]?.jsonPrimitive?.doubleOrNull,
                 chapterTitle = obj["chapterTitle"]?.jsonPrimitive?.contentOrNull,
+            )
+            "history" -> ReaderEvent.History(
+                canGoBack = obj["canGoBack"]?.jsonPrimitive?.booleanOrNull ?: false,
+                canGoForward = obj["canGoForward"]?.jsonPrimitive?.booleanOrNull ?: false,
             )
             "error" -> ReaderEvent.Error(obj["message"]?.jsonPrimitive?.contentOrNull ?: "Reader error")
             "tap" -> obj["x"]?.jsonPrimitive?.doubleOrNull?.let { ReaderEvent.Tap(it) }

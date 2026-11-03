@@ -111,6 +111,8 @@ class ReaderController {
     fun goToFraction(value: Double) = command(buildJsonObject { put("type", "goToFraction"); put("value", value) }.toString())
     fun next() = command(buildJsonObject { put("type", "next") }.toString())
     fun prev() = command(buildJsonObject { put("type", "prev") }.toString())
+    fun historyBack() = command(buildJsonObject { put("type", "historyBack") }.toString())
+    fun historyForward() = command(buildJsonObject { put("type", "historyForward") }.toString())
 
     /** Replace the set of highlights drawn in the page. Only CFI-anchored, resolvable ones are drawn. */
     fun setAnnotations(items: List<BookAnnotation>) {

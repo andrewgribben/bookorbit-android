@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.Pause
@@ -49,9 +51,20 @@ import com.bookorbit.feature.player.speedLabel
  */
 enum class ReaderBottomBarContent { PROGRESS, NARRATION_PLAYER }
 
+private fun historyTint(enabled: Boolean) = if (enabled) Color.White else Color.White.copy(alpha = 0.3f)
+
 /** Narration off: chapter + percentage line and a scrubber that jumps on release (approved mockup). */
 @Composable
-fun ReadingProgressBar(chapterTitle: String?, percentage: Int, onSeek: (Float) -> Unit, modifier: Modifier = Modifier) {
+fun ReadingProgressBar(
+    chapterTitle: String?,
+    percentage: Int,
+    onSeek: (Float) -> Unit,
+    canGoBack: Boolean,
+    canGoForward: Boolean,
+    onBack: () -> Unit,
+    onForward: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var dragging by remember { mutableStateOf<Float?>(null) }
     val shown = dragging ?: (percentage / 100f)
     val description = stringResource(R.string.reading_position)
@@ -66,13 +79,22 @@ fun ReadingProgressBar(chapterTitle: String?, percentage: Int, onSeek: (Float) -
             )
             Text("${(shown * 100).toInt()}%", color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(start = 8.dp))
         }
-        Slider(
-            value = shown.coerceIn(0f, 1f),
-            onValueChange = { dragging = it },
-            onValueChangeFinished = { dragging?.let(onSeek); dragging = null },
-            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = 0.3f)),
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = description },
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            // Return to where you were before a jump (TOC, link, search, scrubber), like Readest.
+            IconButton(onClick = onBack, enabled = canGoBack) {
+                Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = stringResource(R.string.reader_history_back), tint = historyTint(canGoBack))
+            }
+            Slider(
+                value = shown.coerceIn(0f, 1f),
+                onValueChange = { dragging = it },
+                onValueChangeFinished = { dragging?.let(onSeek); dragging = null },
+                colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = 0.3f)),
+                modifier = Modifier.weight(1f).semantics { contentDescription = description },
+            )
+            IconButton(onClick = onForward, enabled = canGoForward) {
+                Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = stringResource(R.string.reader_history_forward), tint = historyTint(canGoForward))
+            }
+        }
     }
 }
 

@@ -74,6 +74,7 @@ fun ReaderScreen(
     var rendererFailed by remember { mutableStateOf(false) }
     var chromeVisible by rememberSaveable { mutableStateOf(true) }
     var tocVisible by remember { mutableStateOf(false) }
+    var history by remember { mutableStateOf(ReaderEvent.History(canGoBack = false, canGoForward = false)) }
     var settingsVisible by remember { mutableStateOf(false) }
     var highlightsVisible by remember { mutableStateOf(false) }
     var searchVisible by remember { mutableStateOf(false) }
@@ -117,6 +118,7 @@ fun ReaderScreen(
                 is ReaderEvent.Ready -> ready = true
                 is ReaderEvent.Loaded -> vm.onLoaded(event.toc, event.title, event.hasMediaOverlay)
                 is ReaderEvent.Relocate -> vm.onRelocate(event.cfi, event.fraction, event.chapterTitle)
+                is ReaderEvent.History -> history = event
                 is ReaderEvent.Error -> vm.onError(event.message)
                 is ReaderEvent.Tap -> onTap.value(event.x)
                 is ReaderEvent.SearchResults -> vm.onSearchResults(event.label, event.hits)
@@ -282,6 +284,10 @@ fun ReaderScreen(
                         chapterTitle = ui.chapterTitle,
                         percentage = ui.percentage,
                         onSeek = { controller.goToFraction(it.toDouble()) },
+                        canGoBack = history.canGoBack,
+                        canGoForward = history.canGoForward,
+                        onBack = controller::historyBack,
+                        onForward = controller::historyForward,
                     )
                 }
             }
