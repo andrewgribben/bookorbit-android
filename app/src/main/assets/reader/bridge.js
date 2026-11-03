@@ -135,6 +135,154 @@ function serializeToc(items) {
   }));
 }
 
+/* --------------------------------------------------------- narration/SMIL */
+// EPUB 3 Media Overlays (read-along narration). Audio actually plays through the native Media3
+// stack (PlayerManager/PlaybackService), never the WebView - this module only parses SMIL timing
+// and drives the highlight that foliate's own view.js wiring (below) already knows how to draw.
+const SMIL_NS = 'http://www.w3.org/ns/SMIL';
+/** EPUB 3 spec default for `book.media.activeClass` when the package doesn't set one. */
+const DEFAULT_ACTIVE_CLASS = '-epub-media-overlay-active';
+
+/** `activeClass`/`playbackActiveClass` for the book currently open, or null without narration. */
+let narrationActiveClass = null;
+let narrationPlaybackActiveClass = null;
+
+// Ported from epub.js's internal (unexported) `parseClock`/`resolveURL` - MediaOverlay#loadSMIL
+// uses the same two helpers, but they're module-private, so narration timing is parsed
+// independently here rather than depending on foliate internals that aren't part of its API.
+function parseSmilClock(str) {
+  if (!str) return undefined;
+  const parts = str.split(':').map((x) => parseFloat(x));
+  if (parts.length === 3) {
+    const [h, m, s] = parts;
+    return h * 60 * 60 + m * 60 + s;
+  }
+  if (parts.length === 2) {
+    const [m, s] = parts;
+    return m * 60 + s;
+  }
+  const match = str.match(/^([\d.]+)([a-z]*)$/i);
+  if (!match) return parseFloat(str) || 0;
+  const n = parseFloat(match[1]);
+  const unit = match[2];
+  const f = unit === 'h' ? 60 * 60 : unit === 'min' ? 60 : unit === 'ms' ? 0.001 : 1;
+  return n * f;
+}
+
+function resolveSmilRef(url, relativeTo) {
+  if (!url) return null;
+  try {
+    if (relativeTo.includes(':')) return new URL(url, relativeTo).href;
+    const root = 'https://invalid.invalid/';
+    const obj = new URL(url, root + relativeTo);
+    obj.search = '';
+    return decodeURI(obj.href.replace(root, ''));
+  } catch {
+    return url;
+  }
+}
+
+/** Builds the whole book's narration timeline by parsing every section's SMIL file, in natural
+ * reading order. `audioSrcs` are EPUB-internal zip paths the host extracts with the same
+ * resolution foliate itself uses for `book.loadBlob`, so they double as zip entry names. */
+async function buildNarrationTimeline() {
+  const book = view?.book;
+  if (!book) return null;
+  const sections = book.sections ?? [];
+  const audioSrcs = [];
+  const audioIndexBySrc = new Map();
+  const items = [];
+
+  for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+    const mo = sections[sectionIndex]?.mediaOverlay;
+    if (!mo?.href) continue;
+    let xmlText;
+    try {
+      xmlText = await book.loadText(mo.href);
+    } catch {
+      continue;
+    }
+    if (!xmlText) continue;
+    let doc;
+    try {
+      doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+    } catch {
+      continue;
+    }
+    if (doc.getElementsByTagName('parsererror').length) continue;
+
+    let pars = [...doc.getElementsByTagNameNS(SMIL_NS, 'par')];
+    if (pars.length === 0) pars = [...doc.getElementsByTagName('par')];
+
+    for (const par of pars) {
+      const children = [...par.children];
+      const textEl = children.find((c) => c.localName === 'text');
+      const audioEl = children.find((c) => c.localName === 'audio');
+      if (!textEl || !audioEl) continue;
+      const textHref = resolveSmilRef(textEl.getAttribute('src'), mo.href);
+      const audioSrc = resolveSmilRef(audioEl.getAttribute('src'), mo.href);
+      if (!textHref || !audioSrc) continue;
+      const beginSec = parseSmilClock(audioEl.getAttribute('clipBegin')) ?? 0;
+      const clipEnd = audioEl.getAttribute('clipEnd');
+      const endSec = clipEnd ? parseSmilClock(clipEnd) ?? null : null;
+
+      let audioIndex = audioIndexBySrc.get(audioSrc);
+      if (audioIndex === undefined) {
+        audioIndex = audioSrcs.length;
+        audioSrcs.push(audioSrc);
+        audioIndexBySrc.set(audioSrc, audioIndex);
+      }
+      items.push({ sectionIndex, textHref, beginSec, endSec, audioIndex });
+    }
+  }
+
+  if (items.length === 0 || audioSrcs.length === 0) return null;
+
+  // The section the user had open when narration was turned on, so playback starts there instead
+  // of from the beginning of the book (mirrors MediaOverlay#start's own section-then-href match).
+  const currentHref = view?.lastLocation?.source ?? null;
+  const currentSectionIndex = currentHref ? sections.findIndex((s) => s.id === currentHref) : -1;
+  let startTextHref = null;
+  if (currentSectionIndex >= 0) {
+    for (let i = currentSectionIndex; i < sections.length && !startTextHref; i++) {
+      startTextHref = items.find((it) => it.sectionIndex === i)?.textHref ?? null;
+    }
+  }
+  if (!startTextHref) startTextHref = items[0].textHref;
+
+  return {
+    audioSrcs,
+    items,
+    activeClass: book.media?.activeClass || DEFAULT_ACTIVE_CLASS,
+    playbackActiveClass: book.media?.playbackActiveClass || null,
+    startTextHref,
+  };
+}
+
+/** Injects a default highlight style for the book's active-overlay class into a freshly loaded
+ * section, unless the book's own stylesheet already styles that class. */
+function injectDefaultNarrationStyle(doc) {
+  if (!narrationActiveClass || !doc) return;
+  try {
+    const alreadyStyled = [...doc.styleSheets].some((sheet) => {
+      try {
+        return [...sheet.cssRules].some(
+          (r) => typeof r.selectorText === 'string' && r.selectorText.includes(`.${narrationActiveClass}`),
+        );
+      } catch {
+        return false;
+      }
+    });
+    if (alreadyStyled) return;
+    const style = doc.createElement('style');
+    style.setAttribute('data-bookorbit-narration', '1');
+    style.textContent = `.${narrationActiveClass} { background-color: rgba(255, 204, 0, 0.35); border-radius: 2px; }`;
+    doc.head?.appendChild(style);
+  } catch {
+    /* best-effort default styling only */
+  }
+}
+
 /* ------------------------------------------------------- annotations */
 // Highlight drawing mirrors client/src/features/reader/epub/composables/useFoliateAnnotations.ts.
 /** cfi -> { color, style } for every highlight currently drawn. */
@@ -396,6 +544,7 @@ function createView() {
   view.addEventListener('load', (e) => {
     const { doc, index } = e.detail ?? {};
     if (doc) attachDocHandlers(doc, index);
+    if (doc) injectDefaultNarrationStyle(doc);
   });
 
   view.addEventListener('draw-annotation', (e) => {
@@ -466,9 +615,14 @@ async function openBook(meta, parts) {
 
     applyStyles(meta.settings ?? currentSettings);
 
+    const hasMediaOverlay = !!view.book?.sections?.some((s) => s.mediaOverlay);
+    narrationActiveClass = hasMediaOverlay ? view.book.media?.activeClass || DEFAULT_ACTIVE_CLASS : null;
+    narrationPlaybackActiveClass = hasMediaOverlay ? view.book.media?.playbackActiveClass || null : null;
+
     post({
       type: 'loaded',
       toc: serializeToc(view.book?.toc),
+      hasMediaOverlay,
       metadata: {
         title: view.book?.metadata?.title ?? null,
         language: view.book?.metadata?.language ?? null,
@@ -563,6 +717,20 @@ window.__readerCommand = (json) => {
       break;
     case 'clearSearch':
       clearSearch();
+      break;
+    case 'narrationPrepare':
+      void buildNarrationTimeline()
+        .then((timeline) => {
+          if (timeline) post({ type: 'narrationTimeline', ...timeline });
+          else post({ type: 'narrationTimelineError', message: "Couldn't read this book's narration" });
+        })
+        .catch((e) => post({ type: 'narrationTimelineError', message: e?.message ?? "Couldn't read this book's narration" }));
+      break;
+    case 'narrationHighlight':
+      if (cmd.textHref) view.mediaOverlay?.dispatchEvent(new CustomEvent('highlight', { detail: { text: cmd.textHref } }));
+      break;
+    case 'narrationUnhighlight':
+      view.mediaOverlay?.dispatchEvent(new CustomEvent('unhighlight'));
       break;
     default:
       break;

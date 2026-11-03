@@ -10,9 +10,18 @@ import com.bookorbit.core.model.BookBookmark
 import com.bookorbit.core.storage.LocalRef
 import com.bookorbit.feature.bookdetail.BookDetailRepository
 import com.bookorbit.feature.downloads.DownloadsRepository
+import com.bookorbit.feature.player.PlayerManager
+import com.bookorbit.feature.reader.narration.NarrationAudioExtractor
+import com.bookorbit.feature.reader.narration.NarrationItem
+import com.bookorbit.feature.reader.narration.NarrationLocator
+import com.bookorbit.feature.reader.narration.NarrationMediaItems
+import com.bookorbit.feature.reader.narration.NarrationTimeline
 import com.bookorbit.feature.sessions.ReadingSessionTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -32,6 +41,8 @@ class ReaderViewModel @Inject constructor(
     private val sessions: ReadingSessionTracker,
     private val annotationRepo: ReaderAnnotationRepository,
     private val bookmarkRepo: ReaderBookmarkRepository,
+    private val playerManager: PlayerManager,
+    private val narrationExtractor: NarrationAudioExtractor,
 ) : ViewModel() {
 
     val bookId: Int = savedStateHandle.get<Int>("id") ?: 0
@@ -70,7 +81,22 @@ class ReaderViewModel @Inject constructor(
         val toolbar: ToolbarTarget? = null,
         /** One-shot message for the screen to toast, then clear via [consumeMessage]. */
         val message: UiText? = null,
+        /** True when this EPUB has EPUB 3 Media Overlays — gates the "Listen" toggle. */
+        val hasMediaOverlay: Boolean = false,
+        /** True once narration has been turned on and a queue is loaded in [PlayerManager]. */
+        val narrationOn: Boolean = false,
+        val narrationLoading: Boolean = false,
+        /** The text href foliate should currently highlight, or null to clear it. */
+        val narrationHighlightTextHref: String? = null,
     )
+
+    /** One-shot instructions for the screen to run on [ReaderController] — narration's SMIL parsing
+     * and highlight drawing both happen in the WebView, so this VM only tells it what to do. */
+    sealed interface ReaderCommand {
+        data object NarrationPrepare : ReaderCommand
+        data class NarrationHighlight(val textHref: String) : ReaderCommand
+        data object NarrationUnhighlight : ReaderCommand
+    }
 
     /** In-book search: the query, matches grouped by chapter as they stream in, and progress. */
     data class SearchState(
@@ -87,6 +113,13 @@ class ReaderViewModel @Inject constructor(
 
     private val _ui = MutableStateFlow(UiState())
     val ui = _ui.asStateFlow()
+
+    private val _commands = MutableSharedFlow<ReaderCommand>(extraBufferCapacity = 8)
+    val commands = _commands.asSharedFlow()
+
+    private var narrationTimeline: NarrationTimeline? = null
+    private var narrationSorted: List<NarrationItem> = emptyList()
+    private var narrationWatchJob: Job? = null
 
     private var lastSaved = 0L
     private var pending: Pair<String?, Double>? = null
@@ -130,8 +163,93 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun onLoaded(toc: List<TocItem>, title: String?) {
-        _ui.update { it.copy(loaded = true, toc = toc, chapterTitle = it.chapterTitle ?: title) }
+    fun onLoaded(toc: List<TocItem>, title: String?, hasMediaOverlay: Boolean = false) {
+        _ui.update { it.copy(loaded = true, toc = toc, chapterTitle = it.chapterTitle ?: title, hasMediaOverlay = hasMediaOverlay) }
+    }
+
+    // --- narration (EPUB 3 Media Overlays) ---
+
+    /** Turns narration on (prepares the timeline, then starts the native player) or off. */
+    fun toggleNarration() {
+        if (_ui.value.narrationOn || _ui.value.narrationLoading) {
+            stopNarration()
+        } else {
+            _ui.update { it.copy(narrationLoading = true) }
+            viewModelScope.launch { _commands.emit(ReaderCommand.NarrationPrepare) }
+        }
+    }
+
+    private fun stopNarration() {
+        narrationWatchJob?.cancel()
+        narrationWatchJob = null
+        narrationTimeline = null
+        narrationSorted = emptyList()
+        playerManager.stopNarration()
+        _ui.update { it.copy(narrationOn = false, narrationLoading = false, narrationHighlightTextHref = null) }
+        viewModelScope.launch { _commands.emit(ReaderCommand.NarrationUnhighlight) }
+    }
+
+    /** The WebView finished parsing SMIL for every section; extract its audio and start playing. */
+    fun onNarrationReady(timeline: NarrationTimeline) {
+        val resolved = _ui.value.resolved
+        if (resolved == null) {
+            onNarrationFailed(null)
+            return
+        }
+        narrationTimeline = timeline
+        narrationSorted = NarrationLocator.sortForLookup(timeline.items)
+        viewModelScope.launch {
+            try {
+                val files = narrationExtractor.extract(resolved.ref, bookId, timeline.audioSrcs)
+                val mediaItems = NarrationMediaItems.build(_ui.value.title, files)
+                val startItem = timeline.startTextHref
+                    ?.let { href -> timeline.items.firstOrNull { it.textHref == href } }
+                    ?: timeline.items.firstOrNull()
+                val startIndex = startItem?.audioIndex ?: 0
+                val startPositionMs = ((startItem?.beginSec ?: 0.0) * 1000).toLong()
+                playerManager.loadNarrationQueue(mediaItems, startIndex, startPositionMs, autoPlay = true)
+                _ui.update { it.copy(narrationOn = true, narrationLoading = false) }
+                watchNarrationPosition()
+            } catch (e: Exception) {
+                onNarrationFailed(e.message)
+            }
+        }
+    }
+
+    fun onNarrationFailed(message: String?) {
+        narrationTimeline = null
+        narrationSorted = emptyList()
+        _ui.update {
+            it.copy(
+                narrationLoading = false,
+                narrationOn = false,
+                message = message?.let(UiText::raw) ?: UiText.of(R.string.narration_err_unavailable),
+            )
+        }
+    }
+
+    /** Follows [PlayerManager]'s narration position, pushing the matching highlight to the WebView
+     * and clearing local state if narration is stopped elsewhere (e.g. the notification's stop
+     * action, or another queue replacing it). */
+    private fun watchNarrationPosition() {
+        narrationWatchJob?.cancel()
+        narrationWatchJob = viewModelScope.launch {
+            playerManager.state.collect { s ->
+                if (!s.narrationActive) {
+                    if (_ui.value.narrationOn) {
+                        _ui.update { it.copy(narrationOn = false, narrationHighlightTextHref = null) }
+                        _commands.emit(ReaderCommand.NarrationUnhighlight)
+                    }
+                    return@collect
+                }
+                val position = NarrationLocator.Position(s.narrationMediaIndex, s.narrationPositionMs / 1000.0)
+                val href = NarrationLocator.locate(narrationSorted, position)?.textHref
+                if (href != _ui.value.narrationHighlightTextHref) {
+                    _ui.update { it.copy(narrationHighlightTextHref = href) }
+                    _commands.emit(if (href != null) ReaderCommand.NarrationHighlight(href) else ReaderCommand.NarrationUnhighlight)
+                }
+            }
+        }
     }
 
     /** Keep the last reading position and reset page state before a fresh WebView is created. */

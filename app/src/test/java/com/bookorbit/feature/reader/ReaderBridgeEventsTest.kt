@@ -1,5 +1,7 @@
 package com.bookorbit.feature.reader
 
+import com.bookorbit.feature.reader.narration.NarrationItem
+import com.bookorbit.feature.reader.narration.NarrationTimeline
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -58,5 +60,64 @@ class ReaderBridgeEventsTest {
         assertEquals(ReaderEvent.SearchProgress(0.5), ReaderBridge.parseEvent("""{"type":"searchProgress","progress":0.5}"""))
         assertEquals(ReaderEvent.SearchDone(3, true), ReaderBridge.parseEvent("""{"type":"searchDone","total":3,"capped":true}"""))
         assertEquals(ReaderEvent.SearchDone(0, false), ReaderBridge.parseEvent("""{"type":"searchDone"}"""))
+    }
+
+    @Test
+    fun `loaded without hasMediaOverlay defaults to false`() {
+        val e = ReaderBridge.parseEvent("""{"type":"loaded","toc":[],"metadata":{}}""") as ReaderEvent.Loaded
+        assertEquals(false, e.hasMediaOverlay)
+    }
+
+    @Test
+    fun `loaded reports hasMediaOverlay when the bridge detected one`() {
+        val e = ReaderBridge.parseEvent("""{"type":"loaded","toc":[],"metadata":{},"hasMediaOverlay":true}""") as ReaderEvent.Loaded
+        assertEquals(true, e.hasMediaOverlay)
+    }
+
+    @Test
+    fun `parses a narration timeline`() {
+        val json = """
+            {
+              "type": "narrationTimeline",
+              "audioSrcs": ["audio/ch1.mp3", "audio/ch2.mp3"],
+              "items": [
+                {"sectionIndex": 0, "textHref": "ch1.xhtml#p1", "beginSec": 0.0, "endSec": 2.5, "audioIndex": 0},
+                {"sectionIndex": 1, "textHref": "ch2.xhtml#p1", "beginSec": 0.0, "audioIndex": 1}
+              ],
+              "activeClass": "-epub-media-overlay-active",
+              "playbackActiveClass": "media-overlay-playing",
+              "startTextHref": "ch1.xhtml#p1"
+            }
+        """.trimIndent()
+        val e = ReaderBridge.parseEvent(json) as ReaderEvent.NarrationReady
+        assertEquals(listOf("audio/ch1.mp3", "audio/ch2.mp3"), e.timeline.audioSrcs)
+        assertEquals(2, e.timeline.items.size)
+        assertEquals(NarrationItem(0, "ch1.xhtml#p1", 0.0, 2.5, 0), e.timeline.items[0])
+        assertEquals(NarrationItem(1, "ch2.xhtml#p1", 0.0, null, 1), e.timeline.items[1])
+        assertEquals("media-overlay-playing", e.timeline.playbackActiveClass)
+        assertEquals("ch1.xhtml#p1", e.timeline.startTextHref)
+    }
+
+    @Test
+    fun `a narration timeline without an activeClass falls back to the EPUB 3 default`() {
+        val json = """
+            {"type":"narrationTimeline","audioSrcs":["a.mp3"],
+             "items":[{"sectionIndex":0,"textHref":"c.xhtml","beginSec":0.0,"audioIndex":0}]}
+        """.trimIndent()
+        val e = ReaderBridge.parseEvent(json) as ReaderEvent.NarrationReady
+        assertEquals(NarrationTimeline.DEFAULT_ACTIVE_CLASS, e.timeline.activeClass)
+        assertNull(e.timeline.playbackActiveClass)
+    }
+
+    @Test
+    fun `a narration timeline with no items fails instead of parsing empty`() {
+        val e = ReaderBridge.parseEvent("""{"type":"narrationTimeline","audioSrcs":["a.mp3"],"items":[]}""")
+        assertTrue(e is ReaderEvent.NarrationFailed)
+    }
+
+    @Test
+    fun `parses an explicit narration timeline error`() {
+        val e = ReaderBridge.parseEvent("""{"type":"narrationTimelineError","message":"boom"}""") as ReaderEvent.NarrationFailed
+        assertEquals("boom", e.message)
     }
 }

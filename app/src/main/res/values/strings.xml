@@ -330,6 +330,9 @@
     <string name="reader_err_highlight_save">Couldn\'t save the highlight.</string>
     <string name="reader_err_highlight_delete">Couldn\'t delete the highlight.</string>
     <string name="reader_err_generic">Reader error</string>
+    <string name="narration_listen">Listen (narration)</string>
+    <string name="narration_stop_listening">Stop listening</string>
+    <string name="narration_err_unavailable">Couldn\'t read this book\'s narration.</string>
     <string name="pdf_err_open">Could not open this PDF.</string>
     <string name="pdf_no_text">No selectable text on this page</string>
     <string name="pdf_text_copied">Page text copied</string>
