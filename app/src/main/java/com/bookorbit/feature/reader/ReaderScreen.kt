@@ -112,6 +112,23 @@ fun ReaderScreen(
         onDispose { view.keepScreenOn = false }
     }
 
+    // Volume keys and hardware arrows turn pages while this screen is showing (task 2): the
+    // registry is consulted from MainActivity.dispatchKeyEvent, not Compose focus, so it works
+    // regardless of whether the WebView currently holds focus.
+    DisposableEffect(controller) {
+        val onPageTurn: (PageTurnKey) -> Unit = { turn ->
+            when (turn) {
+                PageTurnKey.NEXT -> controller.next()
+                PageTurnKey.PREVIOUS -> controller.prev()
+            }
+        }
+        ReaderKeyBindings.enter(onPageTurn)
+        onDispose { ReaderKeyBindings.leave(onPageTurn) }
+    }
+    LaunchedEffect(ui.controlsSettings.volumeKeysTurnPages) {
+        ReaderKeyBindings.setVolumeKeysEnabled(ui.controlsSettings.volumeKeysTurnPages)
+    }
+
     // Tapping the page centre toggles the reader's own chrome and Android's system bars together
     // (see readerWantsSystemBarsVisible for the exact rule), so there is one coherent immersive
     // state rather than two bar sets that can disagree. The WebView itself is never resized by

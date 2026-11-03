@@ -90,6 +90,19 @@ fun ComicReaderScreen(
         onDispose { view.keepScreenOn = false }
     }
 
+    // Volume keys and hardware arrows turn pages while this screen is showing (task 2); the
+    // actual handler is whatever the current scroll mode's composable below installs (pager vs.
+    // scroll-by-one-screen), via this shared ref.
+    val pageTurnHandler = remember { mutableStateOf<(com.bookorbit.feature.reader.PageTurnKey) -> Unit>({}) }
+    DisposableEffect(Unit) {
+        val onPageTurn: (com.bookorbit.feature.reader.PageTurnKey) -> Unit = { turn -> pageTurnHandler.value(turn) }
+        com.bookorbit.feature.reader.ReaderKeyBindings.enter(onPageTurn)
+        onDispose { com.bookorbit.feature.reader.ReaderKeyBindings.leave(onPageTurn) }
+    }
+    LaunchedEffect(ui.controlsSettings.volumeKeysTurnPages) {
+        com.bookorbit.feature.reader.ReaderKeyBindings.setVolumeKeysEnabled(ui.controlsSettings.volumeKeysTurnPages)
+    }
+
     val backgroundColor = comicBackgroundColor(settings)
 
     Box(Modifier.fillMaxSize().background(backgroundColor)) {
@@ -102,7 +115,7 @@ fun ComicReaderScreen(
                     Button(onClick = onBack, modifier = Modifier.padding(start = 12.dp)) { Text(stringResource(R.string.back)) }
                 }
             }
-            else -> ComicPages(ui, settings, vm, onToggleChrome = { chromeVisible = !chromeVisible })
+            else -> ComicPages(ui, settings, vm, onToggleChrome = { chromeVisible = !chromeVisible }, pageTurnHandler = pageTurnHandler)
         }
 
         if (chromeVisible) {
@@ -169,11 +182,12 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPages(
     settings: ComicReaderSettings,
     vm: ComicReaderViewModel,
     onToggleChrome: () -> Unit,
+    pageTurnHandler: androidx.compose.runtime.MutableState<(com.bookorbit.feature.reader.PageTurnKey) -> Unit>,
 ) {
     when (settings.scrollMode) {
-        ComicScrollMode.PAGINATED -> ComicPagedPages(ui, settings, vm, onToggleChrome)
-        ComicScrollMode.INFINITE -> ComicScrollStrip(ui, settings, vm, gap = 16.dp)
-        ComicScrollMode.LONG_STRIP -> ComicScrollStrip(ui, settings, vm, gap = 0.dp)
+        ComicScrollMode.PAGINATED -> ComicPagedPages(ui, settings, vm, onToggleChrome, pageTurnHandler)
+        ComicScrollMode.INFINITE -> ComicScrollStrip(ui, settings, vm, gap = 16.dp, pageTurnHandler = pageTurnHandler)
+        ComicScrollMode.LONG_STRIP -> ComicScrollStrip(ui, settings, vm, gap = 0.dp, pageTurnHandler = pageTurnHandler)
     }
 }
 
@@ -185,6 +199,7 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPagedPages(
     settings: ComicReaderSettings,
     vm: ComicReaderViewModel,
     onToggleChrome: () -> Unit,
+    pageTurnHandler: androidx.compose.runtime.MutableState<(com.bookorbit.feature.reader.PageTurnKey) -> Unit>,
 ) {
     val rtl = settings.direction == ComicDirection.RTL
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -219,6 +234,21 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPagedPages(
             }
         }
         LaunchedEffect(pagerState.currentPage) { zoomed = false }
+
+        // Volume keys / hardware arrows (task 2): NEXT/PREVIOUS always move by one spread,
+        // unmirrored for RTL (same rule as [resolveKeyPageTurn]'s doc comment).
+        LaunchedEffect(pagerState, spreads.size) {
+            pageTurnHandler.value = { turn ->
+                scope.launch {
+                    when (turn) {
+                        com.bookorbit.feature.reader.PageTurnKey.NEXT ->
+                            if (pagerState.currentPage < spreads.size - 1) pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                        com.bookorbit.feature.reader.PageTurnKey.PREVIOUS ->
+                            if (pagerState.currentPage > 0) pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                    }
+                }
+            }
+        }
 
         HorizontalPager(
             state = pagerState,
@@ -328,10 +358,26 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicScrollStrip(
     settings: ComicReaderSettings,
     vm: ComicReaderViewModel,
     gap: androidx.compose.ui.unit.Dp,
+    pageTurnHandler: androidx.compose.runtime.MutableState<(com.bookorbit.feature.reader.PageTurnKey) -> Unit>,
 ) {
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = ui.initialPage)
     LaunchedEffect(listState) {
         snapshotFlow { listState.firstVisibleItemIndex }.collect { vm.onPageChanged(it) }
+    }
+    val scrollScope = androidx.compose.runtime.rememberCoroutineScope()
+    // Volume keys / hardware arrows (task 2): "next/previous scrolls by one screen" in the
+    // infinite modes - each item fills the viewport width end-to-end, so one item is one screen.
+    LaunchedEffect(listState, ui.pageCount) {
+        pageTurnHandler.value = { turn ->
+            scrollScope.launch {
+                when (turn) {
+                    com.bookorbit.feature.reader.PageTurnKey.NEXT ->
+                        listState.animateScrollToItem((listState.firstVisibleItemIndex + 1).coerceAtMost((ui.pageCount - 1).coerceAtLeast(0)))
+                    com.bookorbit.feature.reader.PageTurnKey.PREVIOUS ->
+                        listState.animateScrollToItem((listState.firstVisibleItemIndex - 1).coerceAtLeast(0))
+                }
+            }
+        }
     }
 
     var scale by remember { mutableFloatStateOf(1f) }
