@@ -36,8 +36,19 @@ val READER_THEMES = listOf(
 
 private val THEME_BY_NAME = READER_THEMES.associateBy { it.name }
 
+/**
+ * Whether the reader should actually render in its dark palette. AMOLED is a dark-only theme (its
+ * "light" pair is a deliberately unreadable white-on-white placeholder, see the swatch values
+ * above) but [ReaderSettings.isDark] is a separate, independently toggled preference — so a user
+ * could reach "amoled" theme + light mode (stale settings, or picking the swatch before switching
+ * mode) and get no forced background at all in bridge.js's generateCSS, leaving the publisher's own
+ * page background visible instead of true black. Forcing dark here, and in the mirrored check in
+ * bridge.js's generateCSS, is the fix: AMOLED always renders dark regardless of the isDark flag.
+ */
+fun effectiveIsDark(themeName: String, isDark: Boolean): Boolean = isDark || themeName == "amoled"
+
 /** Background color a theme renders for the given mode — used to tint the reader surface. */
 fun themeBackgroundColor(themeName: String, isDark: Boolean): Color {
     val theme = THEME_BY_NAME[themeName] ?: READER_THEMES.first()
-    return Color(if (isDark) theme.darkBg else theme.lightBg)
+    return Color(if (effectiveIsDark(themeName, isDark)) theme.darkBg else theme.lightBg)
 }

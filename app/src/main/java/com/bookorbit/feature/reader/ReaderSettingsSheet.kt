@@ -55,8 +55,9 @@ fun ReaderSettingsSheet(
             Label(stringResource(R.string.rs_label_theme))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 READER_THEMES.forEach { theme ->
-                    val bg = Color(if (settings.isDark) theme.darkBg else theme.lightBg)
-                    val fg = Color(if (settings.isDark) theme.darkFg else theme.lightFg)
+                    val themeIsDark = effectiveIsDark(theme.name, settings.isDark)
+                    val bg = Color(if (themeIsDark) theme.darkBg else theme.lightBg)
+                    val fg = Color(if (themeIsDark) theme.darkFg else theme.lightFg)
                     val selected = settings.themeName == theme.name
                     Box(
                         modifier = Modifier
@@ -68,7 +69,13 @@ fun ReaderSettingsSheet(
                                 color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
                                 shape = CircleShape,
                             )
-                            .clickable { onChange(settings.copy(themeName = theme.name)) },
+                            // AMOLED is a dark-only theme (see ReaderThemes.effectiveIsDark), so
+                            // selecting it also forces isDark on, keeping the mode chips below in
+                            // sync with what's actually rendered rather than leaving the Light
+                            // chip selectable while the page renders dark regardless.
+                            .clickable {
+                                onChange(settings.copy(themeName = theme.name, isDark = effectiveIsDark(theme.name, settings.isDark)))
+                            },
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(stringResource(R.string.a), color = fg, fontWeight = FontWeight.Bold)
@@ -78,7 +85,13 @@ fun ReaderSettingsSheet(
 
             Label(stringResource(R.string.rs_label_mode))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = !settings.isDark, onClick = { onChange(settings.copy(isDark = false)) }, label = { Text(stringResource(R.string.light)) })
+                val amoled = settings.themeName == "amoled"
+                FilterChip(
+                    selected = !settings.isDark,
+                    enabled = !amoled,
+                    onClick = { onChange(settings.copy(isDark = false)) },
+                    label = { Text(stringResource(R.string.light)) },
+                )
                 FilterChip(selected = settings.isDark, onClick = { onChange(settings.copy(isDark = true)) }, label = { Text(stringResource(R.string.dark)) })
             }
 
