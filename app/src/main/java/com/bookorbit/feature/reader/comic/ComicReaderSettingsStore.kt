@@ -41,6 +41,19 @@ class ComicReaderSettingsStore @Inject constructor(
     suspend fun loadGlobal(): ComicReaderSettings =
         decodeOrNull(context.comicReaderDataStore.data.first()[globalKey]) ?: ComicReaderSettings()
 
+    /**
+     * Like [loadGlobal], but migrates the old `AppSettingsStore.comicRtl` toggle into the new
+     * settings' [ComicReaderSettings.direction] the first time Global is ever loaded (no saved
+     * Global settings yet) - a saved Global config always wins once one exists.
+     */
+    suspend fun loadGlobalOrMigrateRtl(legacyRtl: Boolean): ComicReaderSettings {
+        val existing = decodeOrNull(context.comicReaderDataStore.data.first()[globalKey])
+        if (existing != null) return existing
+        val migrated = ComicReaderSettings(direction = if (legacyRtl) ComicDirection.RTL else ComicDirection.LTR)
+        saveGlobal(migrated)
+        return migrated
+    }
+
     suspend fun saveGlobal(settings: ComicReaderSettings) {
         context.comicReaderDataStore.edit { it[globalKey] = encode(settings) }
     }

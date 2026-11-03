@@ -50,7 +50,7 @@ class ComicReaderPreferencesRepositoryTest {
     @Test
     fun `loadGlobalEffective returns the local copy untouched when sync is off`() = runTest {
         every { session.currentUser } returns userWithSync(false)
-        coEvery { store.loadGlobal() } returns ComicReaderSettings(fitMode = ComicFitMode.FIT_WIDTH)
+        coEvery { store.loadGlobalOrMigrateRtl(any()) } returns ComicReaderSettings(fitMode = ComicFitMode.FIT_WIDTH)
 
         val result = repo.loadGlobalEffective()
 
@@ -61,7 +61,7 @@ class ComicReaderPreferencesRepositoryTest {
     @Test
     fun `loadGlobalEffective merges the server's cbx default on top of local and saves it`() = runTest {
         every { session.currentUser } returns userWithSync(true)
-        coEvery { store.loadGlobal() } returns ComicReaderSettings()
+        coEvery { store.loadGlobalOrMigrateRtl(any()) } returns ComicReaderSettings()
         coEvery { api.getReaderDefaults() } returns JsonObject(
             mapOf("cbx" to JsonObject(mapOf("fitMode" to JsonPrimitive("fit-height"), "bgColor" to JsonPrimitive("white")))),
         )
@@ -77,7 +77,7 @@ class ComicReaderPreferencesRepositoryTest {
     fun `loadGlobalEffective falls back to local when the server call fails`() = runTest {
         every { session.currentUser } returns userWithSync(true)
         val local = ComicReaderSettings(fitMode = ComicFitMode.ACTUAL)
-        coEvery { store.loadGlobal() } returns local
+        coEvery { store.loadGlobalOrMigrateRtl(any()) } returns local
         coEvery { api.getReaderDefaults() } throws RuntimeException("offline")
 
         assertEquals(local, repo.loadGlobalEffective())

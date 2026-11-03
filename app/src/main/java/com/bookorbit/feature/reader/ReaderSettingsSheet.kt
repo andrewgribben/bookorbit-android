@@ -20,14 +20,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bookmarks
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -586,21 +583,11 @@ private fun PlaybackRow(
 }
 
 @Composable
-private fun Label(text: String) {
-    Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-}
+private fun Label(text: String) = SectionLabel(text)
 
 @Composable
-private fun LockedNote(text: String) {
-    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-}
+private fun LockedNote(text: String) = LockedOrHintNote(text)
 
 @Composable
-private fun Stepper(label: String, value: String, enabled: Boolean = true, onDecrement: () -> Unit, onIncrement: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        IconButton(onClick = onDecrement, enabled = enabled) { Icon(Icons.Filled.Remove, contentDescription = stringResource(R.string.decrease_named, label)) }
-        Text(value, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(horizontal = 8.dp))
-        IconButton(onClick = onIncrement, enabled = enabled) { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.increase_named, label)) }
-    }
-}
+private fun Stepper(label: String, value: String, enabled: Boolean = true, onDecrement: () -> Unit, onIncrement: () -> Unit) =
+    SettingsStepper(label, value, enabled, onDecrement, onIncrement)

@@ -35,10 +35,13 @@ class ComicReaderPreferencesRepository @Inject constructor(
     /**
      * On opening the comic reader (or the settings sheet) in Global scope: if sync is on, pull the
      * server's `cbx` default and apply it on top of the local Global settings, persisting the
-     * merged result locally; otherwise just return what's stored locally. Never throws.
+     * merged result locally; otherwise just return what's stored locally. [legacyRtl] is
+     * `AppSettingsStore.comicRtl`'s current value, used only to seed [ComicReaderSettings.direction]
+     * the very first time Global is loaded (see [ComicReaderSettingsStore.loadGlobalOrMigrateRtl]).
+     * Never throws.
      */
-    suspend fun loadGlobalEffective(): ComicReaderSettings {
-        val local = store.loadGlobal()
+    suspend fun loadGlobalEffective(legacyRtl: Boolean = false): ComicReaderSettings {
+        val local = store.loadGlobalOrMigrateRtl(legacyRtl)
         if (!syncEnabled()) return local
         val serverCbx = fetchServerCbxDefaults() ?: return local
         val merged = fromSyncJson(local, serverCbx)
