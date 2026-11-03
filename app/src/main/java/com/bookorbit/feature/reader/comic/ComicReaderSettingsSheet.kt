@@ -49,13 +49,11 @@ import com.bookorbit.feature.reader.SettingsStepper
 private const val LOCKED_ALPHA = 0.45f
 
 /**
- * Tabs in the comic reader's Configure sheet (owner decision 6): Layout, Spreads, Theme. The
- * ebook reader's Controls tab (owner decision 2, shared app-wide) is not wired yet - TODO hook
- * for a later task: add `CONTROLS` here and a `ComicControlsTab` composable once tap-zone
- * customisation lands, following the same no-footer pattern as [tab] != THEME/LAYOUT/SPREADS
- * guards below.
+ * Tabs in the comic reader's Configure sheet: Layout, Spreads, Controls, Theme. Controls
+ * (owner decision 2) is the one tab shared with the ebook reader's own Configure sheet -
+ * see [com.bookorbit.feature.reader.ReaderControlsTab].
  */
-enum class ComicSettingsTab { LAYOUT, SPREADS, THEME }
+enum class ComicSettingsTab { LAYOUT, SPREADS, CONTROLS, THEME }
 
 /**
  * Comic reader Configure sheet. Same component language as the ebook
@@ -76,15 +74,18 @@ fun ComicReaderSettingsSheet(
     onSaveAsDefault: () -> Unit,
     onResetToSavedDefault: () -> Unit,
     onRestoreBuiltIn: () -> Unit,
+    controlsSettings: com.bookorbit.feature.reader.ReaderControlsSettings,
+    onControlsSettingsChange: (com.bookorbit.feature.reader.ReaderControlsSettings) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var showResetDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
     var tab by remember { mutableStateOf(ComicSettingsTab.LAYOUT) }
 
+    val isControls = tab == ComicSettingsTab.CONTROLS
     val isThisBook = scope == ReaderSettingsScope.THIS_BOOK
     val settings = if (isThisBook) effectiveComicSettings(globalSettings, bookState) else globalSettings
-    val scopeEditable = !isThisBook || !bookState.useGlobal
+    val scopeEditable = !isControls && (!isThisBook || !bookState.useGlobal)
     val scopeName = stringResource(if (isThisBook) R.string.rs_scope_name_this_book else R.string.rs_scope_name_global)
 
     fun onChange(updated: ComicReaderSettings) {
@@ -102,13 +103,18 @@ fun ComicReaderSettingsSheet(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.cr_configure), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = !isThisBook, onClick = { onScopeChange(ReaderSettingsScope.GLOBAL) }, label = { Text(stringResource(R.string.rs_scope_global)) })
-                    FilterChip(selected = isThisBook, onClick = { onScopeChange(ReaderSettingsScope.THIS_BOOK) }, label = { Text(stringResource(R.string.rs_scope_this_book)) })
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.alpha(if (isControls) LOCKED_ALPHA else 1f),
+                ) {
+                    FilterChip(selected = !isThisBook, enabled = !isControls, onClick = { onScopeChange(ReaderSettingsScope.GLOBAL) }, label = { Text(stringResource(R.string.rs_scope_global)) })
+                    FilterChip(selected = isThisBook, enabled = !isControls, onClick = { onScopeChange(ReaderSettingsScope.THIS_BOOK) }, label = { Text(stringResource(R.string.rs_scope_this_book)) })
                 }
             }
 
-            if (isThisBook) {
+            if (isControls) {
+                com.bookorbit.feature.reader.LockedOrHintNote(stringResource(R.string.rc_app_wide_note))
+            } else if (isThisBook) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.rs_use_global_settings), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                     Switch(checked = bookState.useGlobal, onCheckedChange = onUseGlobalChange)
@@ -125,24 +131,32 @@ fun ComicReaderSettingsSheet(
             TabRow(selectedTabIndex = tab.ordinal) {
                 Tab(selected = tab == ComicSettingsTab.LAYOUT, onClick = { tab = ComicSettingsTab.LAYOUT }, text = { Text(stringResource(R.string.cr_tab_layout)) })
                 Tab(selected = tab == ComicSettingsTab.SPREADS, onClick = { tab = ComicSettingsTab.SPREADS }, text = { Text(stringResource(R.string.cr_tab_spreads)) })
+                Tab(selected = tab == ComicSettingsTab.CONTROLS, onClick = { tab = ComicSettingsTab.CONTROLS }, text = { Text(stringResource(R.string.cr_tab_controls)) })
                 Tab(selected = tab == ComicSettingsTab.THEME, onClick = { tab = ComicSettingsTab.THEME }, text = { Text(stringResource(R.string.cr_tab_theme)) })
             }
 
             when (tab) {
                 ComicSettingsTab.LAYOUT -> ComicLayoutTab(settings, scopeEditable, ::onChange)
                 ComicSettingsTab.SPREADS -> ComicSpreadsTab(settings, scopeEditable, ::onChange)
+                ComicSettingsTab.CONTROLS -> com.bookorbit.feature.reader.ReaderControlsTab(
+                    settings = controlsSettings,
+                    onChange = onControlsSettingsChange,
+                    isComicContext = true,
+                )
                 ComicSettingsTab.THEME -> ComicThemeTab(settings, scopeEditable, ::onChange)
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 8.dp)) {
-                Button(onClick = onSaveAsDefault, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.rs_save_as_default))
-                }
-                OutlinedButton(onClick = { showResetDialog = true }, enabled = scopeEditable, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.rs_reset_to_default))
-                }
-                TextButton(onClick = { showRestoreDialog = true }, enabled = scopeEditable, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.rs_restore_built_in))
+            if (!isControls) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 8.dp)) {
+                    Button(onClick = onSaveAsDefault, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.rs_save_as_default))
+                    }
+                    OutlinedButton(onClick = { showResetDialog = true }, enabled = scopeEditable, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.rs_reset_to_default))
+                    }
+                    TextButton(onClick = { showRestoreDialog = true }, enabled = scopeEditable, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.rs_restore_built_in))
+                    }
                 }
             }
         }

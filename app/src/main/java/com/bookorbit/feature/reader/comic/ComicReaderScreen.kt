@@ -62,6 +62,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.bookorbit.ui.LocalImageUrls
+import com.bookorbit.feature.reader.ReaderControlsSettings
+import com.bookorbit.feature.reader.TapAction
+import com.bookorbit.feature.reader.resolveTapAction
 import kotlinx.coroutines.launch
 
 private const val MAX_ZOOM = 4f
@@ -138,6 +141,8 @@ fun ComicReaderScreen(
             onSaveAsDefault = { vm.saveAsDefault(ui.scope) },
             onResetToSavedDefault = { vm.resetToSavedDefault(ui.scope) },
             onRestoreBuiltIn = { vm.restoreBuiltInDefaults(ui.scope) },
+            controlsSettings = ui.controlsSettings,
+            onControlsSettingsChange = vm::updateControlsSettings,
             onDismiss = vm::dismissConfigureSheet,
         )
     }
@@ -185,20 +190,32 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPagedPages(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val widthDp = with(LocalDensity.current) { constraints.maxWidth.toDp().value.toInt() }
         val isTwoPage = effectiveTwoPage(settings, widthDp)
-        // Wide-page auto-detection from loaded image dimensions is deferred (see PLAN.md/card notes):
-        // pairing always treats pages as non-wide for now, so Wide pages: Auto behaves like Disabled.
-        val layout = remember(ui.pageCount, isTwoPage, settings.direction, settings.spreadAlignment, settings.widePageSingletonMode) {
-            comicSpreadLayout(ui.pageCount, isTwoPage, settings.direction, settings.spreadAlignment, settings.widePageSingletonMode)
+        // Wide-page auto-detection (from each page's loaded image size, see
+        // ComicReaderViewModel.markPageDimensions): recomputes pairing as pages are discovered to
+        // be wide, keeping the anchor page that was on screen in view (no jump) - see the
+        // pagerState sync LaunchedEffect below.
+        val isWidePage: (Int) -> Boolean = remember(ui.widePages) { { page -> page in ui.widePages } }
+        val layout = remember(ui.pageCount, isTwoPage, settings.direction, settings.spreadAlignment, settings.widePageSingletonMode, ui.widePages) {
+            comicSpreadLayout(ui.pageCount, isTwoPage, settings.direction, settings.spreadAlignment, settings.widePageSingletonMode, isWidePage)
         }
         val spreads = layout.spreads
         val initialSpreadIndex = layout.spreadIndexForPage(ui.initialPage).coerceIn(0, (spreads.size - 1).coerceAtLeast(0))
         val pagerState = rememberPagerState(initialPage = initialSpreadIndex, pageCount = { spreads.size })
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         var zoomed by remember { mutableStateOf(false) }
+        // Keep the same anchor page in view when a wide-page discovery reshuffles spreads/indices.
+        var lastAnchor by remember { mutableStateOf(ui.initialPage) }
+        LaunchedEffect(layout) {
+            val targetIndex = layout.spreadIndexForPage(lastAnchor).coerceIn(0, (spreads.size - 1).coerceAtLeast(0))
+            if (targetIndex != pagerState.currentPage) pagerState.scrollToPage(targetIndex)
+        }
 
         LaunchedEffect(pagerState, spreads) {
             snapshotFlow { pagerState.currentPage }.collect { index ->
-                spreads.getOrNull(index)?.let { vm.onPageChanged(it.anchorPage) }
+                spreads.getOrNull(index)?.let {
+                    lastAnchor = it.anchorPage
+                    vm.onPageChanged(it.anchorPage)
+                }
             }
         }
         LaunchedEffect(pagerState.currentPage) { zoomed = false }
@@ -220,16 +237,23 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPagedPages(
                     fitMode = settings.fitMode,
                     active = spreadIndex == pagerState.currentPage,
                     onZoomChanged = { if (spreadIndex == pagerState.currentPage) zoomed = it },
-                    onTap = { fraction ->
-                        handleTap(fraction, rtl, scope, pagerState, spreads.size, onToggleChrome)
+                    onTap = { xFraction, yFraction ->
+                        handleTap(ui.controlsSettings, xFraction, yFraction, rtl, scope, pagerState, spreads.size, onToggleChrome)
                     },
+                    onImageSize = { w, h -> vm.markPageDimensions(spread.pages.first(), w, h) },
+                    doubleTapZoomEnabled = ui.controlsSettings.doubleTapZoomEnabled,
                 )
             } else {
                 Row(Modifier.fillMaxSize()) {
                     val ordered = if (rtl) spread.pages.reversed() else spread.pages
                     ordered.forEachIndexed { i, page ->
                         Box(Modifier.weight(1f).fillMaxHeight()) {
-                            SpreadPageImage(source = checkNotNull(ui.source), page = page, fitMode = settings.fitMode)
+                            SpreadPageImage(
+                                source = checkNotNull(ui.source),
+                                page = page,
+                                fitMode = settings.fitMode,
+                                onImageSize = { w, h -> vm.markPageDimensions(page, w, h) },
+                            )
                         }
                         if (i != ordered.lastIndex && settings.spreadGap > 0) {
                             Box(Modifier.width(settings.spreadGap.dp).fillMaxHeight())
@@ -269,25 +293,35 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPagedPages(
     }
 }
 
+/**
+ * Resolves and applies a tap using the app-wide Controls settings (owner decisions 2/5),
+ * replacing the reader's old hard-coded 30% left/right/centre zones: [controls] supplies the
+ * zone layout preset, zone size, per-zone action overrides and the RTL-mirror rule - see
+ * [com.bookorbit.feature.reader.resolveTapAction].
+ */
 private fun handleTap(
-    fraction: Float,
+    controls: ReaderControlsSettings,
+    xFraction: Float,
+    yFraction: Float,
     rtl: Boolean,
     scope: kotlinx.coroutines.CoroutineScope,
     pagerState: androidx.compose.foundation.pager.PagerState,
     pageCount: Int,
     onToggleChrome: () -> Unit,
 ) {
-    val forward = if (rtl) fraction < 0.3f else fraction > 0.7f
-    val backward = if (rtl) fraction > 0.7f else fraction < 0.3f
-    when {
-        forward -> scope.launch { if (pagerState.currentPage < pageCount - 1) pagerState.animateScrollToPage(pagerState.currentPage + 1) }
-        backward -> scope.launch { if (pagerState.currentPage > 0) pagerState.animateScrollToPage(pagerState.currentPage - 1) }
-        else -> onToggleChrome()
+    when (controls.resolveTapAction(xFraction, yFraction, rtl)) {
+        TapAction.NEXT -> scope.launch { if (pagerState.currentPage < pageCount - 1) pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+        TapAction.PREVIOUS -> scope.launch { if (pagerState.currentPage > 0) pagerState.animateScrollToPage(pagerState.currentPage - 1) }
+        TapAction.MENU -> onToggleChrome()
+        TapAction.NOTHING -> Unit
     }
 }
 
-/** Infinite/No-gaps mode: a vertical strip of pages, [gap] apart. No per-page zoom (scope-limited
- * for this round); the current page for progress is the topmost mostly-visible item. */
+/** Infinite/No-gaps mode: a vertical strip of pages, [gap] apart, with pinch and double-tap zoom
+ * over the whole strip (not per-page): both gestures scale/translate the list as a unit via
+ * [graphicsLayer], and list scrolling is suspended while zoomed so a pan drag doesn't fight the
+ * [LazyColumn]'s own scroll. The current page for progress is the topmost mostly-visible item. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.ComicScrollStrip(
     ui: ComicReaderViewModel.UiState,
@@ -299,13 +333,57 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicScrollStrip(
     LaunchedEffect(listState) {
         snapshotFlow { listState.firstVisibleItemIndex }.collect { vm.onPageChanged(it) }
     }
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(gap),
+
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    var size by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+
+    fun clamp(o: Offset, s: Float): Offset {
+        val maxX = (size.width * (s - 1f)) / 2f
+        val maxY = (size.height * (s - 1f)) / 2f
+        return Offset(o.x.coerceIn(-maxX, maxX), o.y.coerceIn(-maxY, maxY))
+    }
+
+    val transform = rememberTransformableState { zoomChange, panChange, _ ->
+        scale = (scale * zoomChange).coerceIn(1f, MAX_ZOOM)
+        offset = clamp(offset + panChange * scale, scale)
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onSizeChanged { size = it }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onDoubleTap = { pos ->
+                        if (scale > 1.02f) {
+                            scale = 1f
+                            offset = Offset.Zero
+                        } else {
+                            scale = 2.5f
+                            offset = clamp(Offset((size.width / 2f - pos.x) * 1.5f, (size.height / 2f - pos.y) * 1.5f), scale)
+                        }
+                    },
+                )
+            }
+            .transformable(state = transform, canPan = { scale > 1.02f }),
     ) {
-        items(count = ui.pageCount, key = { it }) { page ->
-            StripPageImage(source = checkNotNull(ui.source), page = page, fitMode = settings.fitMode)
+        LazyColumn(
+            state = listState,
+            userScrollEnabled = scale <= 1.02f,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = offset.x
+                    translationY = offset.y
+                },
+            verticalArrangement = Arrangement.spacedBy(gap),
+        ) {
+            items(count = ui.pageCount, key = { it }) { page ->
+                StripPageImage(source = checkNotNull(ui.source), page = page, fitMode = settings.fitMode)
+            }
         }
     }
 }
@@ -324,7 +402,7 @@ private fun StripPageImage(source: ComicPageSource, page: Int, fitMode: ComicFit
 }
 
 @Composable
-private fun SpreadPageImage(source: ComicPageSource, page: Int, fitMode: ComicFitMode) {
+private fun SpreadPageImage(source: ComicPageSource, page: Int, fitMode: ComicFitMode, onImageSize: (Int, Int) -> Unit = { _, _ -> }) {
     val imageUrls = LocalImageUrls.current
     val context = LocalContext.current
     val model: Any = remember(source, page) { comicPageModel(source, page, imageUrls, context) }
@@ -332,6 +410,10 @@ private fun SpreadPageImage(source: ComicPageSource, page: Int, fitMode: ComicFi
         model = model,
         contentDescription = stringResource(R.string.page, page + 1),
         contentScale = fitMode.toContentScale(),
+        onSuccess = { state ->
+            val drawable = state.result.drawable
+            onImageSize(drawable.intrinsicWidth, drawable.intrinsicHeight)
+        },
         modifier = Modifier.fillMaxSize(),
     )
 }
@@ -357,7 +439,9 @@ private fun ZoomablePage(
     fitMode: ComicFitMode,
     active: Boolean,
     onZoomChanged: (Boolean) -> Unit,
-    onTap: (Float) -> Unit,
+    onTap: (Float, Float) -> Unit,
+    onImageSize: (Int, Int) -> Unit = { _, _ -> },
+    doubleTapZoomEnabled: Boolean = true,
 ) {
     val imageUrls = LocalImageUrls.current
     val context = LocalContext.current
@@ -366,6 +450,7 @@ private fun ZoomablePage(
     // always see the latest lambdas (e.g. after the reading direction flips).
     val currentOnTap by rememberUpdatedState(onTap)
     val currentOnZoomChanged by rememberUpdatedState(onZoomChanged)
+    val currentDoubleTapZoomEnabled by rememberUpdatedState(doubleTapZoomEnabled)
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var size by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
@@ -394,17 +479,19 @@ private fun ZoomablePage(
             .fillMaxSize()
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onTap = { pos -> currentOnTap(pos.x / size.width.coerceAtLeast(1)) },
+                    onTap = { pos -> currentOnTap(pos.x / size.width.coerceAtLeast(1), pos.y / size.height.coerceAtLeast(1)) },
                     onDoubleTap = { pos ->
-                        if (scale > 1.02f) {
-                            scale = 1f
-                            offset = Offset.Zero
-                        } else {
-                            scale = 2.5f
-                            // Zoom toward the tapped point.
-                            offset = clamp(Offset((size.width / 2f - pos.x) * 1.5f, (size.height / 2f - pos.y) * 1.5f), scale)
+                        if (currentDoubleTapZoomEnabled) {
+                            if (scale > 1.02f) {
+                                scale = 1f
+                                offset = Offset.Zero
+                            } else {
+                                scale = 2.5f
+                                // Zoom toward the tapped point.
+                                offset = clamp(Offset((size.width / 2f - pos.x) * 1.5f, (size.height / 2f - pos.y) * 1.5f), scale)
+                            }
+                            currentOnZoomChanged(scale > 1.02f)
                         }
-                        currentOnZoomChanged(scale > 1.02f)
                     },
                 )
             }
@@ -416,6 +503,10 @@ private fun ZoomablePage(
             model = model,
             contentDescription = stringResource(R.string.page, page + 1),
             contentScale = fitMode.toContentScale(),
+            onSuccess = { state ->
+                val drawable = state.result.drawable
+                onImageSize(drawable.intrinsicWidth, drawable.intrinsicHeight)
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .onSizeChanged { size = it }

@@ -557,4 +557,32 @@
     <string name="cr_auto_advance">Auto-advance to next book</string>
     <string name="cr_keep_screen_on">Keep screen on</string>
     <string name="cr_configure">Configure</string>
+
+    <!-- Controls tab (stage 5, owner decision 2/5): app-wide, device-only tap/gesture settings
+         shared by the comic and ebook Configure sheets. No Save/Reset/Restore footer and the
+         Global/This book scope switch is disabled here, unlike every other tab. -->
+    <string name="cr_tab_controls">Controls</string>
+    <string name="rc_app_wide_note">Controls apply to every book and comic on this device.</string>
+    <string name="rc_zone_layout">Tap zone layout</string>
+    <string name="rc_layout_sides">Sides</string>
+    <string name="rc_layout_sides_and_corners">Sides and corners</string>
+    <string name="rc_layout_edges">Edges</string>
+    <string name="rc_layout_centre_only">Centre only</string>
+    <string name="rc_zone_size">Zone size</string>
+    <string name="rc_zone_size_narrow">Narrow</string>
+    <string name="rc_zone_size_medium">Medium</string>
+    <string name="rc_zone_size_wide">Wide</string>
+    <string name="rc_zones">Zones</string>
+    <string name="rc_zone_action_hint">Tap a zone to choose what it does</string>
+    <string name="rc_action_next">Next page</string>
+    <string name="rc_action_previous">Previous page</string>
+    <string name="rc_action_menu">Show menu</string>
+    <string name="rc_action_nothing">Nothing</string>
+    <string name="rc_mirror_rtl">Mirror for right-to-left</string>
+    <string name="rc_swipe_to_turn">Swipe to turn pages</string>
+    <string name="rc_double_tap_zoom">Double-tap to zoom</string>
+    <string name="rc_double_tap_zoom_ebook_note">In an ebook, double-tap selects a word instead - this control does not apply here.</string>
+    <string name="rc_volume_keys">Volume keys turn pages</string>
+    <string name="rc_infinite_scroll_hint">In the infinite modes, next/previous scroll by one screen.</string>
+    <string name="rc_scrolled_hint">In scrolled mode, next/previous scroll by one screen.</string>
 </resources>

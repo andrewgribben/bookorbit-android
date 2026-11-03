@@ -13,6 +13,8 @@ import com.bookorbit.core.storage.LocalRef
 import com.bookorbit.core.wallpaper.CoverWallpaperFollowController
 import com.bookorbit.feature.bookdetail.BookDetailRepository
 import com.bookorbit.feature.downloads.DownloadsRepository
+import com.bookorbit.feature.reader.ReaderControlsSettings
+import com.bookorbit.feature.reader.ReaderControlsStore
 import com.bookorbit.feature.reader.ReaderProgressRepository
 import com.bookorbit.feature.reader.ReaderSettingsScope
 import com.bookorbit.feature.sessions.ReadingSessionTracker
@@ -48,6 +50,7 @@ class ComicReaderViewModel @Inject constructor(
     private val settingsStore: ComicReaderSettingsStore,
     private val preferencesRepo: ComicReaderPreferencesRepository,
     private val wallpaperFollow: CoverWallpaperFollowController,
+    private val controlsStore: ReaderControlsStore,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -71,6 +74,13 @@ class ComicReaderViewModel @Inject constructor(
         val showConfigureSheet: Boolean = false,
         /** One-shot message for the screen to toast, then clear via [consumeMessage]. */
         val message: UiText? = null,
+        /** Pages whose loaded image aspect ratio marks them as wide (see [isWidePageAspect]),
+         * discovered as each page's image finishes loading - see [markPageDimensions]. Drives
+         * [ComicWidePageMode.AUTO] pairing once a page is known to be wide. */
+        val widePages: Set<Int> = emptySet(),
+        /** App-wide tap/gesture Controls (owner decisions 2 and 5): device-only, no Global/This-
+         * book scope - shared verbatim with the ebook reader's own Controls tab. */
+        val controlsSettings: ReaderControlsSettings = ReaderControlsSettings(),
     ) {
         /** What's actually applied to the reader: the book's own override, else Global. */
         val effective: ComicReaderSettings get() = effectiveComicSettings(globalSettings, bookState)
@@ -86,6 +96,7 @@ class ComicReaderViewModel @Inject constructor(
     init {
         load()
         loadSettings()
+        loadControlsSettings()
         wallpaperFollow.noteOpenBook(bookId)
     }
 
@@ -150,6 +161,20 @@ class ComicReaderViewModel @Inject constructor(
 
     fun openConfigureSheet() = _ui.update { it.copy(showConfigureSheet = true) }
     fun dismissConfigureSheet() = _ui.update { it.copy(showConfigureSheet = false) }
+
+    /** Loads the app-wide Controls settings (device-only, no scope - see [ReaderControlsStore]). */
+    private fun loadControlsSettings() {
+        viewModelScope.launch {
+            val settings = controlsStore.load()
+            _ui.update { it.copy(controlsSettings = settings) }
+        }
+    }
+
+    /** Edited from the Controls tab; applies immediately and persists app-wide. */
+    fun updateControlsSettings(settings: ReaderControlsSettings) {
+        _ui.update { it.copy(controlsSettings = settings) }
+        viewModelScope.launch { controlsStore.save(settings) }
+    }
 
     fun setScope(scope: ReaderSettingsScope) = _ui.update { it.copy(scope = scope) }
 
@@ -235,6 +260,15 @@ class ComicReaderViewModel @Inject constructor(
     }
 
     fun consumeMessage() = _ui.update { it.copy(message = null) }
+
+    /** Called once a page's image finishes loading, with its decoded pixel size (Coil's
+     * `onSuccess`/a local bounds decode) - detects wide pages for [ComicWidePageMode.AUTO]
+     * without re-decoding on every recomposition. Only updates state (and so only triggers a
+     * spread recompute) the first time a page is found to be wide. */
+    fun markPageDimensions(page: Int, widthPx: Int, heightPx: Int) {
+        if (!isWidePageAspect(widthPx, heightPx)) return
+        _ui.update { if (page in it.widePages) it else it.copy(widePages = it.widePages + page) }
+    }
 
     /** The downloaded CBZ for [fileId], if there is one and it opens with at least one page. */
     private suspend fun openLocal(fileId: Int, format: String?): ComicPageSource.Local? {
