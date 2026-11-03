@@ -56,6 +56,7 @@ const DEFAULT_SETTINGS = {
   fontSize: 16,
   lineHeight: 1.5,
   fontFamily: null,
+  paragraphSpacing: 0,
   maxColumnCount: 2,
   gap: 0.05,
   maxInlineSize: 720,
@@ -65,6 +66,11 @@ const DEFAULT_SETTINGS = {
   isDark: false,
   themeName: 'default',
   flow: 'paginated',
+  useBookLayout: true,
+  marginTop: 40,
+  marginBottom: 40,
+  marginLeft: 40,
+  marginRight: 40,
 };
 
 function themeFor(name) {
@@ -73,35 +79,32 @@ function themeFor(name) {
 
 // Ported from useReaderState.generateCSS — keep changes in sync with the web client.
 //
+// Stage 2 ("use book layout") split this into two layers:
+//  - themeCSS: always applied. Only touches color/background (light/sepia/dark/amoled + text
+//    color), never font-family/line-height/alignment/hyphenation, so the publisher's own
+//    typography and layout survive even when a dark theme is forced on for readability.
+//  - overrideCSS: only applied when `s.useBookLayout` is false. Carries every reader-chosen
+//    typographic/layout preference that used to be forced unconditionally with `!important`.
+//
 // AMOLED is a dark-only theme (its `light` pair, #000 fg on #fff bg, is a deliberately
 // unreadable placeholder — see THEMES above), so it must render dark regardless of `s.isDark`.
 // Without this, picking the amoled swatch while `isDark` is false leaves `forceBg` false
 // (amoled's `light.bg` is exactly '#ffffff') and no background gets forced onto the page at all,
 // so the publisher's own (often off-white/grey) stylesheet shows through instead of true black.
 // Keep this forcing in sync with ReaderThemes.kt's effectiveIsDark() on the Kotlin side.
-function generateCSS(s) {
+function themeCSS(s) {
   const theme = themeFor(s.themeName);
   const dark = s.isDark || s.themeName === 'amoled';
   const mode = dark ? theme.dark : theme.light;
   const forceBg = dark || theme.light.bg !== '#ffffff';
-  const fontFamilyRule = s.fontFamily
-    ? `body { font-family: ${s.fontFamily} !important; } body * { font-family: inherit !important; }`
-    : '';
   return `
     @namespace epub "http://www.idpf.org/2007/ops";
     @media print { html { column-width: auto !important; height: auto !important; width: auto !important; } }
     @media screen {
-      html { color-scheme: ${dark ? 'dark' : 'light'}; color: ${mode.fg}; font-size: ${s.fontSize}px; }
-      ${fontFamilyRule}
+      html { color-scheme: ${dark ? 'dark' : 'light'}; color: ${mode.fg}; }
       a:any-link { color: ${mode.link}; text-underline-offset: .1em; }
       aside[epub|type~="footnote"] { display: none; }
     }
-    html { line-height: ${s.lineHeight}; hanging-punctuation: allow-end last; orphans: 2; widows: 2; }
-    [align="left"] { text-align: left; } [align="right"] { text-align: right; }
-    [align="center"] { text-align: center; } [align="justify"] { text-align: justify; }
-    :is(hgroup, header) p { text-align: unset; hyphens: unset; }
-    h1, h2, h3, h4, h5, h6, hgroup, th { text-wrap: balance; }
-    pre { white-space: pre-wrap !important; tab-size: 2; }
     ${
       forceBg
         ? `html, body { color: ${mode.fg} !important; background: none !important; }
@@ -112,9 +115,37 @@ function generateCSS(s) {
            svg, img { background-color: transparent !important; ${!dark ? 'mix-blend-mode: multiply;' : ''} }`
         : ''
     }
-    p, li, blockquote, dd { line-height: ${s.lineHeight}; text-align: ${s.justify ? 'justify' : 'start'} !important; hyphens: ${s.hyphenate ? 'auto' : 'none'}; }
     ::selection { background-color: rgba(128, 128, 128, 0.3); }
   `;
+}
+
+// Only reached when `s.useBookLayout` is false (see themeCSS doc above). Every rule here used to
+// be unconditional in the pre-stage-2 generateCSS; now it is the opt-in "my own settings" layer.
+function overrideCSS(s) {
+  const fontFamilyRule = s.fontFamily
+    ? `body { font-family: ${s.fontFamily} !important; } body * { font-family: inherit !important; }`
+    : '';
+  const paragraphSpacingRule = s.paragraphSpacing
+    ? `p, li, blockquote, dd { margin-bottom: ${s.paragraphSpacing}em !important; }`
+    : '';
+  return `
+    @media screen {
+      html { font-size: ${s.fontSize}px; }
+      ${fontFamilyRule}
+    }
+    html { line-height: ${s.lineHeight}; hanging-punctuation: allow-end last; orphans: 2; widows: 2; }
+    [align="left"] { text-align: left; } [align="right"] { text-align: right; }
+    [align="center"] { text-align: center; } [align="justify"] { text-align: justify; }
+    :is(hgroup, header) p { text-align: unset; hyphens: unset; }
+    h1, h2, h3, h4, h5, h6, hgroup, th { text-wrap: balance; }
+    pre { white-space: pre-wrap !important; tab-size: 2; }
+    p, li, blockquote, dd { line-height: ${s.lineHeight}; text-align: ${s.justify ? 'justify' : 'start'} !important; hyphens: ${s.hyphenate ? 'auto' : 'none'}; }
+    ${paragraphSpacingRule}
+  `;
+}
+
+function generateCSS(s) {
+  return themeCSS(s) + (s.useBookLayout ? '' : overrideCSS(s));
 }
 
 // Ported from useReaderState.applyToRenderer.
@@ -128,8 +159,16 @@ function applyStyles(settings) {
   r.setAttribute('gap', `${s.gap * 100}%`);
   r.setAttribute('max-inline-size', `${s.maxInlineSize}px`);
   r.setAttribute('max-block-size', `${s.maxBlockSize}px`);
-  if (s.flow === 'paginated') r.setAttribute('margin', '40px');
-  else r.removeAttribute('margin');
+  // Four independent page margins (paginator.js was extended from one `margin` attribute to
+  // these four, see that file's comments) - margins are a user layout setting, part of the
+  // override layer like the rest of Layout tab, so they only take their reader-chosen values
+  // when book layout is off; book layout on always uses the publisher's own in-page spacing by
+  // falling back to the built-in default margin (still needed as a safe frame around the page).
+  const m = s.useBookLayout ? DEFAULT_SETTINGS : s;
+  r.setAttribute('margin-top', `${m.marginTop}px`);
+  r.setAttribute('margin-bottom', `${m.marginBottom}px`);
+  r.setAttribute('margin-left', `${m.marginLeft}px`);
+  r.setAttribute('margin-right', `${m.marginRight}px`);
   r.setAttribute('flow', s.flow);
   if (typeof r.setStyles === 'function') r.setStyles(generateCSS(s));
 }
