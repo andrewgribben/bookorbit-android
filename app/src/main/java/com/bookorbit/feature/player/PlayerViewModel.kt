@@ -5,6 +5,7 @@ import com.bookorbit.ui.UiText
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bookorbit.core.model.AudiobookBookmark
+import com.bookorbit.core.wallpaper.CoverWallpaperController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,6 +18,7 @@ import javax.inject.Inject
 class PlayerViewModel @Inject constructor(
     private val manager: PlayerManager,
     private val bookmarkRepo: AudiobookBookmarkRepository,
+    private val wallpaper: CoverWallpaperController,
 ) : ViewModel() {
     val state = manager.state
 
@@ -69,6 +71,17 @@ class PlayerViewModel @Inject constructor(
             runCatching { bookmarkRepo.delete(bookId, id) }
                 .onSuccess { _bookmarks.update { list -> list.filterNot { it.id == id } } }
                 .onFailure { _message.value = UiText.of(R.string.player_bookmark_err_delete) }
+        }
+    }
+
+    fun setCoverAsWallpaper() {
+        val bookId = state.value.currentBook?.id ?: return
+        viewModelScope.launch {
+            _message.value = when (wallpaper.apply(bookId)) {
+                CoverWallpaperController.Outcome.SET -> UiText.of(R.string.wallpaper_result_set)
+                CoverWallpaperController.Outcome.NO_COVER -> UiText.of(R.string.wallpaper_result_no_cover)
+                CoverWallpaperController.Outcome.FAILED -> UiText.of(R.string.wallpaper_result_failed)
+            }
         }
     }
 }
