@@ -18,7 +18,7 @@ import kotlinx.serialization.json.jsonObject
  * applies every override field below instead. Theme/mode are never gated by this flag - they are
  * a reader preference, not a publisher-authored layout property.
  *
- * Migration (existing installs): see [ReaderSettingsStore.load] - users who already had a stored
+ * Migration (existing installs): see [ReaderSettingsStore.loadGlobal] - users who already had a stored
  * settings blob before this field existed are treated as "already customised" and get
  * [useBookLayout] = false, so their current look does not change; fresh installs default to true.
  */

@@ -58,7 +58,12 @@ class ReaderViewModel @Inject constructor(
         val error: UiText? = null,
         val title: String? = null,
         val resolved: ResolvedOpen? = null,
-        val settings: ReaderSettings = ReaderSettings(),
+        val globalSettings: ReaderSettings = ReaderSettings(),
+        val bookState: BookSettingsState = BookSettingsState(),
+        /** Which scope the settings sheet is currently showing/editing - UI-only, not persisted. */
+        val scope: ReaderSettingsScope = ReaderSettingsScope.GLOBAL,
+        val globalSavedDefault: ReaderSettings? = null,
+        val bookSavedDefault: ReaderSettings? = null,
         val toc: List<TocItem> = emptyList(),
         val chapterTitle: String? = null,
         val percentage: Int = 0,
@@ -70,7 +75,10 @@ class ReaderViewModel @Inject constructor(
         val toolbar: ToolbarTarget? = null,
         /** One-shot message for the screen to toast, then clear via [consumeMessage]. */
         val message: UiText? = null,
-    )
+    ) {
+        /** What's actually applied to the reader: the book's own snapshot, else Global. */
+        val effective: ReaderSettings get() = effectiveSettings(globalSettings, bookState)
+    }
 
     /** In-book search: the query, matches grouped by chapter as they stream in, and progress. */
     data class SearchState(
@@ -101,10 +109,23 @@ class ReaderViewModel @Inject constructor(
 
     private fun load() {
         viewModelScope.launch {
-            val settings = settingsStore.load()
-            // Coach the paginated tap-zones once (they're invisible by design).
-            val showHint = settings.flow == "paginated" && !settingsStore.hasSeenPagingHint()
-            _ui.update { it.copy(settings = settings, showPagingHint = showHint) }
+            val settings = settingsStore.loadGlobal()
+            val bookState = settingsStore.loadBookState(bookId)
+            val globalSavedDefault = settingsStore.loadGlobalSavedDefault()
+            val bookSavedDefault = settingsStore.loadBookSavedDefault(bookId)
+            // Coach the paginated tap-zones once (they're invisible by design). Based on what's
+            // actually applied (effective), not necessarily Global.
+            val effective = effectiveSettings(settings, bookState)
+            val showHint = effective.flow == "paginated" && !settingsStore.hasSeenPagingHint()
+            _ui.update {
+                it.copy(
+                    globalSettings = settings,
+                    bookState = bookState,
+                    globalSavedDefault = globalSavedDefault,
+                    bookSavedDefault = bookSavedDefault,
+                    showPagingHint = showHint,
+                )
+            }
 
             // Fall back to the offline-downloaded copy when the network is unavailable.
             val book = runCatching { bookRepo.detail(bookId) }.getOrNull() ?: downloads.cachedBook(bookId)
@@ -309,9 +330,88 @@ class ReaderViewModel @Inject constructor(
         _ui.update { it.copy(error = UiText.raw(message)) }
     }
 
-    fun updateSettings(settings: ReaderSettings) {
-        _ui.update { it.copy(settings = settings) }
-        viewModelScope.launch { settingsStore.save(settings) }
+    /** Called from the sheet when the user edits a field for the active scope (never cross-writes). */
+    fun updateSettings(scope: ReaderSettingsScope, settings: ReaderSettings) {
+        when (scope) {
+            ReaderSettingsScope.GLOBAL -> {
+                _ui.update { it.copy(globalSettings = settings) }
+                viewModelScope.launch { settingsStore.saveGlobal(settings) }
+            }
+            ReaderSettingsScope.THIS_BOOK -> {
+                // Editing in book scope only ever writes to the book's own override, never
+                // Global, and implies the book now has (and keeps) its own settings.
+                val newState = _ui.value.bookState.copy(useGlobal = false, override = settings)
+                _ui.update { it.copy(bookState = newState) }
+                viewModelScope.launch { settingsStore.saveBookState(bookId, newState) }
+            }
+        }
+    }
+
+    fun setScope(scope: ReaderSettingsScope) = _ui.update { it.copy(scope = scope) }
+
+    /** The "Use global settings" master switch (requirement 2): one per book, all-or-nothing. */
+    fun setUseGlobal(useGlobal: Boolean) {
+        val newState = _ui.value.bookState.withUseGlobal(useGlobal, _ui.value.globalSettings)
+        _ui.update { it.copy(bookState = newState) }
+        viewModelScope.launch { settingsStore.saveBookState(bookId, newState) }
+    }
+
+    /** "Save as default" (requirement 4): saves the WHOLE current settings for [scope]. */
+    fun saveAsDefault(scope: ReaderSettingsScope) {
+        val s = _ui.value
+        when (scope) {
+            ReaderSettingsScope.GLOBAL -> {
+                _ui.update { it.copy(globalSavedDefault = s.globalSettings, message = UiText.of(R.string.rs_saved_default_global)) }
+                viewModelScope.launch { settingsStore.saveGlobalSavedDefault(s.globalSettings) }
+            }
+            ReaderSettingsScope.THIS_BOOK -> {
+                val current = s.effective
+                _ui.update { it.copy(bookSavedDefault = current, message = UiText.of(R.string.rs_saved_default_book)) }
+                viewModelScope.launch { settingsStore.saveBookSavedDefault(bookId, current) }
+            }
+        }
+    }
+
+    /**
+     * "Reset to saved default" (requirement 4): reverts the scope's current settings from its
+     * saved default, falling back from book -> Global saved default -> built-in (see
+     * [resolvedSavedDefault]). Caller must have already shown/confirmed the dialog - nothing
+     * mutates until this is called.
+     */
+    fun resetToSavedDefault(scope: ReaderSettingsScope) {
+        val s = _ui.value
+        val resolved = resolvedSavedDefault(scope, s.globalSavedDefault, s.bookSavedDefault)
+        when (scope) {
+            ReaderSettingsScope.GLOBAL -> {
+                _ui.update { it.copy(globalSettings = resolved, message = UiText.of(R.string.rs_reset_done_global)) }
+                viewModelScope.launch { settingsStore.saveGlobal(resolved) }
+            }
+            ReaderSettingsScope.THIS_BOOK -> {
+                val newState = s.bookState.copy(useGlobal = false, override = resolved)
+                _ui.update { it.copy(bookState = newState, message = UiText.of(R.string.rs_reset_done_book)) }
+                viewModelScope.launch { settingsStore.saveBookState(bookId, newState) }
+            }
+        }
+    }
+
+    /**
+     * "Restore built-in defaults" (requirement 4): resets the scope's current settings to the
+     * built-in defaults. Deliberately does NOT touch the saved default for that scope - only
+     * "Reset to saved default"/"Save as default" write that tier. Caller must have already shown
+     * the (separate) confirmation dialog.
+     */
+    fun restoreBuiltInDefaults(scope: ReaderSettingsScope) {
+        when (scope) {
+            ReaderSettingsScope.GLOBAL -> {
+                _ui.update { it.copy(globalSettings = ReaderSettings(), message = UiText.of(R.string.rs_restore_done_global)) }
+                viewModelScope.launch { settingsStore.restoreGlobalBuiltIn() }
+            }
+            ReaderSettingsScope.THIS_BOOK -> {
+                val newState = _ui.value.bookState.copy(useGlobal = false, override = ReaderSettings())
+                _ui.update { it.copy(bookState = newState, message = UiText.of(R.string.rs_restore_done_book)) }
+                viewModelScope.launch { settingsStore.saveBookState(bookId, newState) }
+            }
+        }
     }
 
     fun dismissPagingHint() {

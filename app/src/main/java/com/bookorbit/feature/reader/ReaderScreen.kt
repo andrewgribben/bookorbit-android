@@ -84,8 +84,8 @@ fun ReaderScreen(
     onTap.value = { x ->
         when {
             ui.toolbar != null -> vm.dismissToolbar()
-            ui.settings.flow == "paginated" && x < 0.3 -> controller.prev()
-            ui.settings.flow == "paginated" && x > 0.7 -> controller.next()
+            ui.effective.flow == "paginated" && x < 0.3 -> controller.prev()
+            ui.effective.flow == "paginated" && x > 0.7 -> controller.next()
             else -> chromeVisible = !chromeVisible
         }
     }
@@ -144,15 +144,21 @@ fun ReaderScreen(
         if (ready && resolved != null && !opened && !rendererFailed) {
             opened = true
             withContext(Dispatchers.IO) {
-                controller.open(openParamsFor(resolved.ref, resolved.format, resolved.initial, ui.settings), context)
+                controller.open(openParamsFor(resolved.ref, resolved.format, resolved.initial, ui.effective), context)
             }
         }
     }
 
-    val surface = themeBackgroundColor(ui.settings.themeName, ui.settings.isDark)
-    val paginated = ui.settings.flow == "paginated"
+    // Re-apply live whenever the effective settings change for any reason - editing, switching
+    // scope, flipping "Use global settings", save/reset/restore - not just the sheet's onChange.
+    LaunchedEffect(ui.effective) {
+        if (ui.loaded) controller.applyStyles(ui.effective)
+    }
+
+    val surface = themeBackgroundColor(ui.effective.themeName, ui.effective.isDark)
+    val paginated = ui.effective.flow == "paginated"
     val showChrome = chromeVisible
-    val onSurface = if (effectiveIsDark(ui.settings.themeName, ui.settings.isDark)) Color.White else Color.Black
+    val onSurface = if (effectiveIsDark(ui.effective.themeName, ui.effective.isDark)) Color.White else Color.Black
     // Bars must clear both the status bar AND the display-cutout (camera punch-hole) — on a
     // Galaxy Z Fold's inner/outer screens in particular, statusBarsPadding() alone leaves the top
     // bar under the cutout whenever the status bar inset collapses to 0 (which happens while
@@ -342,11 +348,15 @@ fun ReaderScreen(
     }
     if (settingsVisible) {
         ReaderSettingsSheet(
-            settings = ui.settings,
-            onChange = { updated ->
-                vm.updateSettings(updated)
-                controller.applyStyles(updated)
-            },
+            scope = ui.scope,
+            onScopeChange = vm::setScope,
+            globalSettings = ui.globalSettings,
+            bookState = ui.bookState,
+            onUseGlobalChange = vm::setUseGlobal,
+            onSettingsChange = { updated -> vm.updateSettings(ui.scope, updated) },
+            onSaveAsDefault = { vm.saveAsDefault(ui.scope) },
+            onResetToSavedDefault = { vm.resetToSavedDefault(ui.scope) },
+            onRestoreBuiltIn = { vm.restoreBuiltInDefaults(ui.scope) },
             onDismiss = { settingsVisible = false },
         )
     }

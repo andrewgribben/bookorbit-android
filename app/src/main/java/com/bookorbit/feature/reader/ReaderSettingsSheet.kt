@@ -20,14 +20,21 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -35,19 +42,54 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 
-/** Opacity for Typography/Layout controls while locked by [ReaderSettings.useBookLayout]. Values
- * underneath are not cleared when locked - toggling off reveals whatever was last set. */
+/** Opacity for Typography/Layout controls while locked by [ReaderSettings.useBookLayout], or
+ * while a book is following Global ("Use global settings" on). Values underneath are not
+ * cleared when locked - toggling off reveals whatever was last set. */
 private const val LOCKED_ALPHA = 0.45f
 
+/**
+ * Reader settings sheet (stage 3): a Global/This-book scope selector, the per-book "Use global
+ * settings" master switch, every style control from stage 1/2, and the Save/Reset/Restore
+ * footer actions (requirement 4/5 - style settings only, never playback).
+ *
+ * [globalSettings] and [bookState] are the two raw sources of truth; which one is shown/edited is
+ * driven entirely by [scope] and [bookState.useGlobal] - see [ReaderViewModel] for how edits are
+ * routed so Global is never written to from book scope.
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ReaderSettingsSheet(
-    settings: ReaderSettings,
-    onChange: (ReaderSettings) -> Unit,
+    scope: ReaderSettingsScope,
+    onScopeChange: (ReaderSettingsScope) -> Unit,
+    globalSettings: ReaderSettings,
+    bookState: BookSettingsState,
+    onUseGlobalChange: (Boolean) -> Unit,
+    onSettingsChange: (ReaderSettings) -> Unit,
+    onSaveAsDefault: () -> Unit,
+    onResetToSavedDefault: () -> Unit,
+    onRestoreBuiltIn: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var showResetDialog by remember { mutableStateOf(false) }
+    var showRestoreDialog by remember { mutableStateOf(false) }
+
+    val isThisBook = scope == ReaderSettingsScope.THIS_BOOK
+    // What's shown: Global's own settings in Global scope, else what's effectively applied to
+    // the book (its own override if it has stopped following Global, else Global's values shown
+    // through but locked).
+    val settings = if (isThisBook) effectiveSettings(globalSettings, bookState) else globalSettings
+    // Scope-level editability: locked entirely while a book is following Global. Independent of
+    // (and layered on top of) the existing "Use book layout" lock further below.
+    val scopeEditable = !isThisBook || !bookState.useGlobal
+    val scopeName = stringResource(if (isThisBook) R.string.rs_scope_name_this_book else R.string.rs_scope_name_global)
+
+    fun onChange(updated: ReaderSettings) {
+        if (scopeEditable) onSettingsChange(updated)
+    }
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -57,32 +99,62 @@ fun ReaderSettingsSheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            // --- Scope selector (requirement 1): available on every device, phone/Fold/tablet. ---
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = !isThisBook,
+                    onClick = { onScopeChange(ReaderSettingsScope.GLOBAL) },
+                    label = { Text(stringResource(R.string.rs_scope_global)) },
+                )
+                FilterChip(
+                    selected = isThisBook,
+                    onClick = { onScopeChange(ReaderSettingsScope.THIS_BOOK) },
+                    label = { Text(stringResource(R.string.rs_scope_this_book)) },
+                )
+            }
+
+            if (isThisBook) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.rs_use_global_settings), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Switch(checked = bookState.useGlobal, onCheckedChange = onUseGlobalChange)
+                }
+                if (bookState.useGlobal) {
+                    Text(
+                        stringResource(R.string.rs_use_global_banner),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
             val useBookLayout = settings.useBookLayout
-            val overridesEnabled = !useBookLayout
+            val overridesEnabled = scopeEditable && !useBookLayout
 
             Label(stringResource(R.string.rs_label_theme))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                READER_THEMES.forEach { theme ->
-                    val themeIsDark = effectiveIsDark(theme.name, settings.isDark)
-                    val bg = Color(if (themeIsDark) theme.darkBg else theme.lightBg)
-                    val fg = Color(if (themeIsDark) theme.darkFg else theme.lightFg)
-                    val selected = settings.themeName == theme.name
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(bg)
-                            .border(
-                                width = if (selected) 3.dp else 1.dp,
-                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                shape = CircleShape,
-                            )
-                            // AMOLED renders dark via effectiveIsDark at draw time; keep the stored
-                            // isDark untouched so leaving AMOLED restores the user's own mode.
-                            .clickable { onChange(settings.copy(themeName = theme.name)) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(stringResource(R.string.a), color = fg, fontWeight = FontWeight.Bold)
+            Column(modifier = Modifier.alpha(if (scopeEditable) 1f else LOCKED_ALPHA)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    READER_THEMES.forEach { theme ->
+                        val themeIsDark = effectiveIsDark(theme.name, settings.isDark)
+                        val bg = Color(if (themeIsDark) theme.darkBg else theme.lightBg)
+                        val fg = Color(if (themeIsDark) theme.darkFg else theme.lightFg)
+                        val selected = settings.themeName == theme.name
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(bg)
+                                .border(
+                                    width = if (selected) 3.dp else 1.dp,
+                                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                    shape = CircleShape,
+                                )
+                                // AMOLED renders dark via effectiveIsDark at draw time; keep the stored
+                                // isDark untouched so leaving AMOLED restores the user's own mode.
+                                .clickable(enabled = scopeEditable) { onChange(settings.copy(themeName = theme.name)) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(stringResource(R.string.a), color = fg, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -92,11 +164,16 @@ fun ReaderSettingsSheet(
                 val amoled = settings.themeName == "amoled"
                 FilterChip(
                     selected = !effectiveIsDark(settings.themeName, settings.isDark),
-                    enabled = !amoled,
+                    enabled = scopeEditable && !amoled,
                     onClick = { onChange(settings.copy(isDark = false)) },
                     label = { Text(stringResource(R.string.light)) },
                 )
-                FilterChip(selected = effectiveIsDark(settings.themeName, settings.isDark), onClick = { onChange(settings.copy(isDark = true)) }, label = { Text(stringResource(R.string.dark)) })
+                FilterChip(
+                    selected = effectiveIsDark(settings.themeName, settings.isDark),
+                    enabled = scopeEditable,
+                    onClick = { onChange(settings.copy(isDark = true)) },
+                    label = { Text(stringResource(R.string.dark)) },
+                )
             }
 
             // Theme/mode above are never gated by "Use book layout" - they're a reader
@@ -104,7 +181,7 @@ fun ReaderSettingsSheet(
             Label(stringResource(R.string.rs_label_book_layout))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.use_book_layout), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                Switch(checked = useBookLayout, onCheckedChange = { onChange(settings.copy(useBookLayout = it)) })
+                Switch(checked = useBookLayout, enabled = scopeEditable, onCheckedChange = { onChange(settings.copy(useBookLayout = it)) })
             }
             if (useBookLayout) {
                 Text(
@@ -142,10 +219,8 @@ fun ReaderSettingsSheet(
                     onIncrement = { onChange(settings.copy(maxColumnCount = (settings.maxColumnCount + 1).coerceIn(1, 2))) },
                 )
 
-                // Four independent page margins (requirement 4): a user layout setting, so it is
-                // gated by "Use book layout" like the rest of this tab - decided and documented in
-                // the stage-2 commit (matches the approved mockup, which lists "margins" among the
-                // Layout controls dimmed while book layout is on).
+                // Four independent page margins (requirement 4 of stage 2): a user layout
+                // setting, so it is gated by "Use book layout" like the rest of this tab.
                 Text(stringResource(R.string.rs_label_margins), style = MaterialTheme.typography.bodyLarge)
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.link_side_margins), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
@@ -253,7 +328,55 @@ fun ReaderSettingsSheet(
                     )
                 }
             }
+
+            // --- Save / Reset / Restore (requirement 4/5): footer, not the reading bar. Style
+            // settings only - never playback. ---
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 8.dp)) {
+                Button(onClick = onSaveAsDefault, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.rs_save_as_default))
+                }
+                OutlinedButton(onClick = { showResetDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.rs_reset_to_default))
+                }
+                TextButton(onClick = { showRestoreDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.rs_restore_built_in))
+                }
+            }
         }
+    }
+
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetDialog = false },
+            title = { Text(stringResource(R.string.rs_reset_dialog_title, scopeName)) },
+            text = { Text(stringResource(R.string.rs_reset_dialog_body, scopeName)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showResetDialog = false
+                    onResetToSavedDefault()
+                }) { Text(stringResource(R.string.reset)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetDialog = false }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+
+    if (showRestoreDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestoreDialog = false },
+            title = { Text(stringResource(R.string.rs_restore_dialog_title, scopeName)) },
+            text = { Text(stringResource(R.string.rs_restore_dialog_body, scopeName)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRestoreDialog = false
+                    onRestoreBuiltIn()
+                }) { Text(stringResource(R.string.rs_restore_built_in)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreDialog = false }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
     }
 }
 
