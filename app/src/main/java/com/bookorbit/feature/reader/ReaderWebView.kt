@@ -104,6 +104,17 @@ class ReaderController {
 
     fun clearSearch() = command(buildJsonObject { put("type", "clearSearch") }.toString())
 
+    /** Asks the WebView to parse every section's SMIL into a [com.bookorbit.feature.reader.narration.NarrationTimeline]
+     * and post it back as a `narrationTimeline`/`narrationTimelineError` event. */
+    fun narrationPrepare() = command(buildJsonObject { put("type", "narrationPrepare") }.toString())
+
+    /** Navigates to [textHref] and adds the book's (or the default) active-overlay class there,
+     * reusing foliate's own highlight wiring (view.js) by replaying the event it would have fired. */
+    fun narrationHighlight(textHref: String) =
+        command(buildJsonObject { put("type", "narrationHighlight"); put("textHref", textHref) }.toString())
+
+    fun narrationUnhighlight() = command(buildJsonObject { put("type", "narrationUnhighlight") }.toString())
+
     fun clearSelection() = command(buildJsonObject { put("type", "clearSelection") }.toString())
 
     fun applyStyles(settings: ReaderSettings) {
