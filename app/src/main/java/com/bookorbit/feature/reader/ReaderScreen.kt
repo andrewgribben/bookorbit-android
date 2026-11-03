@@ -418,6 +418,10 @@ fun ReaderScreen(
             onOpenSleepTimerSheet = { settingsVisible = false; showSleepTimerSheet = true },
             onOpenChapters = { settingsVisible = false; tocVisible = true },
             onOpenBookmarks = { settingsVisible = false; vm.loadBookmarks(); highlightsVisible = true },
+            onSetWallpaper = {
+                settingsVisible = false
+                vm.setCoverAsWallpaper()
+            },
             onDismiss = { settingsVisible = false },
         )
     }

@@ -102,6 +102,7 @@ fun ReaderSettingsSheet(
     onOpenSleepTimerSheet: () -> Unit,
     onOpenChapters: () -> Unit,
     onOpenBookmarks: () -> Unit,
+    onSetWallpaper: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var showResetDialog by remember { mutableStateOf(false) }
@@ -203,6 +204,12 @@ fun ReaderSettingsSheet(
             // --- Save / Reset / Restore (requirement 4/5): footer, not the reading bar. Style
             // settings only - never playback, so this is deliberately absent on the Playback tab
             // (see the card's "keep those actions scoped to style tabs" requirement). ---
+            if (tab == ReaderSettingsTab.THEME) {
+                TextButton(onClick = onSetWallpaper, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.wallpaper_set_as_wallpaper))
+                }
+            }
+
             if (tab != ReaderSettingsTab.PLAYBACK) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 8.dp)) {
                     Button(onClick = onSaveAsDefault, modifier = Modifier.fillMaxWidth()) {

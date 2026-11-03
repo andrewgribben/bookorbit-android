@@ -17,6 +17,7 @@ import androidx.media3.session.SessionResult
 import com.bookorbit.core.model.AudioProgress
 import com.bookorbit.core.model.BookDetail
 import com.bookorbit.core.model.BookFileRef
+import com.bookorbit.core.wallpaper.CoverWallpaperFollowController
 import com.bookorbit.feature.cast.CastSessionController
 import com.bookorbit.feature.sessions.ReadingSessionTracker
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -59,6 +60,7 @@ class PlayerManager @Inject constructor(
     private val livePrefs: LivePlaybackPrefs,
     private val restoreCandidates: RestoreCandidateFinder,
     private val sessions: ReadingSessionTracker,
+    private val wallpaperFollow: CoverWallpaperFollowController,
 ) {
     data class UiState(
         val currentBook: BookDetail? = null,
@@ -275,6 +277,7 @@ class PlayerManager @Inject constructor(
                 speedIsPerBook = bookSpeed != null,
             ).withNarrationCleared()
         }
+        wallpaperFollow.noteOpenBook(data.book.id)
         startPoller()
     }
 
@@ -296,6 +299,7 @@ class PlayerManager @Inject constructor(
                     totalDurationSec = PlaybackQueue.totalDurationSec(files),
                 ).withNarrationCleared()
             }
+            wallpaperFollow.noteOpenBook(book.id)
             startPoller()
         }
     }

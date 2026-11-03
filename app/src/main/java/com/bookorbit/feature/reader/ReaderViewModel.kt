@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.bookorbit.core.model.BookAnnotation
 import com.bookorbit.core.model.BookBookmark
 import com.bookorbit.core.storage.LocalRef
+import com.bookorbit.core.wallpaper.CoverWallpaperController
+import com.bookorbit.core.wallpaper.CoverWallpaperFollowController
 import com.bookorbit.feature.bookdetail.BookDetailRepository
 import com.bookorbit.feature.downloads.DownloadsRepository
 import com.bookorbit.feature.player.PlayerManager
@@ -45,6 +47,8 @@ class ReaderViewModel @Inject constructor(
     private val bookmarkRepo: ReaderBookmarkRepository,
     private val playerManager: PlayerManager,
     private val narrationSource: NarrationAudioSource,
+    private val wallpaper: CoverWallpaperController,
+    private val wallpaperFollow: CoverWallpaperFollowController,
 ) : ViewModel() {
 
     val bookId: Int = savedStateHandle.get<Int>("id") ?: 0
@@ -152,6 +156,7 @@ class ReaderViewModel @Inject constructor(
     init {
         load()
         loadAnnotations()
+        wallpaperFollow.noteOpenBook(bookId)
     }
 
     private fun load() {
@@ -459,6 +464,18 @@ class ReaderViewModel @Inject constructor(
     fun dismissToolbar() = _ui.update { it.copy(toolbar = null) }
 
     fun consumeMessage() = _ui.update { it.copy(message = null) }
+
+    fun setCoverAsWallpaper() {
+        viewModelScope.launch {
+            val outcome = wallpaper.apply(bookId)
+            val message = when (outcome) {
+                CoverWallpaperController.Outcome.SET -> UiText.of(R.string.wallpaper_result_set)
+                CoverWallpaperController.Outcome.NO_COVER -> UiText.of(R.string.wallpaper_result_no_cover)
+                CoverWallpaperController.Outcome.FAILED -> UiText.of(R.string.wallpaper_result_failed)
+            }
+            _ui.update { it.copy(message = message) }
+        }
+    }
 
     /** Highlight the selection in [color], or recolour the highlight the toolbar is open on. */
     fun highlight(color: String) = saveAnnotation(color = color, note = null)
