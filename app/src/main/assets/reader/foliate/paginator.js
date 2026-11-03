@@ -758,9 +758,8 @@ export class Paginator extends HTMLElement {
       // above), bypassing the paginated grid's margin tracks entirely, so the four margins are
       // applied directly as padding on #top here instead - this is what makes margins work in
       // scrolled flow too, not just paginated (they used to be dropped, `padding = '0'`, below).
-      this.#top.style.padding = vertical
-        ? `${marginLeft}px ${marginTop}px ${marginRight}px ${marginBottom}px`
-        : `${marginTop}px ${marginRight}px ${marginBottom}px ${marginLeft}px`
+      // padding shorthand is physical top/right/bottom/left in every writing mode
+      this.#top.style.padding = `${marginTop}px ${marginRight}px ${marginBottom}px ${marginLeft}px`
       const columnWidth = maxInlineSize
 
       this.heads = null

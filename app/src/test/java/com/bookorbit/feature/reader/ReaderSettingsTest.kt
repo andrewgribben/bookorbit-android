@@ -40,6 +40,15 @@ class ReaderSettingsTest {
     }
 
     @Test
+    fun `legacy blob without fontFamily key keeps the publisher font`() {
+        // Old app Json had encodeDefaults=false, so an untouched font (null) was never written.
+        val settings = migrateReaderSettings("""{"fontSize":20}""", json)
+        assertFalse(settings.useBookLayout)
+        assertEquals(null, settings.fontFamily)
+        assertEquals(20, settings.fontSize)
+    }
+
+    @Test
     fun `settings blob already carrying useBookLayout is decoded as-is`() {
         val raw = json.encodeToString(ReaderSettings.serializer(), ReaderSettings(useBookLayout = true, fontSize = 22))
         val settings = migrateReaderSettings(raw, json)
