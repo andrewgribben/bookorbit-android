@@ -42,6 +42,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import com.bookorbit.app.navEnter
+import com.bookorbit.app.navExit
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -207,7 +209,7 @@ fun MainShell(
         },
     ) { padding ->
       val detailPane: @Composable () -> Unit = {
-          NavHost(navController = detailNav, startDestination = PANE_EMPTY, modifier = Modifier.fillMaxSize()) {
+          NavHost(navController = detailNav, startDestination = PANE_EMPTY, modifier = Modifier.fillMaxSize(), enterTransition = navEnter, exitTransition = navExit) {
               composable(PANE_EMPTY) { EmptyDetailPane() }
               composable(
                   route = SubRoute.BOOK_DETAIL,
@@ -252,6 +254,8 @@ fun MainShell(
             // (book detail) doesn't add the status-bar inset a second time.
             // Two-pane: a fixed-width list column, with the book pane hosted once below (not per destination).
             modifier = Modifier.weight(1f).fillMaxWidth(),
+            enterTransition = navEnter,
+            exitTransition = navExit,
         ) {
             composable(NavItem.HOME.route) {
                 CenteredContent {
