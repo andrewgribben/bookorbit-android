@@ -81,6 +81,12 @@ object ReaderBridge {
 
     fun jsCommit(): String = "window.__readerCommit && window.__readerCommit();true;"
 
+    // Lazy local-zip path: the EPUB's entries are served by LocalEpubAssetHandler at a fixed
+    // origin-relative base (no per-book token needed - one WebView opens one book at a time).
+    fun jsOpenLocal(metaJson: String): String =
+        "window.__readerOpenLocal && window.__readerOpenLocal(${asJsLiteral(metaJson)}, " +
+            "${asJsLiteral("https://appassets.androidplatform.net${LocalEpubAssetHandler.PATH_PREFIX}")});true;"
+
     fun jsCommand(commandJson: String): String =
         "window.__readerCommand && window.__readerCommand(${asJsLiteral(commandJson)});true;"
 

@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewClientCompat
+import com.bookorbit.BuildConfig
 import com.bookorbit.core.model.BookAnnotation
 import com.bookorbit.core.storage.LocalRef
 import com.bookorbit.core.storage.openInputStream
@@ -57,6 +58,14 @@ class ReaderController {
     @Volatile
     private var webView: WebView? = null
 
+    /** Backs `/local-epub/...` requests for whichever book is currently open; mounted in
+     * [ReaderWebView]'s shouldInterceptRequest ahead of the generic asset loader. */
+    val localEpubHandler = LocalEpubAssetHandler()
+
+    /** Wall-clock ms when the current [open] started; null once its first relocate/load is logged. */
+    @Volatile
+    private var openStartedAtMs: Long? = null
+
     /** Set by the screen to receive parsed reader events. */
     var listener: ((ReaderEvent) -> Unit)? = null
 
@@ -65,16 +74,31 @@ class ReaderController {
     }
 
     fun detach(view: WebView) {
-        if (webView === view) webView = null
+        if (webView === view) {
+            webView = null
+            localEpubHandler.detach()
+        }
     }
 
     /** Called from the JS interface (binder thread); marshals events to the main thread. */
     fun handleMessage(view: WebView, data: String) {
         if (webView !== view) return
         val event = ReaderBridge.parseEvent(data) ?: return
+        logFirstRelocateTiming(event)
         Handler(Looper.getMainLooper()).post {
             if (webView === view) listener?.invoke(event)
         }
+    }
+
+    // Debug-only instrumentation for comparing against Readest/the web reader on device: time from
+    // the host's open() call to foliate's first 'relocate' (i.e. the book is actually showing a
+    // page), per the Skyward (441MB EPUB) perf investigation. Guarded by BuildConfig.DEBUG so it
+    // never ships; filter logcat by tag BookOrbitPerf.
+    private fun logFirstRelocateTiming(event: ReaderEvent) {
+        if (!BuildConfig.DEBUG || event !is ReaderEvent.Relocate) return
+        val startedAt = openStartedAtMs ?: return
+        openStartedAtMs = null
+        Log.d("BookOrbitPerf", "open -> first relocate: ${System.currentTimeMillis() - startedAt}ms")
     }
 
     /**
@@ -135,12 +159,24 @@ class ReaderController {
 
     // Reads and encodes the file one CHUNK_BYTES slice at a time so peak memory stays bounded by
     // the chunk size instead of the whole file (a naive readBytes()+encodeToString() on a 90MB
-    // EPUB peaks at ~450MB and reliably OOMs on default heap sizes).
+    // EPUB peaks at ~450MB and reliably OOMs on default heap sizes). This is the fallback path now:
+    // for a zip-openable EPUB, runOpen serves entries lazily instead (see below) so a 441MB book
+    // with embedded audio never has to push ~590MB of base64 through evaluateJavascript at all.
     private fun runOpen(params: OpenParams, context: Context) {
+        openStartedAtMs = System.currentTimeMillis()
         val meta = OpenMeta(params.format, params.cfi, params.fraction, params.settings)
         val metaJson = ReaderBridge.json.encodeToString(OpenMeta.serializer(), meta)
-        eval(ReaderBridge.jsBegin(metaJson))
 
+        if (params.format.equals("epub", ignoreCase = true)) {
+            val zipReader = tryOpenLocalEpubZip(params.ref, context)
+            if (zipReader != null) {
+                localEpubHandler.attach(zipReader)
+                eval(ReaderBridge.jsOpenLocal(metaJson))
+                return
+            }
+        }
+
+        eval(ReaderBridge.jsBegin(metaJson))
         params.ref.openInputStream(context).use { input ->
             val buffer = ByteArray(CHUNK_BYTES)
             while (true) {
@@ -238,7 +274,15 @@ fun ReaderWebView(
                     override fun shouldInterceptRequest(
                         view: WebView,
                         request: WebResourceRequest,
-                    ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
+                    ): WebResourceResponse? {
+                        val url = request.url
+                        // Routed ahead of assetLoader: WebViewAssetLoader's PathHandler never sees
+                        // request headers, so it can't honour Range for large zip entries.
+                        if (LocalEpubAssetHandler.matches(url)) {
+                            return controller.localEpubHandler.handle(url.path.orEmpty(), request.requestHeaders["Range"])
+                        }
+                        return assetLoader.shouldInterceptRequest(url)
+                    }
                 }
 
                 addJavascriptInterface(
