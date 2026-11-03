@@ -202,6 +202,24 @@ class ReaderViewModel @Inject constructor(
         _ui.update { it.copy(loaded = true, toc = toc, chapterTitle = it.chapterTitle ?: title, hasMediaOverlay = hasMediaOverlay) }
     }
 
+    // --- narration player controls (stage 4) ---
+
+    /** The shared [PlayerManager]'s own state - narration transport, skip amounts, speed, sleep
+     * timer and progress-bar mode - for the reader's bottom player bar and Playback settings tab.
+     * Thin passthrough, same pattern as [com.bookorbit.feature.player.PlayerViewModel]. */
+    val playerState = playerManager.state
+
+    fun togglePlayback() = playerManager.togglePlay()
+    fun playerSkipBack() = playerManager.skipBack()
+    fun playerSkipForward() = playerManager.skipForward()
+    fun setPlaybackSpeed(value: Float, forThisBook: Boolean = false) = playerManager.setSpeed(value, forThisBook)
+    fun setSleepTimer(minutes: Int) = playerManager.setSleepTimer(minutes)
+    fun setSleepTimerEndOfChapter() = playerManager.setSleepTimerEndOfChapter()
+    fun cancelSleepTimer() = playerManager.cancelSleepTimer()
+    fun setSkipBackSeconds(value: Int) = playerManager.setSkipBack(value)
+    fun setSkipForwardSeconds(value: Int) = playerManager.setSkipForward(value)
+    fun setProgressBarMode(mode: com.bookorbit.feature.player.ProgressBarMode) = playerManager.setProgressBarMode(mode)
+
     // --- narration (EPUB 3 Media Overlays) ---
 
     /** Turns narration on (prepares the timeline, then starts the native player) or off. */

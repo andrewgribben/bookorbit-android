@@ -66,6 +66,7 @@ fun ReaderScreen(
     vm: ReaderViewModel = hiltViewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
+    val playerState by vm.playerState.collectAsStateWithLifecycle()
     val controller = remember { ReaderController() }
     var ready by remember { mutableStateOf(false) }
     var opened by remember { mutableStateOf(false) }
@@ -76,6 +77,10 @@ fun ReaderScreen(
     var highlightsVisible by remember { mutableStateOf(false) }
     var searchVisible by remember { mutableStateOf(false) }
     var noteDialog by remember { mutableStateOf<String?>(null) }
+    // Narration player controls (stage 4): speed/sleep open the same sheets the standalone
+    // audiobook player uses, whether triggered from the bottom bar or the Playback settings tab.
+    var showSpeedSheet by remember { mutableStateOf(false) }
+    var showSleepTimerSheet by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
 
@@ -256,7 +261,22 @@ fun ReaderScreen(
                     .padding(vertical = 6.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("${ui.percentage}%", color = Color.White.copy(alpha = 0.8f))
+                // Narration on swaps the ordinary reading-progress row for the player's own
+                // transport controls (requirement 1); audio keeps playing when chrome (and this
+                // bar with it) is hidden - see readerBottomBarContent()/NarrationPlayerBar doc.
+                when (readerBottomBarContent(ui.narrationOn)) {
+                    ReaderBottomBarContent.NARRATION_PLAYER -> NarrationPlayerBar(
+                        state = playerState,
+                        chapterTitle = ui.chapterTitle,
+                        progressFraction = ui.percentage / 100f,
+                        onTogglePlay = vm::togglePlayback,
+                        onSkipBack = vm::playerSkipBack,
+                        onSkipForward = vm::playerSkipForward,
+                        onOpenSpeed = { showSpeedSheet = true },
+                        onOpenSleepTimer = { showSleepTimerSheet = true },
+                    )
+                    ReaderBottomBarContent.PROGRESS -> Text("${ui.percentage}%", color = Color.White.copy(alpha = 0.8f))
+                }
             }
         }
 
@@ -383,7 +403,36 @@ fun ReaderScreen(
             onSaveAsDefault = { vm.saveAsDefault(ui.scope) },
             onResetToSavedDefault = { vm.resetToSavedDefault(ui.scope) },
             onRestoreBuiltIn = { vm.restoreBuiltInDefaults(ui.scope) },
+            playerState = playerState,
+            onSkipBackChange = vm::setSkipBackSeconds,
+            onSkipForwardChange = vm::setSkipForwardSeconds,
+            onProgressBarModeChange = vm::setProgressBarMode,
+            onOpenSpeedSheet = { settingsVisible = false; showSpeedSheet = true },
+            onOpenSleepTimerSheet = { settingsVisible = false; showSleepTimerSheet = true },
+            onOpenChapters = { settingsVisible = false; tocVisible = true },
+            onOpenBookmarks = { settingsVisible = false; vm.loadBookmarks(); highlightsVisible = true },
             onDismiss = { settingsVisible = false },
+        )
+    }
+
+    if (showSpeedSheet) {
+        com.bookorbit.feature.player.SpeedSheet(
+            speed = playerState.speed,
+            perBook = playerState.speedIsPerBook,
+            onChange = { speed, forThisBook -> vm.setPlaybackSpeed(speed, forThisBook) },
+            onDismiss = { showSpeedSheet = false },
+        )
+    }
+
+    if (showSleepTimerSheet) {
+        com.bookorbit.feature.player.SleepTimerSheet(
+            remainingSec = playerState.sleepTimerRemainingSec,
+            endOfChapter = playerState.sleepTimerEndOfChapter,
+            hasChapters = playerState.chapters.isNotEmpty(),
+            onSetMinutes = { vm.setSleepTimer(it) },
+            onSetEndOfChapter = { vm.setSleepTimerEndOfChapter() },
+            onCancel = { vm.cancelSleepTimer() },
+            onDismiss = { showSleepTimerSheet = false },
         )
     }
 }

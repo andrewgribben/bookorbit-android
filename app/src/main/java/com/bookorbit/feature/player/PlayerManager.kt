@@ -416,6 +416,14 @@ class PlayerManager @Inject constructor(
         _state.update { it.copy(skipForwardSeconds = value) }
     }
 
+    /** What the progress bar (in-app and every media-session surface) measures - whole book or
+     * current chapter. Settings-store write only; [_state.progressBarMode] follows it back via
+     * the [livePrefs] collector in [init]. Shared by the standalone player's app-wide settings
+     * screen and the reader's Playback tab - see [com.bookorbit.feature.reader.ReaderSettingsSheet]. */
+    fun setProgressBarMode(mode: ProgressBarMode) = scope.launch {
+        settingsStore.saveProgressBarMode(mode)
+    }
+
     /** Arms a countdown that pauses playback after [minutes] of wall-clock time. */
     fun setSleepTimer(minutes: Int) {
         sleepTimerEndOfChapter = false

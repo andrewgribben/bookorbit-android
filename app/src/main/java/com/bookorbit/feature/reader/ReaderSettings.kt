@@ -75,6 +75,20 @@ fun clampParagraphSpacing(v: Double): Double =
 fun clampMargin(v: Int): Int = v.coerceIn(MARGIN_RANGE.first, MARGIN_RANGE.last)
 
 /**
+ * Owner decision (stage 4): font size and the four page margins stay adjustable even while
+ * [ReaderSettings.useBookLayout] is on - only font family, line height, paragraph spacing,
+ * justify and hyphenate (plus Layout's flow/column count) still follow the publisher's own
+ * layout. Mirrors bridge.js's `fontSizeCSS` (always-applied root `html` font-size, no
+ * `!important`) and `applyStyles`' unconditional paginator margin attributes.
+ */
+fun fontSizeAndMarginsEditable(scopeEditable: Boolean): Boolean = scopeEditable
+
+/** Everything else gated by "Use book layout": font family/line height/paragraph spacing/
+ * justify/hyphenate in Typography, and flow/column count in Layout. */
+fun publisherLayoutOverridesEditable(scopeEditable: Boolean, useBookLayout: Boolean): Boolean =
+    scopeEditable && !useBookLayout
+
+/**
  * Applies a margin edit to [settings], honoring [ReaderSettings.linkSideMargins]: editing left or
  * right while linked mirrors the value onto the other side. Top/bottom are never linked to each
  * other or to left/right - publisher margins are rarely symmetric.
