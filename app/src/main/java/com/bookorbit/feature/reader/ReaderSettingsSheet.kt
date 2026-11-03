@@ -64,7 +64,7 @@ private const val LOCKED_ALPHA = 0.45f
 
 /** The four tabs in the reader's Configure sheet (stage 4), matching the approved mockup's
  * grouping and order: Typography, Layout, Playback, Theme. */
-enum class ReaderSettingsTab { TYPOGRAPHY, LAYOUT, PLAYBACK, THEME }
+enum class ReaderSettingsTab { TYPOGRAPHY, LAYOUT, PLAYBACK, CONTROLS, THEME }
 
 /**
  * Reader settings sheet: a Global/This-book scope selector, the per-book "Use global settings"
@@ -100,20 +100,24 @@ fun ReaderSettingsSheet(
     onOpenChapters: () -> Unit,
     onOpenBookmarks: () -> Unit,
     onSetWallpaper: () -> Unit,
+    controlsSettings: ReaderControlsSettings,
+    onControlsSettingsChange: (ReaderControlsSettings) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var showResetDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
     var tab by remember { mutableStateOf(ReaderSettingsTab.TYPOGRAPHY) }
 
+    val isControls = tab == ReaderSettingsTab.CONTROLS
     val isThisBook = scope == ReaderSettingsScope.THIS_BOOK
     // What's shown: Global's own settings in Global scope, else what's effectively applied to
     // the book (its own override if it has stopped following Global, else Global's values shown
     // through but locked).
     val settings = if (isThisBook) effectiveSettings(globalSettings, bookState) else globalSettings
-    // Scope-level editability: locked entirely while a book is following Global. Independent of
-    // (and layered on top of) the existing "Use book layout" lock further below.
-    val scopeEditable = !isThisBook || !bookState.useGlobal
+    // Scope-level editability: locked entirely while a book is following Global, and the Controls
+    // tab has no scope at all (owner decision 5), same as Playback. Independent of (and layered
+    // on top of) the existing "Use book layout" lock further below.
+    val scopeEditable = !isControls && (!isThisBook || !bookState.useGlobal)
     val scopeName = stringResource(if (isThisBook) R.string.rs_scope_name_this_book else R.string.rs_scope_name_global)
 
     fun onChange(updated: ReaderSettings) {
@@ -130,20 +134,27 @@ fun ReaderSettingsSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // --- Scope selector (requirement 1): available on every device, phone/Fold/tablet. ---
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.alpha(if (isControls) LOCKED_ALPHA else 1f),
+            ) {
                 FilterChip(
                     selected = !isThisBook,
+                    enabled = !isControls,
                     onClick = { onScopeChange(ReaderSettingsScope.GLOBAL) },
                     label = { Text(stringResource(R.string.rs_scope_global)) },
                 )
                 FilterChip(
                     selected = isThisBook,
+                    enabled = !isControls,
                     onClick = { onScopeChange(ReaderSettingsScope.THIS_BOOK) },
                     label = { Text(stringResource(R.string.rs_scope_this_book)) },
                 )
             }
 
-            if (isThisBook) {
+            if (isControls) {
+                LockedOrHintNote(stringResource(R.string.rc_app_wide_note))
+            } else if (isThisBook) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.rs_use_global_settings), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                     Switch(checked = bookState.useGlobal, onCheckedChange = onUseGlobalChange)
@@ -167,6 +178,7 @@ fun ReaderSettingsSheet(
                 Tab(selected = tab == ReaderSettingsTab.TYPOGRAPHY, onClick = { tab = ReaderSettingsTab.TYPOGRAPHY }, text = { Text(stringResource(R.string.rs_label_typography)) })
                 Tab(selected = tab == ReaderSettingsTab.LAYOUT, onClick = { tab = ReaderSettingsTab.LAYOUT }, text = { Text(stringResource(R.string.rs_label_layout)) })
                 Tab(selected = tab == ReaderSettingsTab.PLAYBACK, onClick = { tab = ReaderSettingsTab.PLAYBACK }, text = { Text(stringResource(R.string.rs_label_playback)) })
+                Tab(selected = tab == ReaderSettingsTab.CONTROLS, onClick = { tab = ReaderSettingsTab.CONTROLS }, text = { Text(stringResource(R.string.cr_tab_controls)) })
                 Tab(selected = tab == ReaderSettingsTab.THEME, onClick = { tab = ReaderSettingsTab.THEME }, text = { Text(stringResource(R.string.rs_label_theme)) })
             }
 
@@ -195,19 +207,25 @@ fun ReaderSettingsSheet(
                     onOpenChapters = onOpenChapters,
                     onOpenBookmarks = onOpenBookmarks,
                 )
+                ReaderSettingsTab.CONTROLS -> ReaderControlsTab(
+                    settings = controlsSettings,
+                    onChange = onControlsSettingsChange,
+                    isComicContext = false,
+                )
                 ReaderSettingsTab.THEME -> ThemeTab(settings = settings, scopeEditable = scopeEditable, onChange = ::onChange)
             }
 
             // --- Save / Reset / Restore (requirement 4/5): footer, not the reading bar. Style
-            // settings only - never playback, so this is deliberately absent on the Playback tab
-            // (see the card's "keep those actions scoped to style tabs" requirement). ---
+            // settings only - never playback or Controls, so this is deliberately absent on both
+            // tabs (see the card's "keep those actions scoped to style tabs" requirement, and
+            // owner decision 5 for Controls). ---
             if (tab == ReaderSettingsTab.THEME) {
                 TextButton(onClick = onSetWallpaper, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.wallpaper_set_as_wallpaper))
                 }
             }
 
-            if (tab != ReaderSettingsTab.PLAYBACK) {
+            if (tab != ReaderSettingsTab.PLAYBACK && tab != ReaderSettingsTab.CONTROLS) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 8.dp)) {
                     Button(onClick = onSaveAsDefault, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.rs_save_as_default))

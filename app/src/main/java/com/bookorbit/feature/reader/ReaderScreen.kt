@@ -428,6 +428,8 @@ fun ReaderScreen(
                 settingsVisible = false
                 vm.setCoverAsWallpaper()
             },
+            controlsSettings = ui.controlsSettings,
+            onControlsSettingsChange = vm::updateControlsSettings,
             onDismiss = { settingsVisible = false },
         )
     }
