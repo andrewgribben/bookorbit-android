@@ -68,13 +68,9 @@ fun ReaderSettingsSheet(
                                 color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
                                 shape = CircleShape,
                             )
-                            // AMOLED is a dark-only theme (see ReaderThemes.effectiveIsDark), so
-                            // selecting it also forces isDark on, keeping the mode chips below in
-                            // sync with what's actually rendered rather than leaving the Light
-                            // chip selectable while the page renders dark regardless.
-                            .clickable {
-                                onChange(settings.copy(themeName = theme.name, isDark = effectiveIsDark(theme.name, settings.isDark)))
-                            },
+                            // AMOLED renders dark via effectiveIsDark at draw time; keep the stored
+                            // isDark untouched so leaving AMOLED restores the user's own mode.
+                            .clickable { onChange(settings.copy(themeName = theme.name)) },
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(stringResource(R.string.a), color = fg, fontWeight = FontWeight.Bold)
@@ -86,12 +82,12 @@ fun ReaderSettingsSheet(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val amoled = settings.themeName == "amoled"
                 FilterChip(
-                    selected = !settings.isDark,
+                    selected = !effectiveIsDark(settings.themeName, settings.isDark),
                     enabled = !amoled,
                     onClick = { onChange(settings.copy(isDark = false)) },
                     label = { Text(stringResource(R.string.light)) },
                 )
-                FilterChip(selected = settings.isDark, onClick = { onChange(settings.copy(isDark = true)) }, label = { Text(stringResource(R.string.dark)) })
+                FilterChip(selected = effectiveIsDark(settings.themeName, settings.isDark), onClick = { onChange(settings.copy(isDark = true)) }, label = { Text(stringResource(R.string.dark)) })
             }
 
             Label(stringResource(R.string.rs_label_layout))
