@@ -516,4 +516,45 @@
     <string name="rs_reset_done_book">This book\'s settings reset to the saved default</string>
     <string name="rs_restore_done_global">Global settings restored to built-in defaults</string>
     <string name="rs_restore_done_book">This book\'s settings restored to built-in defaults</string>
+
+    <!-- Comic reader Configure sheet (phase 4): tabs, controls - wording from the web's
+         reader.cbz.* / settings.reader.comics.* locale keys. -->
+    <string name="cr_tab_layout">Layout</string>
+    <string name="cr_tab_spreads">Spreads</string>
+    <string name="cr_tab_theme">Theme</string>
+    <string name="cr_reading_mode">Reading mode</string>
+    <string name="cr_reading_mode_hint">How pages are navigated - use \"Infinite (no gaps)\" for webtoons</string>
+    <string name="cr_mode_paged">Paged</string>
+    <string name="cr_mode_infinite">Infinite</string>
+    <string name="cr_mode_no_gaps">No gaps</string>
+    <string name="cr_page_view">Page view</string>
+    <string name="cr_page_view_single">Single</string>
+    <string name="cr_page_view_two_page">Two-page</string>
+    <string name="cr_fit_mode">Fit</string>
+    <string name="cr_fit_page">Page</string>
+    <string name="cr_fit_width">Width</string>
+    <string name="cr_fit_height">Height</string>
+    <string name="cr_fit_actual">Actual</string>
+    <string name="cr_direction">Direction</string>
+    <string name="cr_direction_ltr">Left to right</string>
+    <string name="cr_direction_rtl">Right to left</string>
+    <string name="cr_force_two_page">Force two-page on small screens</string>
+    <string name="cr_spread_alignment">Spread alignment</string>
+    <string name="cr_spread_alignment_hint">Shift pairing by one page after the cover for off-by-one scans</string>
+    <string name="cr_alignment_normal">Normal</string>
+    <string name="cr_alignment_shifted">Shifted</string>
+    <string name="cr_wide_pages">Wide pages</string>
+    <string name="cr_wide_pages_auto">Auto</string>
+    <string name="cr_wide_pages_in_spreads">In spreads</string>
+    <string name="cr_spread_gap">Spread gap</string>
+    <string name="cr_spread_gap_value">%1$dpx</string>
+    <string name="cr_spreads_locked_note">Spreads only apply in Paged mode with Two-page view.</string>
+    <string name="cr_background">Background</string>
+    <string name="cr_bg_black">Black</string>
+    <string name="cr_bg_gray">Gray</string>
+    <string name="cr_bg_white">White</string>
+    <string name="cr_bg_true_black">True black</string>
+    <string name="cr_auto_advance">Auto-advance to next book</string>
+    <string name="cr_keep_screen_on">Keep screen on</string>
+    <string name="cr_configure">Configure</string>
 </resources>
