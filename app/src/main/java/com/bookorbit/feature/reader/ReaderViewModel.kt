@@ -560,6 +560,7 @@ class ReaderViewModel @Inject constructor(
      */
     fun resetToSavedDefault(scope: ReaderSettingsScope) {
         val s = _ui.value
+        if (scope == ReaderSettingsScope.THIS_BOOK && s.bookState.useGlobal) return
         val resolved = resolvedSavedDefault(scope, s.globalSavedDefault, s.bookSavedDefault)
         when (scope) {
             ReaderSettingsScope.GLOBAL -> {
@@ -581,6 +582,7 @@ class ReaderViewModel @Inject constructor(
      * the (separate) confirmation dialog.
      */
     fun restoreBuiltInDefaults(scope: ReaderSettingsScope) {
+        if (scope == ReaderSettingsScope.THIS_BOOK && _ui.value.bookState.useGlobal) return
         when (scope) {
             ReaderSettingsScope.GLOBAL -> {
                 _ui.update { it.copy(globalSettings = ReaderSettings(), message = UiText.of(R.string.rs_restore_done_global)) }

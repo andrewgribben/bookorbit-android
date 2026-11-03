@@ -207,10 +207,11 @@ fun ReaderSettingsSheet(
                     Button(onClick = onSaveAsDefault, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.rs_save_as_default))
                     }
-                    OutlinedButton(onClick = { showResetDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                    // A book following Global has nothing of its own to reset; resetting must not detach it.
+                    OutlinedButton(onClick = { showResetDialog = true }, enabled = scopeEditable, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.rs_reset_to_default))
                     }
-                    TextButton(onClick = { showRestoreDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(onClick = { showRestoreDialog = true }, enabled = scopeEditable, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.rs_restore_built_in))
                     }
                 }
