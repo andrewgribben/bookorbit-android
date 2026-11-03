@@ -7,15 +7,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
@@ -51,9 +56,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReaderScreen(
     onBack: () -> Unit,
+    fullscreen: Boolean = false,
     vm: ReaderViewModel = hiltViewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -88,6 +95,13 @@ fun ReaderScreen(
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
     }
+
+    // Tapping the page centre toggles the reader's own chrome and Android's system bars together
+    // (see readerWantsSystemBarsVisible for the exact rule), so there is one coherent immersive
+    // state rather than two bar sets that can disagree. The WebView itself is never resized by
+    // this (it already fills the whole Box below, with the bars drawn as floating overlays), so
+    // page text never reflows when chrome/system bars toggle.
+    ReaderSystemBarsEffect(fullscreen = fullscreen, chromeVisible = chromeVisible)
 
     LaunchedEffect(Unit) {
         controller.listener = { event ->
@@ -137,7 +151,16 @@ fun ReaderScreen(
     val surface = themeBackgroundColor(ui.settings.themeName, ui.settings.isDark)
     val paginated = ui.settings.flow == "paginated"
     val showChrome = chromeVisible
-    val onSurface = if (ui.settings.isDark) Color.White else Color.Black
+    val onSurface = if (effectiveIsDark(ui.settings.themeName, ui.settings.isDark)) Color.White else Color.Black
+    // Bars must clear both the status bar AND the display-cutout (camera punch-hole) — on a
+    // Galaxy Z Fold's inner/outer screens in particular, statusBarsPadding() alone leaves the top
+    // bar under the cutout whenever the status bar inset collapses to 0 (which happens while
+    // system bars are hidden/transient, since that inset tracks *visibility*, not the cutout's
+    // physical presence). "IgnoringVisibility" keeps the reserved space constant whether or not the
+    // system bar is currently shown, and union(displayCutout) extends it to cover the punch-hole in
+    // any orientation/fold state.
+    val topBarInsets = WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout)
+    val bottomBarInsets = WindowInsets.navigationBarsIgnoringVisibility.union(WindowInsets.displayCutout)
 
     Box(
         modifier = Modifier
@@ -160,7 +183,7 @@ fun ReaderScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color(0xCC0A0A0A))
-                    .statusBarsPadding()
+                    .windowInsetsPadding(topBarInsets)
                     .padding(horizontal = 4.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -196,7 +219,7 @@ fun ReaderScreen(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .background(Color(0xCC0A0A0A))
-                    .navigationBarsPadding()
+                    .windowInsetsPadding(bottomBarInsets)
                     .padding(vertical = 6.dp),
                 contentAlignment = Alignment.Center,
             ) {

@@ -72,10 +72,17 @@ function themeFor(name) {
 }
 
 // Ported from useReaderState.generateCSS — keep changes in sync with the web client.
+//
+// AMOLED is a dark-only theme (its `light` pair, #000 fg on #fff bg, is a deliberately
+// unreadable placeholder — see THEMES above), so it must render dark regardless of `s.isDark`.
+// Without this, picking the amoled swatch while `isDark` is false leaves `forceBg` false
+// (amoled's `light.bg` is exactly '#ffffff') and no background gets forced onto the page at all,
+// so the publisher's own (often off-white/grey) stylesheet shows through instead of true black.
+// Keep this forcing in sync with ReaderThemes.kt's effectiveIsDark() on the Kotlin side.
 function generateCSS(s) {
   const theme = themeFor(s.themeName);
-  const mode = s.isDark ? theme.dark : theme.light;
-  const dark = s.isDark;
+  const dark = s.isDark || s.themeName === 'amoled';
+  const mode = dark ? theme.dark : theme.light;
   const forceBg = dark || theme.light.bg !== '#ffffff';
   const fontFamilyRule = s.fontFamily
     ? `body { font-family: ${s.fontFamily} !important; } body * { font-family: inherit !important; }`
