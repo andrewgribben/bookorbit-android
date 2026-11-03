@@ -152,6 +152,21 @@ interface ApiService {
     @GET("cbz/files/{fileId}/pages")
     suspend fun getComicPageCount(@Path("fileId") fileId: Int): com.bookorbit.core.model.ComicPages
 
+    // --- Reader settings sync (owner decision 3: only when the user's server-side
+    // `syncReaderPreferences` setting is on; see ComicReaderPreferencesRepository). ---
+    /** `{ cbx: {...}, epub: {...}, ... }` - one key per format group that has a saved default. */
+    @GET("reader/defaults")
+    suspend fun getReaderDefaults(): kotlinx.serialization.json.JsonObject
+
+    @PUT("reader/defaults/{formatGroup}")
+    suspend fun putReaderDefault(
+        @Path("formatGroup") formatGroup: String,
+        @Body body: com.bookorbit.core.model.UpsertReaderSettings,
+    )
+
+    @DELETE("reader/defaults/{formatGroup}")
+    suspend fun deleteReaderDefault(@Path("formatGroup") formatGroup: String)
+
     // --- Annotations (highlights + notes) ---
     @GET("annotations")
     suspend fun getAnnotationHub(

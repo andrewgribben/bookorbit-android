@@ -5,7 +5,6 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.bookorbit.feature.reader.ReaderSettingsScope
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
@@ -17,12 +16,10 @@ private val Context.comicReaderDataStore by preferencesDataStore("comic_reader_s
  * Persists [ComicReaderSettings] in DataStore, device-only, mirroring
  * `ReaderSettingsStore`'s Global / This-book / saved-default key layout.
  *
- * Server sync (owner decision 3): Global's *synced* fields ([SYNCED_KEYS]) are meant to sync via
- * the server when `syncReaderPreferences` is on, but no such endpoint exists yet in the server
- * reference (`useCbzSettings.ts` itself has no persistence call - see [ComicReaderSettings]'s
- * class doc). This store therefore only persists locally; [shouldSyncToServer] is exposed so a
- * real network call can be wired in later without reworking this store or inventing an endpoint
- * now.
+ * Server sync (owner decision 3): [ComicReaderPreferencesRepository] wraps this store to pull
+ * Global's synced fields ([SYNCED_KEYS]) from `GET/PUT/DELETE /api/v1/reader/defaults/cbx` when
+ * the signed-in user's `syncReaderPreferences` setting is on; this store itself only ever reads
+ * and writes DataStore.
  */
 @Singleton
 class ComicReaderSettingsStore @Inject constructor(
@@ -82,9 +79,4 @@ class ComicReaderSettingsStore @Inject constructor(
     suspend fun saveBookSavedDefault(bookId: Int, settings: ComicReaderSettings) {
         context.comicReaderDataStore.edit { it[bookSavedDefaultKey(bookId)] = encode(settings) }
     }
-
-    /** See [shouldSyncToServer]'s doc: always false today, exposed so callers can branch without
-     * depending on a future implementation detail of how syncing eventually gets wired in. */
-    fun canSyncNow(syncReaderPreferencesEnabled: Boolean, scope: ReaderSettingsScope): Boolean =
-        shouldSyncToServer(syncReaderPreferencesEnabled, scope)
 }

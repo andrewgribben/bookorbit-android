@@ -10,19 +10,18 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Stage 3: comic/CBZ reader settings. Mirrors the web client's `CbxReaderSettings`
+ * Comic/CBZ reader settings. Mirrors the web client's `CbxReaderSettings`
  * (`useCbzSettings.ts` / `CbzSettingsPanel.vue`) field-for-field for the ten settings that are
  * eligible to sync to the server, plus app-only extras that never leave the device (see
  * [SYNCED_KEYS] and [toSyncJson]/[fromSyncJson]).
  *
- * Web source values used verbatim below (checked against `useCbzSettings.ts`, 2026-11-03): no
- * `/api/v1/reader/defaults` or `/api/v1/reader/defaults/cbx` endpoint exists in the server
- * reference checkout at the time of writing - `useCbzSettings.ts` itself is in-memory only
- * (plain Vue `ref`s, no persistence call). PLAN.md's sync endpoint is therefore aspirational, not
- * yet built server-side. Per the task's "never invent APIs" rule, this file defines the
- * on-the-wire shape ([toSyncJson]/[fromSyncJson]) a real sync call would use, gated by
- * [ComicReaderSettingsStore] + the app's `syncReaderPreferences` flag, but no network call is
- * made against a currently-nonexistent endpoint. See [com.bookorbit.feature.reader.comic.shouldSyncToServer].
+ * The server does have a sync endpoint: `reader-preferences.controller.ts`'s
+ * `GET /api/v1/reader/defaults` and `PUT|DELETE /api/v1/reader/defaults/cbx` (format group
+ * `cbx`, validated `.strict()` by `CBX_SETTINGS_SCHEMA` - only [SYNCED_KEYS] may be sent, see
+ * [toSyncJson]). [ComicReaderPreferencesRepository] wires the actual network calls, gated by the
+ * signed-in user's server-side `syncReaderPreferences` setting
+ * ([com.bookorbit.core.model.syncReaderPreferences]) and Global scope - see
+ * [shouldSyncToServer].
  */
 enum class ComicFitMode(val wire: String) {
     FIT_PAGE("fit-page"),
@@ -131,8 +130,9 @@ fun fromSyncJson(base: ComicReaderSettings, json: Map<String, JsonElement>): Com
 }
 
 /** Only Global scope syncs, and only when the user has turned on "sync reader preferences"
- * (owner decision 3, `AppSettingsStore.syncReaderPreferences`, matching the web's own setting
- * name). This-book overrides and all app-only fields never sync regardless of this flag. */
+ * server-side (owner decision 3, `user.settings.syncReaderPreferences`, matching the web's own
+ * setting name - see [com.bookorbit.core.model.syncReaderPreferences]). This-book overrides and
+ * all app-only fields never sync regardless of this flag. */
 fun shouldSyncToServer(syncReaderPreferencesEnabled: Boolean, scope: com.bookorbit.feature.reader.ReaderSettingsScope): Boolean =
     syncReaderPreferencesEnabled && scope == com.bookorbit.feature.reader.ReaderSettingsScope.GLOBAL
 
