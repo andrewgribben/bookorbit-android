@@ -105,6 +105,11 @@ fun migrateReaderSettings(raw: String?, json: Json): ReaderSettings {
     return runCatching {
         val element = json.parseToJsonElement(raw).jsonObject
         val decoded = json.decodeFromJsonElement(ReaderSettings.serializer(), element)
-        if (element.containsKey("useBookLayout")) decoded else decoded.copy(useBookLayout = false)
+        if (element.containsKey("useBookLayout")) return@runCatching decoded
+        // Legacy blobs omit default-valued keys, and the old fontFamily default was null (publisher font).
+        decoded.copy(
+            useBookLayout = false,
+            fontFamily = if (element.containsKey("fontFamily")) decoded.fontFamily else null,
+        )
     }.getOrDefault(ReaderSettings())
 }

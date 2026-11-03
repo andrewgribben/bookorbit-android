@@ -46,6 +46,8 @@
     <string name="custom_speed">Custom speed</string>
     <string name="dark">Dark</string>
     <string name="decrease">Decrease</string>
+    <string name="decrease_named">Decrease %1$s</string>
+    <string name="increase_named">Increase %1$s</string>
     <string name="default_speed">Default speed</string>
     <string name="delete">Delete</string>
     <string name="delete_bookmark">Delete bookmark</string>
