@@ -10,6 +10,7 @@ import com.bookorbit.core.model.BookFiles
 import com.bookorbit.core.network.ApiService
 import com.bookorbit.core.settings.AppSettingsStore
 import com.bookorbit.core.storage.LocalRef
+import com.bookorbit.core.wallpaper.CoverWallpaperFollowController
 import com.bookorbit.feature.bookdetail.BookDetailRepository
 import com.bookorbit.feature.downloads.DownloadsRepository
 import com.bookorbit.feature.reader.ReaderProgressRepository
@@ -46,6 +47,7 @@ class ComicReaderViewModel @Inject constructor(
     private val appSettings: AppSettingsStore,
     private val settingsStore: ComicReaderSettingsStore,
     private val preferencesRepo: ComicReaderPreferencesRepository,
+    private val wallpaperFollow: CoverWallpaperFollowController,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -84,6 +86,7 @@ class ComicReaderViewModel @Inject constructor(
     init {
         load()
         loadSettings()
+        wallpaperFollow.noteOpenBook(bookId)
     }
 
     fun load() {
