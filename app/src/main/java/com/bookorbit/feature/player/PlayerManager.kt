@@ -275,7 +275,7 @@ class PlayerManager @Inject constructor(
                 totalDurationSec = totalDurationSec,
                 speed = speed,
                 speedIsPerBook = bookSpeed != null,
-            )
+            ).withNarrationCleared()
         }
         wallpaperFollow.noteOpenBook(data.book.id)
         startPoller()
@@ -297,7 +297,7 @@ class PlayerManager @Inject constructor(
                     files = files,
                     chapters = PlaybackQueue.resolveChapters(book, PlaybackQueue.totalDurationSec(files)),
                     totalDurationSec = PlaybackQueue.totalDurationSec(files),
-                )
+                ).withNarrationCleared()
             }
             wallpaperFollow.noteOpenBook(book.id)
             startPoller()

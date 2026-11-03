@@ -20,6 +20,8 @@ import com.bookorbit.feature.reader.narration.NarrationMediaItems
 import com.bookorbit.feature.reader.narration.NarrationTimeline
 import com.bookorbit.feature.sessions.ReadingSessionTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -97,7 +99,13 @@ class ReaderViewModel @Inject constructor(
     /** One-shot instructions for the screen to run on [ReaderController] — narration's SMIL parsing
      * and highlight drawing both happen in the WebView, so this VM only tells it what to do. */
     sealed interface ReaderCommand {
-        data object NarrationPrepare : ReaderCommand
+        /** [generation] is echoed back by the WebView on the matching `narrationTimeline(Error)`
+         * event, so a stale reply from an abandoned prepare (see [NarrationCancelPrepare]) can be
+         * told apart from the current one. */
+        data class NarrationPrepare(val generation: Int) : ReaderCommand
+        /** Tells the WebView to abandon any `buildNarrationTimeline` still in flight; its eventual
+         * result (if any) is ignored both there (its own generation token) and here. */
+        data object NarrationCancelPrepare : ReaderCommand
         data class NarrationHighlight(val textHref: String) : ReaderCommand
         data object NarrationUnhighlight : ReaderCommand
     }
@@ -124,6 +132,12 @@ class ReaderViewModel @Inject constructor(
     private var narrationTimeline: NarrationTimeline? = null
     private var narrationSorted: List<NarrationItem> = emptyList()
     private var narrationWatchJob: Job? = null
+    /** The extract-and-load work kicked off by [onNarrationReady]; cancelled by [stopNarration] so
+     * a toggle-off during a slow extraction can't still load narration after the user left. */
+    private var narrationLoadJob: Job? = null
+    /** Bumped on every prepare request and on [stopNarration]; a `narrationTimeline`/`Error` event
+     * whose echoed generation doesn't match the current one is a stale reply and is ignored. */
+    private var narrationGeneration = 0
 
     private var lastSaved = 0L
     private var pending: Pair<String?, Double>? = null
@@ -179,49 +193,78 @@ class ReaderViewModel @Inject constructor(
         if (_ui.value.narrationOn || _ui.value.narrationLoading) {
             stopNarration()
         } else {
+            val generation = ++narrationGeneration
             _ui.update { it.copy(narrationLoading = true) }
-            viewModelScope.launch { _commands.emit(ReaderCommand.NarrationPrepare) }
+            viewModelScope.launch { _commands.emit(ReaderCommand.NarrationPrepare(generation)) }
         }
     }
 
-    private fun stopNarration() {
+    /** Stops narration (including a prepare/extract/load still in flight) and tells the WebView to
+     * abandon any `buildNarrationTimeline` it may still be running. Also called from [onCleared] -
+     * leaving the reader stops narration, but merely backgrounding it (screen off, app switch while
+     * still in the reader) must not. */
+    fun stopNarration() {
+        narrationGeneration++
         narrationWatchJob?.cancel()
         narrationWatchJob = null
+        narrationLoadJob?.cancel()
+        narrationLoadJob = null
         narrationTimeline = null
         narrationSorted = emptyList()
         playerManager.stopNarration()
         _ui.update { it.copy(narrationOn = false, narrationLoading = false, narrationHighlightTextHref = null) }
-        viewModelScope.launch { _commands.emit(ReaderCommand.NarrationUnhighlight) }
+        viewModelScope.launch {
+            _commands.emit(ReaderCommand.NarrationCancelPrepare)
+            _commands.emit(ReaderCommand.NarrationUnhighlight)
+        }
     }
 
-    /** The WebView finished parsing SMIL for every section; extract its audio and start playing. */
-    fun onNarrationReady(timeline: NarrationTimeline) {
+    /** The WebView finished parsing SMIL for every section; extract its audio and start playing.
+     * [generation] must match the request currently in flight, or this is a stale reply (an
+     * abandoned prepare, or one superseded by a later toggle) and is ignored. */
+    @OptIn(UnstableApi::class)
+    fun onNarrationReady(timeline: NarrationTimeline, generation: Int) {
+        if (generation != narrationGeneration) return
         val resolved = _ui.value.resolved
         if (resolved == null) {
-            onNarrationFailed(null)
+            onNarrationFailed(null, generation)
             return
         }
         narrationTimeline = timeline
-        narrationSorted = NarrationLocator.sortForLookup(timeline.items)
-        viewModelScope.launch {
+        narrationLoadJob = viewModelScope.launch {
             try {
-                val files = narrationExtractor.extract(resolved.ref, bookId, timeline.audioSrcs)
-                val mediaItems = NarrationMediaItems.build(_ui.value.title, files)
+                val extraction = narrationExtractor.extract(resolved.ref, bookId, timeline.audioSrcs)
+                if (generation != narrationGeneration) return@launch
+                // Items pointing at audio that wasn't found in the EPUB are dropped rather than
+                // failing narration outright; their audioIndex is remapped onto the compacted
+                // (playable-only) file list extract() returned.
+                val remap = extraction.playableAudioIndices.withIndex().associate { (newIndex, oldIndex) -> oldIndex to newIndex }
+                val playableItems = timeline.items.mapNotNull { item ->
+                    remap[item.audioIndex]?.let { item.copy(audioIndex = it) }
+                }
+                if (playableItems.isEmpty()) {
+                    onNarrationFailed(null, generation)
+                    return@launch
+                }
+                narrationSorted = NarrationLocator.sortForLookup(playableItems)
+                val mediaItems = NarrationMediaItems.build(_ui.value.title, extraction.files)
                 val startItem = timeline.startTextHref
-                    ?.let { href -> timeline.items.firstOrNull { it.textHref == href } }
-                    ?: timeline.items.firstOrNull()
+                    ?.let { href -> playableItems.firstOrNull { it.textHref == href } }
+                    ?: playableItems.firstOrNull()
                 val startIndex = startItem?.audioIndex ?: 0
                 val startPositionMs = ((startItem?.beginSec ?: 0.0) * 1000).toLong()
                 playerManager.loadNarrationQueue(mediaItems, startIndex, startPositionMs, autoPlay = true)
+                if (generation != narrationGeneration) return@launch
                 _ui.update { it.copy(narrationOn = true, narrationLoading = false) }
                 watchNarrationPosition()
             } catch (e: Exception) {
-                onNarrationFailed(e.message)
+                onNarrationFailed(e.message, generation)
             }
         }
     }
 
-    fun onNarrationFailed(message: String?) {
+    fun onNarrationFailed(message: String?, generation: Int) {
+        if (generation != narrationGeneration) return
         narrationTimeline = null
         narrationSorted = emptyList()
         _ui.update {
@@ -470,6 +513,7 @@ class ReaderViewModel @Inject constructor(
     override fun onCleared() {
         flush()
         sessions.end()
+        stopNarration()
         super.onCleared()
     }
 }
