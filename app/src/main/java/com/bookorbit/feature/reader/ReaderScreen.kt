@@ -43,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,7 +70,7 @@ fun ReaderScreen(
     var ready by remember { mutableStateOf(false) }
     var opened by remember { mutableStateOf(false) }
     var rendererFailed by remember { mutableStateOf(false) }
-    var chromeVisible by remember { mutableStateOf(true) }
+    var chromeVisible by rememberSaveable { mutableStateOf(true) }
     var tocVisible by remember { mutableStateOf(false) }
     var settingsVisible by remember { mutableStateOf(false) }
     var highlightsVisible by remember { mutableStateOf(false) }
