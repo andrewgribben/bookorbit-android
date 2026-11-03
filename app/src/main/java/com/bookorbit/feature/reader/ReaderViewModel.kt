@@ -13,7 +13,7 @@ import com.bookorbit.core.wallpaper.CoverWallpaperFollowController
 import com.bookorbit.feature.bookdetail.BookDetailRepository
 import com.bookorbit.feature.downloads.DownloadsRepository
 import com.bookorbit.feature.player.PlayerManager
-import com.bookorbit.feature.reader.narration.NarrationAudioExtractor
+import com.bookorbit.feature.reader.narration.NarrationAudioSource
 import com.bookorbit.feature.reader.narration.NarrationItem
 import com.bookorbit.feature.reader.narration.NarrationLocator
 import com.bookorbit.feature.reader.narration.NarrationMediaItems
@@ -48,7 +48,7 @@ class ReaderViewModel @Inject constructor(
     private val wallpaper: CoverWallpaperController,
     private val wallpaperFollow: CoverWallpaperFollowController,
     private val playerManager: PlayerManager,
-    private val narrationExtractor: NarrationAudioExtractor,
+    private val narrationSource: NarrationAudioSource,
 ) : ViewModel() {
 
     val bookId: Int = savedStateHandle.get<Int>("id") ?: 0
@@ -212,6 +212,7 @@ class ReaderViewModel @Inject constructor(
         narrationTimeline = null
         narrationSorted = emptyList()
         playerManager.stopNarration()
+        narrationSource.release()
         _ui.update { it.copy(narrationOn = false, narrationLoading = false, narrationHighlightTextHref = null) }
         viewModelScope.launch {
             _commands.emit(ReaderCommand.NarrationCancelPrepare)
@@ -233,12 +234,12 @@ class ReaderViewModel @Inject constructor(
         narrationTimeline = timeline
         narrationLoadJob = viewModelScope.launch {
             try {
-                val extraction = narrationExtractor.extract(resolved.ref, bookId, timeline.audioSrcs)
+                val resolution = narrationSource.resolve(resolved.ref, bookId, timeline.audioSrcs)
                 if (generation != narrationGeneration) return@launch
                 // Items pointing at audio that wasn't found in the EPUB are dropped rather than
                 // failing narration outright; their audioIndex is remapped onto the compacted
-                // (playable-only) file list extract() returned.
-                val remap = extraction.playableAudioIndices.withIndex().associate { (newIndex, oldIndex) -> oldIndex to newIndex }
+                // (playable-only) entry list resolve() returned.
+                val remap = resolution.playableAudioIndices.withIndex().associate { (newIndex, oldIndex) -> oldIndex to newIndex }
                 val playableItems = timeline.items.mapNotNull { item ->
                     remap[item.audioIndex]?.let { item.copy(audioIndex = it) }
                 }
@@ -247,7 +248,7 @@ class ReaderViewModel @Inject constructor(
                     return@launch
                 }
                 narrationSorted = NarrationLocator.sortForLookup(playableItems)
-                val mediaItems = NarrationMediaItems.build(_ui.value.title, extraction.files)
+                val mediaItems = NarrationMediaItems.build(_ui.value.title, resolution.epubPath, resolution.entryNames)
                 val startItem = timeline.startTextHref
                     ?.let { href -> playableItems.firstOrNull { it.textHref == href } }
                     ?: playableItems.firstOrNull()
