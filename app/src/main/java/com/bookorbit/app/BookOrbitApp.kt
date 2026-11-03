@@ -48,6 +48,8 @@ private fun AuthFlow(startAtServerSetup: Boolean) {
     NavHost(
         navController = navController,
         startDestination = if (startAtServerSetup) AuthRoutes.SERVER_SETUP else AuthRoutes.LOGIN,
+        enterTransition = navEnter,
+        exitTransition = navExit,
     ) {
         composable(AuthRoutes.SERVER_SETUP) {
             ServerSetupScreen(
