@@ -39,6 +39,7 @@ class AppSettingsStore @Inject constructor(
     private val readingFullscreenKey = booleanPreferencesKey("reading_fullscreen")
     private val coverWallpaperFollowKey = booleanPreferencesKey("cover_wallpaper_follow")
     private val coverWallpaperFollowedBookIdKey = intPreferencesKey("cover_wallpaper_followed_book_id")
+    private val syncReaderPreferencesKey = booleanPreferencesKey("sync_reader_preferences")
 
     val readerInterface = context.appSettingsDataStore.data.map { prefs ->
         prefs[readerInterfaceKey]?.let { runCatching { ReaderInterface.valueOf(it) }.getOrNull() }
@@ -110,5 +111,15 @@ class AppSettingsStore @Inject constructor(
 
     suspend fun setCoverWallpaperFollowedBookId(bookId: Int) {
         context.appSettingsDataStore.edit { it[coverWallpaperFollowedBookIdKey] = bookId }
+    }
+
+    /** Matches the web's "sync reader preferences" user setting (`syncReaderPreferences`,
+     * server-side `PATCH /me/reader-storage-mode`). Off by default: global reader settings stay
+     * device-only until the user opts in. Not yet wired to the server call (no reader-settings
+     * sync endpoint exists in the server reference yet); see ComicReaderSettingsStore. */
+    val syncReaderPreferences = context.appSettingsDataStore.data.map { it[syncReaderPreferencesKey] ?: false }
+
+    suspend fun setSyncReaderPreferences(enabled: Boolean) {
+        context.appSettingsDataStore.edit { it[syncReaderPreferencesKey] = enabled }
     }
 }
