@@ -2,12 +2,13 @@ package com.bookorbit.feature.reader
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
 /**
@@ -50,13 +51,26 @@ fun ReaderSystemBarsEffect(fullscreen: Boolean, chromeVisible: Boolean) {
         }
     }
 
-    LaunchedEffect(fullscreen, chromeVisible, view) {
-        val window = view.context.findActivity()?.window ?: return@LaunchedEffect
-        val controller = WindowCompat.getInsetsController(window, view)
-        if (readerWantsSystemBarsVisible(fullscreen, chromeVisible)) {
-            controller.show(WindowInsetsCompat.Type.systemBars())
-        } else {
-            controller.hide(WindowInsetsCompat.Type.systemBars())
+    // System bars come back on their own after focus loss (shade, app switcher, calls), so re-apply
+    // the wanted state on focus regain and resume, as ImmersiveReaderEffect does for other readers.
+    DisposableEffect(fullscreen, chromeVisible, view, owner) {
+        val window = view.context.findActivity()?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        fun apply() {
+            if (readerWantsSystemBarsVisible(fullscreen, chromeVisible)) {
+                controller?.show(WindowInsetsCompat.Type.systemBars())
+            } else {
+                controller?.hide(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        val focusListener = android.view.ViewTreeObserver.OnWindowFocusChangeListener { if (it) apply() }
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) apply() }
+        apply()
+        view.viewTreeObserver.addOnWindowFocusChangeListener(focusListener)
+        owner.lifecycle.addObserver(observer)
+        onDispose {
+            owner.lifecycle.removeObserver(observer)
+            if (view.viewTreeObserver.isAlive) view.viewTreeObserver.removeOnWindowFocusChangeListener(focusListener)
         }
     }
 }
