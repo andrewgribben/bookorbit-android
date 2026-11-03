@@ -46,7 +46,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -55,6 +57,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -79,10 +82,12 @@ import com.bookorbit.feature.reader.ReaderControlsSettings
 import com.bookorbit.feature.reader.ReaderSystemBarsEffect
 import com.bookorbit.feature.reader.TapAction
 import com.bookorbit.feature.reader.resolveTapAction
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val MAX_ZOOM = 4f
 private const val MIN_TAP_TARGET_DP = 48
+private const val RESUME_NOTE_AUTO_DISMISS_MS = 5_000L
 
 /**
  * Current navigation position for the comic reader's bottom bar: both the slider's own index
@@ -152,8 +157,12 @@ fun ComicReaderScreen(
     val jumpToPage = remember { mutableStateOf<Int?>(null) }
     val nav = remember { mutableStateOf(ComicNavState()) }
 
-    // Pressing Pages (task 1's top bar) opens the grid - wired to ComicPagesGridSheet in task 2.
+    // Pressing Pages (task 1's top bar) opens the grid, wired to ComicPagesGridSheet below.
     var showPagesGrid by remember { mutableStateOf(false) }
+    // The resume note only ever makes sense for the page the book actually opened on - keyed on
+    // the loaded fileId so a different book opened in the same screen instance gets its own note.
+    var resumeNoteDismissed by rememberSaveable(ui.fileId) { mutableStateOf(false) }
+    val showResumeNote = !ui.loading && ui.error == null && ui.initialPage > 0 && !resumeNoteDismissed
 
     val backgroundColor = comicBackgroundColor(settings)
 
@@ -208,6 +217,31 @@ fun ComicReaderScreen(
             )
         }
 
+        if (showResumeNote) {
+            ResumeNote(
+                page = ui.initialPage + 1,
+                insets = bottomBarInsets,
+                onStartOver = {
+                    jumpToPage.value = 0
+                    resumeNoteDismissed = true
+                },
+                onDismiss = { resumeNoteDismissed = true },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+    }
+
+    if (showPagesGrid) {
+        ComicPagesGridSheet(
+            pageCount = ui.pageCount,
+            currentPage = ui.currentPage,
+            source = ui.source,
+            onSelectPage = { page ->
+                jumpToPage.value = page
+                showPagesGrid = false
+            },
+            onDismiss = { showPagesGrid = false },
+        )
     }
 
     if (ui.showConfigureSheet) {
@@ -329,6 +363,39 @@ private fun ComicBottomBar(
             }
         }
         Text(nav.label, color = Color.White.copy(alpha = 0.85f))
+    }
+}
+
+/** Transient "Resumed at page N" pill with a Start over action (task 2); auto-dismisses after
+ * [RESUME_NOTE_AUTO_DISMISS_MS]. Sits above the bottom bar so the two never overlap. */
+@Composable
+private fun ResumeNote(
+    page: Int,
+    insets: WindowInsets,
+    onStartOver: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LaunchedEffect(page) {
+        delay(RESUME_NOTE_AUTO_DISMISS_MS)
+        onDismiss()
+    }
+    Surface(
+        modifier = modifier
+            .windowInsetsPadding(insets)
+            .padding(bottom = 72.dp)
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xFF2B2E33),
+        contentColor = Color.White,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+        ) {
+            Text(stringResource(R.string.cr_resumed_at_page, page), modifier = Modifier.padding(end = 4.dp))
+            TextButton(onClick = onStartOver) { Text(stringResource(R.string.cr_start_over), color = Color(0xFF8AB4FF)) }
+        }
     }
 }
 

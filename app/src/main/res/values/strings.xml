@@ -593,4 +593,9 @@
     <string name="cr_previous_page">Previous page</string>
     <string name="cr_next_page">Next page</string>
     <string name="cr_last_page">Last page</string>
+
+    <!-- Comic reader Pages grid and resume note. -->
+    <string name="cr_pages_grid_title">Pages</string>
+    <string name="cr_resumed_at_page">Resumed at page %1$d</string>
+    <string name="cr_start_over">Start over</string>
 </resources>
