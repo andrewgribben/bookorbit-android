@@ -105,6 +105,8 @@ function generateCSS(s) {
     ${
       forceBg
         ? `html, body { color: ${mode.fg} !important; background: none !important; }
+           /* A dark color-scheme iframe in a light host gets Chromium's opaque #121212 canvas, which shows in the column padding. */
+           html { background: ${mode.bg} !important; }
            body * { color: inherit !important; border-color: currentColor !important; background-color: ${mode.bg} !important; }
            a:any-link { color: ${mode.link} !important; }
            svg, img { background-color: transparent !important; ${!dark ? 'mix-blend-mode: multiply;' : ''} }`
