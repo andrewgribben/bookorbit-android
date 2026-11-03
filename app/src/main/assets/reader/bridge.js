@@ -92,6 +92,11 @@ function themeFor(name) {
 // (amoled's `light.bg` is exactly '#ffffff') and no background gets forced onto the page at all,
 // so the publisher's own (often off-white/grey) stylesheet shows through instead of true black.
 // Keep this forcing in sync with ReaderThemes.kt's effectiveIsDark() on the Kotlin side.
+function narrationHighlightSelector() {
+  const classes = new Set([DEFAULT_ACTIVE_CLASS, narrationActiveClass].filter(Boolean));
+  return [...classes].map((c) => `.${CSS.escape(c)}`).join(', ');
+}
+
 function themeCSS(s) {
   const theme = themeFor(s.themeName);
   const dark = s.isDark || s.themeName === 'amoled';
@@ -112,7 +117,9 @@ function themeCSS(s) {
            html { background: ${mode.bg} !important; }
            body * { color: inherit !important; border-color: currentColor !important; background-color: ${mode.bg} !important; }
            a:any-link { color: ${mode.link} !important; }
-           svg, img { background-color: transparent !important; ${!dark ? 'mix-blend-mode: multiply;' : ''} }`
+           svg, img { background-color: transparent !important; ${!dark ? 'mix-blend-mode: multiply;' : ''} }
+           /* The forced body * background above would hide the publisher's read-aloud highlight. */
+           ${narrationHighlightSelector()} { background-color: ${dark ? 'rgba(255, 214, 10, 0.35)' : 'rgba(255, 214, 10, 0.45)'} !important; }`
         : ''
     }
     ::selection { background-color: rgba(128, 128, 128, 0.3); }
@@ -294,8 +301,8 @@ async function buildNarrationTimeline() {
   // of from the beginning of the book (mirrors MediaOverlay#start's own section-then-href match).
   const currentHref = view?.lastLocation?.source ?? null;
   const currentSectionIndex = currentHref ? sections.findIndex((s) => s.id === currentHref) : -1;
-  let startTextHref = null;
-  if (currentSectionIndex >= 0) {
+  let startTextHref = currentSectionIndex >= 0 ? firstVisibleTextHref(items, currentSectionIndex) : null;
+  if (!startTextHref && currentSectionIndex >= 0) {
     for (let i = currentSectionIndex; i < sections.length && !startTextHref; i++) {
       startTextHref = items.find((it) => it.sectionIndex === i)?.textHref ?? null;
     }
@@ -309,6 +316,26 @@ async function buildNarrationTimeline() {
     playbackActiveClass: book.media?.playbackActiveClass || null,
     startTextHref,
   };
+}
+
+/** textHref of the first narrated element that ends at or after the top of the visible page. */
+function firstVisibleTextHref(items, sectionIndex) {
+  const range = view?.lastLocation?.range;
+  const doc = range?.startContainer?.ownerDocument;
+  if (!range || !doc) return null;
+  for (const it of items) {
+    if (it.sectionIndex !== sectionIndex) continue;
+    const hash = it.textHref.indexOf('#');
+    if (hash < 0) continue;
+    const el = doc.getElementById(decodeURIComponent(it.textHref.slice(hash + 1)));
+    if (!el) continue;
+    try {
+      if (range.comparePoint(el, el.childNodes.length) >= 0) return it.textHref;
+    } catch {
+      // element in a different document than the range; ignore
+    }
+  }
+  return null;
 }
 
 /** Parses one section's SMIL file into its `<par>` entries. Never throws - an unreadable or
@@ -702,11 +729,11 @@ const MIME = {
 // Shared tail of opening a book, whichever of openBook/openLocalEpub produced it: apply styles,
 // report the TOC/metadata, then navigate to the requested position (CFI, else fraction, else start).
 async function finishOpen(meta) {
-  applyStyles(meta.settings ?? currentSettings);
-
   const hasMediaOverlay = !!view.book?.sections?.some((s) => s.mediaOverlay);
   narrationActiveClass = hasMediaOverlay ? view.book.media?.activeClass || DEFAULT_ACTIVE_CLASS : null;
   narrationPlaybackActiveClass = hasMediaOverlay ? view.book.media?.playbackActiveClass || null : null;
+
+  applyStyles(meta.settings ?? currentSettings);
 
   post({
     type: 'loaded',
