@@ -17,15 +17,28 @@ private val Context.readerDataStore by preferencesDataStore("reader_settings")
 @Singleton
 class ReaderSettingsStore @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val json: Json,
 ) {
     private val key = stringPreferencesKey("settings")
     private val pagingHintSeenKey = booleanPreferencesKey("paging_hint_seen")
 
-    suspend fun load(): ReaderSettings {
-        val raw = context.readerDataStore.data.first()[key] ?: return ReaderSettings()
-        return runCatching { json.decodeFromString<ReaderSettings>(raw) }.getOrDefault(ReaderSettings())
+    // Deliberately NOT the app-wide injected Json (NetworkModule.provideJson, encodeDefaults =
+    // false): the stage-2 migration in migrateReaderSettings() tells "pre-stage-2 blob" apart
+    // from "current blob with useBookLayout" by checking whether the "useBookLayout" key is
+    // present. With encodeDefaults = false, a value equal to the default (useBookLayout = true,
+    // the common case) would be silently omitted on save, making every subsequent load() treat
+    // it as a legacy blob and flip it back to false. encodeDefaults = true here guarantees every
+    // field this store writes is always present on the next read, keeping that check reliable.
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
     }
+
+    // The stage-2 "use book layout" migration lives in migrateReaderSettings() (ReaderSettings.kt),
+    // kept pure/testable: fresh installs default to useBookLayout = true, settings blobs written
+    // before the field existed are migrated to useBookLayout = false so an already-customised
+    // user's look does not change underneath them. See that function's doc for the full rule.
+    suspend fun load(): ReaderSettings =
+        migrateReaderSettings(context.readerDataStore.data.first()[key], json)
 
     suspend fun save(settings: ReaderSettings) {
         context.readerDataStore.edit { it[key] = json.encodeToString(ReaderSettings.serializer(), settings) }

@@ -428,7 +428,22 @@ class View {
 
 // NOTE: everything here assumes the so-called "negative scroll type" for RTL
 export class Paginator extends HTMLElement {
-  static observedAttributes = ['flow', 'gap', 'margin', 'max-inline-size', 'max-block-size', 'max-column-count']
+  // Stage 2: split the single `margin` attribute into four independent sides (top/bottom/left/
+  // right), so the host can give the page asymmetric margins (publisher margins are rarely
+  // symmetric). Each still behaves like the old `margin` did: a *minimum* inset, via
+  // `minmax(var(--_margin-*), 1fr)` in the grid below, with any extra space beyond the content's
+  // max-inline/max-block-size filled by the flexible `1fr` track for centering.
+  static observedAttributes = [
+    'flow',
+    'gap',
+    'margin-top',
+    'margin-bottom',
+    'margin-left',
+    'margin-right',
+    'max-inline-size',
+    'max-block-size',
+    'max-column-count',
+  ]
   #root = this.attachShadow({ mode: 'closed' })
   #observer = new ResizeObserver(() => this.render())
   #top
@@ -468,7 +483,10 @@ export class Paginator extends HTMLElement {
         }
         #top {
             --_gap: 7%;
-            --_margin: 48px;
+            --_margin-top: 48px;
+            --_margin-bottom: 48px;
+            --_margin-left: 48px;
+            --_margin-right: 48px;
             --_max-inline-size: 720px;
             --_max-block-size: 1440px;
             --_max-column-count: 2;
@@ -479,15 +497,15 @@ export class Paginator extends HTMLElement {
             --_max-height: var(--_max-block-size);
             display: grid;
             grid-template-columns:
-                minmax(var(--_half-gap), 1fr)
+                minmax(var(--_margin-left), 1fr)
                 var(--_half-gap)
                 minmax(0, calc(var(--_max-width) - var(--_gap)))
                 var(--_half-gap)
-                minmax(var(--_half-gap), 1fr);
+                minmax(var(--_margin-right), 1fr);
             grid-template-rows:
-                minmax(var(--_margin), 1fr)
+                minmax(var(--_margin-top), 1fr)
                 minmax(0, var(--_max-height))
-                minmax(var(--_margin), 1fr);
+                minmax(var(--_margin-bottom), 1fr);
             &.vertical {
                 --_max-column-count-spread: var(--_max-column-count-portrait);
                 --_max-width: var(--_max-block-size);
@@ -519,15 +537,16 @@ export class Paginator extends HTMLElement {
         #header {
             grid-column: 3 / 4;
             grid-row: 1;
+            height: var(--_margin-top);
         }
         #footer {
             grid-column: 3 / 4;
             grid-row: 3;
             align-self: end;
+            height: var(--_margin-bottom);
         }
-        #header, #footer {
+        :is(#header, #footer) {
             display: grid;
-            height: var(--_margin);
         }
         :is(#header, #footer) > * {
             display: flex;
@@ -639,7 +658,10 @@ export class Paginator extends HTMLElement {
         this.render()
         break
       case 'gap':
-      case 'margin':
+      case 'margin-top':
+      case 'margin-bottom':
+      case 'margin-left':
+      case 'margin-right':
       case 'max-block-size':
       case 'max-column-count':
         this.#top.style.setProperty('--_' + name, value)
@@ -698,7 +720,14 @@ export class Paginator extends HTMLElement {
     const style = getComputedStyle(this.#top)
     const maxInlineSize = parseFloat(style.getPropertyValue('--_max-inline-size'))
     const maxColumnCount = parseInt(style.getPropertyValue('--_max-column-count-spread'))
-    const margin = parseFloat(style.getPropertyValue('--_margin'))
+    const marginTop = parseFloat(style.getPropertyValue('--_margin-top'))
+    const marginBottom = parseFloat(style.getPropertyValue('--_margin-bottom'))
+    const marginLeft = parseFloat(style.getPropertyValue('--_margin-left'))
+    const marginRight = parseFloat(style.getPropertyValue('--_margin-right'))
+    // setImageSize() below assumes a single symmetric inset per axis (it subtracts `margin * 2`
+    // from the available height/width); average the pair on each axis so asymmetric margins
+    // still produce a sane image cap rather than needing a 4-way image-size rewrite.
+    const margin = vertical ? (marginLeft + marginRight) / 2 : (marginTop + marginBottom) / 2
     this.#margin = margin
 
     const g = parseFloat(style.getPropertyValue('--_gap')) / 100
@@ -725,7 +754,13 @@ export class Paginator extends HTMLElement {
     if (flow === 'scrolled') {
       // FIXME: vertical-rl only, not -lr
       this.setAttribute('dir', vertical ? 'rtl' : 'ltr')
-      this.#top.style.padding = '0'
+      // Scrolled flow's #container spans the whole grid (see the :host([flow="scrolled"]) rule
+      // above), bypassing the paginated grid's margin tracks entirely, so the four margins are
+      // applied directly as padding on #top here instead - this is what makes margins work in
+      // scrolled flow too, not just paginated (they used to be dropped, `padding = '0'`, below).
+      this.#top.style.padding = vertical
+        ? `${marginLeft}px ${marginTop}px ${marginRight}px ${marginBottom}px`
+        : `${marginTop}px ${marginRight}px ${marginBottom}px ${marginLeft}px`
       const columnWidth = maxInlineSize
 
       this.heads = null
@@ -735,6 +770,9 @@ export class Paginator extends HTMLElement {
 
       return { flow, margin, gap, columnWidth }
     }
+    // Paginated flow gets its margins from the grid tracks (--_margin-*) instead, so any stale
+    // padding left over from a previous scrolled-flow render must be cleared here.
+    this.#top.style.padding = ''
 
     const divisor = Math.min(maxColumnCount, Math.ceil(size / maxInlineSize))
     const columnWidth = size / divisor - gap
