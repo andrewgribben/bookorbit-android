@@ -20,7 +20,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PendingAnnotationOpEntity::class,
         AnnotationCacheEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class BookOrbitDatabase : RoomDatabase() {
@@ -32,6 +32,13 @@ abstract class BookOrbitDatabase : RoomDatabase() {
     abstract fun pendingReadingSessionDao(): PendingReadingSessionDao
     abstract fun pendingAnnotationOpDao(): PendingAnnotationOpDao
     abstract fun annotationCacheDao(): AnnotationCacheDao
+}
+
+/** Keeps the one-based page number of a comic position so it can be re-sent to the server. */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `reader_progress` ADD COLUMN `pageNumber` INTEGER")
+    }
 }
 
 /** Adds the offline highlight queue and the per-book highlight cache; existing tables are untouched. */

@@ -82,7 +82,7 @@ class ComicReaderViewModel @Inject constructor(
                 return@launch
             }
             val initial = progress.resolveInitial(file.id)
-            val page = ComicPaging.pageForFraction(initial.fraction, count)
+            val page = ComicPaging.resumePage(initial.pageNumber, initial.fraction, count)
             sessions.beginReading(file.id, ComicPaging.percentage(page, count))
             _ui.update {
                 it.copy(loading = false, title = book.title, fileId = file.id, pageCount = count, initialPage = page, currentPage = page)
