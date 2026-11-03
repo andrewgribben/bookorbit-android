@@ -3,6 +3,7 @@ package com.bookorbit.feature.bookdetail
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bookorbit.R
 import com.bookorbit.core.auth.SessionManager
 import com.bookorbit.core.db.DownloadEntity
 import com.bookorbit.core.model.BookAnnotation
@@ -10,7 +11,9 @@ import com.bookorbit.core.model.BookDetail
 import com.bookorbit.core.model.BookFiles
 import com.bookorbit.core.model.BookRecommendation
 import com.bookorbit.core.model.CollectionWithMembership
+import com.bookorbit.core.wallpaper.CoverWallpaperController
 import com.bookorbit.feature.downloads.DownloadsRepository
+import com.bookorbit.ui.UiText
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,6 +30,7 @@ class BookDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repo: BookDetailRepository,
     private val downloads: DownloadsRepository,
+    private val wallpaper: CoverWallpaperController,
     session: SessionManager,
 ) : ViewModel() {
 
@@ -46,6 +50,8 @@ class BookDetailViewModel @Inject constructor(
         val fileProgress: Map<Int, Double> = emptyMap(),
         val statusUpdating: Boolean = false,
         val ratingUpdating: Boolean = false,
+        /** One-shot message for the screen to toast, then clear via [consumeMessage]. */
+        val message: UiText? = null,
     )
 
     data class CollectionsState(
@@ -148,6 +154,20 @@ class BookDetailViewModel @Inject constructor(
     fun removeDownload() {
         viewModelScope.launch { downloads.delete(bookId) }
     }
+
+    fun setCoverAsWallpaper() {
+        viewModelScope.launch {
+            val outcome = wallpaper.apply(bookId)
+            val message = when (outcome) {
+                CoverWallpaperController.Outcome.SET -> UiText.of(R.string.wallpaper_result_set)
+                CoverWallpaperController.Outcome.NO_COVER -> UiText.of(R.string.wallpaper_result_no_cover)
+                CoverWallpaperController.Outcome.FAILED -> UiText.of(R.string.wallpaper_result_failed)
+            }
+            _ui.update { it.copy(message = message) }
+        }
+    }
+
+    fun consumeMessage() = _ui.update { it.copy(message = null) }
 
     private suspend fun reloadBook() {
         val book = loadedBook()

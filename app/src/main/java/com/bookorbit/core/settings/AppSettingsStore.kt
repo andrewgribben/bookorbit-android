@@ -3,6 +3,7 @@ package com.bookorbit.core.settings
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -36,6 +37,8 @@ class AppSettingsStore @Inject constructor(
     private val navItemsKey = stringPreferencesKey("nav_items")
     private val readerInterfaceKey = stringPreferencesKey("reader_interface")
     private val readingFullscreenKey = booleanPreferencesKey("reading_fullscreen")
+    private val coverWallpaperFollowKey = booleanPreferencesKey("cover_wallpaper_follow")
+    private val coverWallpaperFollowedBookIdKey = intPreferencesKey("cover_wallpaper_followed_book_id")
 
     val readerInterface = context.appSettingsDataStore.data.map { prefs ->
         prefs[readerInterfaceKey]?.let { runCatching { ReaderInterface.valueOf(it) }.getOrNull() }
@@ -93,5 +96,19 @@ class AppSettingsStore @Inject constructor(
 
     suspend fun setSeriesViewMode(mode: SeriesViewMode) {
         context.appSettingsDataStore.edit { it[seriesViewModeKey] = mode.name }
+    }
+
+    /** Automatically set the current book's cover as the wallpaper when the app backgrounds. Off by default. */
+    val coverWallpaperFollow = context.appSettingsDataStore.data.map { it[coverWallpaperFollowKey] ?: false }
+
+    suspend fun setCoverWallpaperFollow(enabled: Boolean) {
+        context.appSettingsDataStore.edit { it[coverWallpaperFollowKey] = enabled }
+    }
+
+    /** The book id last applied by "follow current book", so a hand-set cover isn't immediately overwritten. */
+    val coverWallpaperFollowedBookId = context.appSettingsDataStore.data.map { it[coverWallpaperFollowedBookIdKey] }
+
+    suspend fun setCoverWallpaperFollowedBookId(bookId: Int) {
+        context.appSettingsDataStore.edit { it[coverWallpaperFollowedBookIdKey] = bookId }
     }
 }

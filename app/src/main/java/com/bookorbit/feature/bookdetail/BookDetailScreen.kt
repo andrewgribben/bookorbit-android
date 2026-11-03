@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Headset
+import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material3.Button
@@ -95,6 +96,12 @@ fun BookDetailScreen(
     var statusSheet by remember { mutableStateOf(false) }
     var collectionSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    ui.message?.let { msg ->
+        androidx.compose.runtime.LaunchedEffect(msg) {
+            android.widget.Toast.makeText(context, msg.resolve(context), android.widget.Toast.LENGTH_SHORT).show()
+            vm.consumeMessage()
+        }
+    }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { vm.startDownload() }
@@ -115,6 +122,13 @@ fun BookDetailScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+                    }
+                },
+                actions = {
+                    if (ui.book != null) {
+                        IconButton(onClick = vm::setCoverAsWallpaper) {
+                            Icon(Icons.Filled.Wallpaper, contentDescription = stringResource(R.string.wallpaper_set_as_wallpaper))
+                        }
                     }
                 },
             )
