@@ -64,11 +64,11 @@ fun narrationSkipForwardSeconds(state: PlayerManager.UiState): Int = state.skipF
  * [progressFraction] is the EPUB's own reading-position fraction (0..1): narration never loads a
  * server audiobook (see [PlayerManager.UiState.narrationActive]), so there is no aggregate
  * book/file duration to drive a real playback progress line from - this is a deliberate deviation
- * from the mockup's audiobook-style scrubber, documented in the stage-4 handoff.
+ * from the mockup's audiobook-style scrubber, recorded in design-notes.md (Owner decisions).
  */
 @Composable
 fun NarrationPlayerBar(
-    state: PlayerManager.UiState,
+    state: () -> PlayerManager.UiState,
     chapterTitle: String?,
     progressFraction: Float,
     onTogglePlay: () -> Unit,
@@ -78,6 +78,7 @@ fun NarrationPlayerBar(
     onOpenSleepTimer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val state = state()
     val skipBack = narrationSkipBackSeconds(state)
     val skipForward = narrationSkipForwardSeconds(state)
     val timerActive = state.sleepTimerRemainingSec != null

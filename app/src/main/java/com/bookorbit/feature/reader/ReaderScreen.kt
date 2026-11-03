@@ -66,7 +66,8 @@ fun ReaderScreen(
     vm: ReaderViewModel = hiltViewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    val playerState by vm.playerState.collectAsStateWithLifecycle()
+    // Held as State: it ticks twice a second while narrating, so only the readers recompose, not this screen.
+    val playerState = vm.playerState.collectAsStateWithLifecycle()
     val controller = remember { ReaderController() }
     var ready by remember { mutableStateOf(false) }
     var opened by remember { mutableStateOf(false) }
@@ -199,9 +200,11 @@ fun ReaderScreen(
             ReaderWebView(
                 controller = controller,
                 modifier = Modifier.fillMaxSize(),
-                onRendererGone = {
-                    rendererFailed = true
-                    vm.onRendererGone()
+                onRendererGone = remember(vm) {
+                    {
+                        rendererFailed = true
+                        vm.onRendererGone()
+                    }
                 },
             )
         }
@@ -266,7 +269,7 @@ fun ReaderScreen(
                 // bar with it) is hidden - see readerBottomBarContent()/NarrationPlayerBar doc.
                 when (readerBottomBarContent(ui.narrationOn)) {
                     ReaderBottomBarContent.NARRATION_PLAYER -> NarrationPlayerBar(
-                        state = playerState,
+                        state = { playerState.value },
                         chapterTitle = ui.chapterTitle,
                         progressFraction = ui.percentage / 100f,
                         onTogglePlay = vm::togglePlayback,
@@ -403,7 +406,7 @@ fun ReaderScreen(
             onSaveAsDefault = { vm.saveAsDefault(ui.scope) },
             onResetToSavedDefault = { vm.resetToSavedDefault(ui.scope) },
             onRestoreBuiltIn = { vm.restoreBuiltInDefaults(ui.scope) },
-            playerState = playerState,
+            playerState = playerState.value,
             onSkipBackChange = vm::setSkipBackSeconds,
             onSkipForwardChange = vm::setSkipForwardSeconds,
             onProgressBarModeChange = vm::setProgressBarMode,
@@ -417,8 +420,8 @@ fun ReaderScreen(
 
     if (showSpeedSheet) {
         com.bookorbit.feature.player.SpeedSheet(
-            speed = playerState.speed,
-            perBook = playerState.speedIsPerBook,
+            speed = playerState.value.speed,
+            perBook = playerState.value.speedIsPerBook,
             onChange = { speed, forThisBook -> vm.setPlaybackSpeed(speed, forThisBook) },
             onDismiss = { showSpeedSheet = false },
         )
@@ -426,9 +429,9 @@ fun ReaderScreen(
 
     if (showSleepTimerSheet) {
         com.bookorbit.feature.player.SleepTimerSheet(
-            remainingSec = playerState.sleepTimerRemainingSec,
-            endOfChapter = playerState.sleepTimerEndOfChapter,
-            hasChapters = playerState.chapters.isNotEmpty(),
+            remainingSec = playerState.value.sleepTimerRemainingSec,
+            endOfChapter = playerState.value.sleepTimerEndOfChapter,
+            hasChapters = playerState.value.chapters.isNotEmpty(),
             onSetMinutes = { vm.setSleepTimer(it) },
             onSetEndOfChapter = { vm.setSleepTimerEndOfChapter() },
             onCancel = { vm.cancelSleepTimer() },

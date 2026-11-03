@@ -118,8 +118,8 @@ function themeCSS(s) {
            body * { color: inherit !important; border-color: currentColor !important; background-color: ${mode.bg} !important; }
            a:any-link { color: ${mode.link} !important; }
            svg, img { background-color: transparent !important; ${!dark ? 'mix-blend-mode: multiply;' : ''} }
-           /* The forced body * background above would hide the publisher's read-aloud highlight. */
-           ${narrationHighlightSelector()} { background-color: ${dark ? 'rgba(255, 214, 10, 0.35)' : 'rgba(255, 214, 10, 0.45)'} !important; }`
+           /* The forced body * background above hides the publisher's read-aloud highlight, so these themes deliberately draw ours instead. */
+           ${narrationHighlightSelector()} { background-color: ${NARRATION_HIGHLIGHT} !important; }`
         : ''
     }
     ::selection { background-color: rgba(128, 128, 128, 0.3); }
@@ -204,6 +204,8 @@ function serializeToc(items) {
 const SMIL_NS = 'http://www.w3.org/ns/SMIL';
 /** EPUB 3 spec default for `book.media.activeClass` when the package doesn't set one. */
 const DEFAULT_ACTIVE_CLASS = '-epub-media-overlay-active';
+/** Read-aloud highlight colour used whenever the reader draws its own. */
+const NARRATION_HIGHLIGHT = 'rgba(255, 214, 10, 0.4)';
 
 /** `activeClass`/`playbackActiveClass` for the book currently open, or null without narration. */
 let narrationActiveClass = null;
@@ -395,7 +397,7 @@ function injectDefaultNarrationStyle(doc) {
     if (alreadyStyled) return;
     const style = doc.createElement('style');
     style.setAttribute('data-bookorbit-narration', '1');
-    style.textContent = `.${narrationActiveClass} { background-color: rgba(255, 204, 0, 0.35); border-radius: 2px; }`;
+    style.textContent = `.${narrationActiveClass} { background-color: ${NARRATION_HIGHLIGHT}; border-radius: 2px; }`;
     doc.head?.appendChild(style);
   } catch {
     /* best-effort default styling only */
