@@ -1,5 +1,7 @@
 package com.bookorbit.feature.reader
 
+import com.bookorbit.feature.reader.narration.NarrationItem
+import com.bookorbit.feature.reader.narration.NarrationTimeline
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -35,7 +37,7 @@ data class SearchHit(val cfi: String, val pre: String, val match: String, val po
 
 sealed interface ReaderEvent {
     data object Ready : ReaderEvent
-    data class Loaded(val toc: List<TocItem>, val title: String?) : ReaderEvent
+    data class Loaded(val toc: List<TocItem>, val title: String?, val hasMediaOverlay: Boolean = false) : ReaderEvent
     data class Relocate(
         val cfi: String?,
         val fraction: Double?,
@@ -53,6 +55,11 @@ sealed interface ReaderEvent {
     data class SearchResults(val label: String, val hits: List<SearchHit>) : ReaderEvent
     data class SearchProgress(val progress: Double) : ReaderEvent
     data class SearchDone(val total: Int, val capped: Boolean) : ReaderEvent
+
+    /** The parsed Media Overlay timeline, sent in response to a `narrationPrepare` command.
+     * [generation] echoes the command's generation so a stale reply can be told apart. */
+    data class NarrationReady(val timeline: NarrationTimeline, val generation: Int) : ReaderEvent
+    data class NarrationFailed(val message: String, val generation: Int) : ReaderEvent
 }
 
 object ReaderBridge {
@@ -97,7 +104,8 @@ object ReaderBridge {
                         .getOrDefault(emptyList())
                 } ?: emptyList()
                 val title = obj["metadata"]?.jsonObject?.get("title")?.jsonPrimitive?.contentOrNull
-                ReaderEvent.Loaded(toc, title)
+                val hasMediaOverlay = obj["hasMediaOverlay"]?.jsonPrimitive?.booleanOrNull ?: false
+                ReaderEvent.Loaded(toc, title, hasMediaOverlay)
             }
             "relocate" -> ReaderEvent.Relocate(
                 cfi = obj["cfi"]?.jsonPrimitive?.contentOrNull,
@@ -131,7 +139,37 @@ object ReaderBridge {
             "annotationTap" -> obj["cfi"]?.jsonPrimitive?.contentOrNull?.let {
                 ReaderEvent.AnnotationTap(it, parseRect(obj["rect"]))
             }
+            "narrationTimeline" -> {
+                val generation = obj["generation"]?.jsonPrimitive?.intOrNull ?: 0
+                parseNarrationTimeline(obj)?.let { ReaderEvent.NarrationReady(it, generation) }
+                    ?: ReaderEvent.NarrationFailed("Couldn't read this book's narration", generation)
+            }
+            "narrationTimelineError" -> ReaderEvent.NarrationFailed(
+                obj["message"]?.jsonPrimitive?.contentOrNull ?: "Couldn't read this book's narration",
+                obj["generation"]?.jsonPrimitive?.intOrNull ?: 0,
+            )
             else -> null
         }
+    }.getOrNull()
+
+    private fun parseNarrationTimeline(obj: kotlinx.serialization.json.JsonObject): NarrationTimeline? = runCatching {
+        val audioSrcs = obj["audioSrcs"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+        val items = obj["items"]?.jsonArray?.mapNotNull { el ->
+            val o = el.jsonObject
+            val sectionIndex = o["sectionIndex"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val textHref = o["textHref"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val begin = o["beginSec"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+            val end = o["endSec"]?.jsonPrimitive?.doubleOrNull
+            val audioIndex = o["audioIndex"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            NarrationItem(sectionIndex, textHref, begin, end, audioIndex)
+        } ?: emptyList()
+        if (audioSrcs.isEmpty() || items.isEmpty()) return null
+        NarrationTimeline(
+            audioSrcs = audioSrcs,
+            items = items,
+            activeClass = obj["activeClass"]?.jsonPrimitive?.contentOrNull ?: NarrationTimeline.DEFAULT_ACTIVE_CLASS,
+            playbackActiveClass = obj["playbackActiveClass"]?.jsonPrimitive?.contentOrNull,
+            startTextHref = obj["startTextHref"]?.jsonPrimitive?.contentOrNull,
+        )
     }.getOrNull()
 }

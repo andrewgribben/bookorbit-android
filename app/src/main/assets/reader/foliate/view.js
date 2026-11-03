@@ -525,13 +525,25 @@ export class View extends HTMLElement {
       let lastActive
       this.mediaOverlay.addEventListener('highlight', (e) => {
         const resolved = this.resolveNavigation(e.detail.text)
-        this.renderer.goTo(resolved).then(() => {
-          const { doc } = this.renderer.getContents().find((x) => (x.index = resolved.index))
-          const el = resolved.anchor(doc)
+        // Applies the active-overlay class to the resolved element without navigating, used both
+        // after a goTo and when auto-follow is paused (host-set `pauseNarrationFollow`, e.g. right
+        // after the user manually turned a page) and a page-turn would fight the user.
+        const applyActive = () => {
+          // Bug fix: this used to be `(x) => (x.index = resolved.index)`, an assignment (always
+          // truthy unless resolved.index is 0) instead of a comparison, which broke section 0.
+          const match = this.renderer.getContents().find((x) => x.index === resolved.index)
+          if (!match) return
+          const el = resolved.anchor(match.doc)
           el.classList.add(activeClass)
           if (playbackActiveClass) el.ownerDocument.documentElement.classList.add(playbackActiveClass)
           lastActive = new WeakRef(el)
-        })
+        }
+        if (this.pauseNarrationFollow) {
+          applyActive()
+          return
+        }
+        this._narrationNav = true
+        this.renderer.goTo(resolved).then(applyActive).catch(() => {}).finally(() => { this._narrationNav = false })
       })
       this.mediaOverlay.addEventListener('unhighlight', () => {
         const el = lastActive?.deref()

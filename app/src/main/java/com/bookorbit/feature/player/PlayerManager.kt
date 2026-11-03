@@ -7,6 +7,7 @@ import android.content.Context
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
+import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -80,6 +81,12 @@ class PlayerManager @Inject constructor(
          * of silently doing nothing (see issue #38). Cleared on the next successful load/resume. */
         val playerError: UiText? = null,
         val progressBarMode: ProgressBarMode = ProgressBarMode.BOOK,
+        /** True while a local EPUB narration queue (not a server audiobook) is loaded — see
+         * [loadNarrationQueue]. Guards progress/session reporting, which only ever apply to real
+         * audiobooks, and is read by [ReaderViewModel] to drive the read-along highlight. */
+        val narrationActive: Boolean = false,
+        val narrationMediaIndex: Int = 0,
+        val narrationPositionMs: Long = 0L,
     )
 
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
@@ -108,7 +115,9 @@ class PlayerManager @Inject constructor(
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             // A successful resume clears any earlier error - it's no longer the reason nothing is playing.
             _state.update { it.copy(isPlaying = isPlaying, playerError = if (isPlaying) null else it.playerError) }
-            sessions.setListeningActive(isPlaying)
+            // Narration isn't a server audiobook "listening" session - it's driven by the reader's
+            // own reading-session tracking instead (see ReaderViewModel).
+            if (!_state.value.narrationActive) sessions.setListeningActive(isPlaying)
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -264,7 +273,7 @@ class PlayerManager @Inject constructor(
                 totalDurationSec = totalDurationSec,
                 speed = speed,
                 speedIsPerBook = bookSpeed != null,
-            )
+            ).withNarrationCleared()
         }
         startPoller()
     }
@@ -285,9 +294,67 @@ class PlayerManager @Inject constructor(
                     files = files,
                     chapters = PlaybackQueue.resolveChapters(book, PlaybackQueue.totalDurationSec(files)),
                     totalDurationSec = PlaybackQueue.totalDurationSec(files),
+                ).withNarrationCleared()
+            }
+            startPoller()
+        }
+    }
+
+    /**
+     * Loads a local EPUB narration queue (one [MediaItem] per extracted Media Overlay audio file)
+     * into the same session player used for server audiobooks, so narration gets the same
+     * notification, lock screen, Bluetooth controls, speed and sleep timer. Unlike [loadAndPlay]
+     * this never touches [AudioProgressRepository] or [ReadingSessionTracker]'s listening session -
+     * [narrationActive] guards those paths for as long as this queue is loaded.
+     */
+    fun loadNarrationQueue(items: List<MediaItem>, startIndex: Int, startPositionMs: Long, autoPlay: Boolean) {
+        val generation = loadGeneration.incrementAndGet()
+        _state.update { it.copy(playerError = null) }
+        scope.launch {
+            settingsLoaded.await()
+            if (generation != loadGeneration.get()) return@launch
+            val c = controller()
+            if (generation != loadGeneration.get()) return@launch
+            val speed = settings.speed
+            val loaded = c.sendCustomCommand(
+                BookQueueCommand.command,
+                BookQueueCommand.encode(BookQueueCommand.Load(items, startIndex, startPositionMs, speed, autoPlay)),
+            )
+            loaded.addListener({
+                val success = runCatching { loaded.get().resultCode == SessionResult.RESULT_SUCCESS }.getOrDefault(false)
+                if (!success && _state.value.narrationActive) {
+                    _state.update { it.copy(playerError = UiText.of(R.string.player_err_load), buffering = false) }
+                }
+            }, ContextCompat.getMainExecutor(context))
+            _state.update {
+                it.copy(
+                    currentBook = null,
+                    files = emptyList(),
+                    chapters = emptyList(),
+                    totalDurationSec = 0.0,
+                    speed = speed,
+                    speedIsPerBook = false,
+                    narrationActive = true,
+                    narrationMediaIndex = startIndex,
+                    narrationPositionMs = startPositionMs,
                 )
             }
             startPoller()
+        }
+    }
+
+    /** Stops narration (if any is loaded) and leaves the player idle; a no-op otherwise. */
+    fun stopNarration() {
+        if (!_state.value.narrationActive) return
+        loadGeneration.incrementAndGet()
+        controller?.run {
+            stop()
+            clearMediaItems()
+        }
+        pollJob?.cancel()
+        cancelSleepTimer()
+        _state.update {
+            it.copy(narrationActive = false, isPlaying = false, narrationMediaIndex = 0, narrationPositionMs = 0L)
         }
     }
 
@@ -428,7 +495,15 @@ class PlayerManager @Inject constructor(
         }
         pollJob?.cancel()
         cancelSleepTimer()
-        _state.update { it.copy(currentBook = null, isPlaying = false) }
+        _state.update {
+            it.copy(
+                currentBook = null,
+                isPlaying = false,
+                narrationActive = false,
+                narrationMediaIndex = 0,
+                narrationPositionMs = 0L,
+            )
+        }
     }
 
     private fun startPoller() {
@@ -436,6 +511,7 @@ class PlayerManager @Inject constructor(
         pollJob = scope.launch {
             while (isActive) {
                 updatePosition()
+                updateNarrationPosition()
                 tickSleepTimer()
                 if (System.currentTimeMillis() - lastReport >= 5_000) report(force = false)
                 delay(500)
@@ -449,8 +525,19 @@ class PlayerManager @Inject constructor(
         _state.update { it.copy(positionSec = pos / 1000.0) }
     }
 
+    /** Real per-file position/index (not [bookPositionMs]'s whole-book aggregate - narration has no
+     * "book" to aggregate), so [ReaderViewModel] can match it against [NarrationItem]'s [audioIndex]. */
+    private fun updateNarrationPosition() {
+        if (!_state.value.narrationActive) return
+        val active = activeBookPlayer.current ?: return
+        _state.update {
+            it.copy(narrationMediaIndex = active.currentMediaItemIndex, narrationPositionMs = active.filePositionMs())
+        }
+    }
+
     private suspend fun report(force: Boolean) {
         val c = controller ?: return
+        if (_state.value.narrationActive) return
         val book = _state.value.currentBook ?: return
         val files = _state.value.files
         if (files.isEmpty()) return

@@ -8,6 +8,8 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import com.bookorbit.core.network.UserCaTrust
+import com.bookorbit.feature.reader.narration.EpubZipDataSource
+import com.bookorbit.feature.reader.narration.NarrationAwareDataSource
 import okhttp3.OkHttpClient
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -53,7 +55,11 @@ object PlayerModule {
                 }
                 .createDataSource()
         }
-        val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
+        val fallbackFactory = DefaultDataSource.Factory(context, httpFactory)
+        // Narration audio plays straight out of the EPUB (an "epubzip://" MediaItem URI, see
+        // EpubZipDataSource) rather than from an extracted copy; everything else keeps going
+        // through fallbackFactory exactly as before.
+        val dataSourceFactory = NarrationAwareDataSource.Factory(fallbackFactory, EpubZipDataSource.Factory())
         return DefaultMediaSourceFactory(dataSourceFactory)
     }
 

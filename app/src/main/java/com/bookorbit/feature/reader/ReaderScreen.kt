@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.FormatQuote
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.TouchApp
@@ -108,7 +109,7 @@ fun ReaderScreen(
         controller.listener = { event ->
             when (event) {
                 is ReaderEvent.Ready -> ready = true
-                is ReaderEvent.Loaded -> vm.onLoaded(event.toc, event.title)
+                is ReaderEvent.Loaded -> vm.onLoaded(event.toc, event.title, event.hasMediaOverlay)
                 is ReaderEvent.Relocate -> vm.onRelocate(event.cfi, event.fraction, event.chapterTitle)
                 is ReaderEvent.Error -> vm.onError(event.message)
                 is ReaderEvent.Tap -> onTap.value(event.x)
@@ -118,6 +119,21 @@ fun ReaderScreen(
                 is ReaderEvent.Selection -> vm.onSelection(event.text, event.cfi, event.rect)
                 ReaderEvent.SelectionCleared -> vm.onSelectionCleared()
                 is ReaderEvent.AnnotationTap -> vm.onAnnotationTap(event.cfi, event.rect)
+                is ReaderEvent.NarrationReady -> vm.onNarrationReady(event.timeline, event.generation)
+                is ReaderEvent.NarrationFailed -> vm.onNarrationFailed(event.message, event.generation)
+            }
+        }
+    }
+
+    // Narration's SMIL parsing and highlight drawing both live in the WebView; the ViewModel only
+    // decides *what* to do and tells the screen to drive the controller.
+    LaunchedEffect(Unit) {
+        vm.commands.collect { cmd ->
+            when (cmd) {
+                is ReaderViewModel.ReaderCommand.NarrationPrepare -> controller.narrationPrepare(cmd.generation)
+                ReaderViewModel.ReaderCommand.NarrationCancelPrepare -> controller.narrationCancelPrepare()
+                is ReaderViewModel.ReaderCommand.NarrationHighlight -> controller.narrationHighlight(cmd.textHref)
+                ReaderViewModel.ReaderCommand.NarrationUnhighlight -> controller.narrationUnhighlight()
             }
         }
     }
@@ -218,6 +234,16 @@ fun ReaderScreen(
                 }
                 IconButton(onClick = { settingsVisible = true }) {
                     Icon(Icons.Filled.TextFields, contentDescription = stringResource(R.string.settings), tint = Color.White)
+                }
+                if (ui.hasMediaOverlay) {
+                    IconButton(onClick = { vm.toggleNarration() }) {
+                        val description = if (ui.narrationOn) stringResource(R.string.narration_stop_listening) else stringResource(R.string.narration_listen)
+                        Icon(
+                            Icons.Filled.Headphones,
+                            contentDescription = description,
+                            tint = if (ui.narrationOn) Color(0xFFFFCC00) else Color.White,
+                        )
+                    }
                 }
             }
 
