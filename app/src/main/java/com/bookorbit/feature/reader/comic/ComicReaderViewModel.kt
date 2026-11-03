@@ -1,5 +1,6 @@
 package com.bookorbit.feature.reader.comic
 
+import android.content.Context
 import com.bookorbit.R
 import com.bookorbit.ui.UiText
 import androidx.lifecycle.SavedStateHandle
@@ -8,11 +9,14 @@ import androidx.lifecycle.viewModelScope
 import com.bookorbit.core.model.BookFiles
 import com.bookorbit.core.network.ApiService
 import com.bookorbit.core.settings.AppSettingsStore
+import com.bookorbit.core.storage.LocalRef
 import com.bookorbit.feature.bookdetail.BookDetailRepository
 import com.bookorbit.feature.downloads.DownloadsRepository
 import com.bookorbit.feature.reader.ReaderProgressRepository
 import com.bookorbit.feature.sessions.ReadingSessionTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,11 +24,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 private const val PROGRESS_THROTTLE_MS = 2_000L
 
-/** Pages through a CBR/CB7 comic whose pages the server renders as images. */
+/**
+ * Pages through a comic (CBZ, CBR or CB7). A downloaded CBZ is read from the device; anything else
+ * uses the pages the server renders as images.
+ */
 @HiltViewModel
 class ComicReaderViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -34,6 +42,7 @@ class ComicReaderViewModel @Inject constructor(
     private val progress: ReaderProgressRepository,
     private val sessions: ReadingSessionTracker,
     private val settings: AppSettingsStore,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     val bookId: Int = savedStateHandle.get<Int>("id") ?: 0
@@ -44,6 +53,7 @@ class ComicReaderViewModel @Inject constructor(
         val title: String? = null,
         val fileId: Int = 0,
         val pageCount: Int = 0,
+        val source: ComicPageSource? = null,
         val initialPage: Int = 0,
         val currentPage: Int = 0,
     )
@@ -56,6 +66,7 @@ class ComicReaderViewModel @Inject constructor(
 
     private var lastSaved = 0L
     private var pendingPage: Int? = null
+    private var localArchive: LocalComicArchive? = null
 
     init {
         load()
@@ -70,7 +81,10 @@ class ComicReaderViewModel @Inject constructor(
                 _ui.update { it.copy(loading = false, error = UiText.of(R.string.comic_err_load)) }
                 return@launch
             }
-            val count = runCatching { api.getComicPageCount(file.id).pageCount }.getOrNull()
+            val local = openLocal(file.id, file.format)
+            val source: ComicPageSource = local ?: ComicPageSource.Server(file.id)
+            val count = local?.archive?.pageCount
+                ?: runCatching { api.getComicPageCount(file.id).pageCount }.getOrNull()
             if (count == null || count <= 0) {
                 _ui.update {
                     it.copy(
@@ -85,9 +99,37 @@ class ComicReaderViewModel @Inject constructor(
             val page = ComicPaging.resumePage(initial.pageNumber, initial.fraction, count)
             sessions.beginReading(file.id, ComicPaging.percentage(page, count))
             _ui.update {
-                it.copy(loading = false, title = book.title, fileId = file.id, pageCount = count, initialPage = page, currentPage = page)
+                it.copy(
+                    loading = false,
+                    title = book.title,
+                    fileId = file.id,
+                    pageCount = count,
+                    source = source,
+                    initialPage = page,
+                    currentPage = page,
+                )
             }
         }
+    }
+
+    /** The downloaded CBZ for [fileId], if there is one and it opens with at least one page. */
+    private suspend fun openLocal(fileId: Int, format: String?): ComicPageSource.Local? {
+        closeLocal()
+        if (!format.equals("cbz", ignoreCase = true)) return null
+        val path = downloads.localFiles(bookId)[fileId] ?: return null
+        val archive = withContext(Dispatchers.IO) { tryOpenLocalComic(LocalRef.parse(path), context) } ?: return null
+        if (archive.pageCount <= 0) {
+            withContext(Dispatchers.IO) { runCatching { archive.close() } }
+            return null
+        }
+        localArchive = archive
+        return ComicPageSource.Local(archive)
+    }
+
+    private fun closeLocal() {
+        val archive = localArchive ?: return
+        localArchive = null
+        runCatching { archive.close() }
     }
 
     fun onPageChanged(page: Int) {
@@ -117,6 +159,7 @@ class ComicReaderViewModel @Inject constructor(
     override fun onCleared() {
         flush()
         sessions.end()
+        closeLocal()
         super.onCleared()
     }
 }

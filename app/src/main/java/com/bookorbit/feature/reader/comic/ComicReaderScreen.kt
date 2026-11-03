@@ -45,19 +45,22 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.bookorbit.ui.LocalImageUrls
 import kotlinx.coroutines.launch
 
 private const val MAX_ZOOM = 4f
 
 /**
- * Comic reader for CBR/CB7: a pager over server-rendered page images with pinch-to-zoom, double-tap
+ * Comic reader for CBZ, CBR and CB7: a pager over page images (from a downloaded CBZ, or rendered by
+ * the server) with pinch-to-zoom, double-tap
  * zoom, tap zones to turn pages, a page slider, and a right-to-left (manga) switch.
  */
 @Composable
@@ -138,7 +141,7 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPages(
         key = { it },
     ) { page ->
         ZoomablePage(
-            fileId = ui.fileId,
+            source = checkNotNull(ui.source),
             page = page,
             active = page == pagerState.currentPage,
             onZoomChanged = { if (page == pagerState.currentPage) zoomed = it },
@@ -188,13 +191,26 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPages(
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun ZoomablePage(
-    fileId: Int,
+    source: ComicPageSource,
     page: Int,
     active: Boolean,
     onZoomChanged: (Boolean) -> Unit,
     onTap: (Float) -> Unit,
 ) {
     val imageUrls = LocalImageUrls.current
+    val context = LocalContext.current
+    val model: Any = remember(source, page) {
+        when (source) {
+            is ComicPageSource.Server -> imageUrls.comicPage(source.fileId, page)
+            is ComicPageSource.Local -> LocalComicPage(source.archive, page).let { local ->
+                ImageRequest.Builder(context)
+                    .data(local)
+                    .fetcherFactory(LocalComicPageFetcher.Factory)
+                    .memoryCacheKey(local.cacheKey)
+                    .build()
+            }
+        }
+    }
     // The gesture block below is keyed on Unit and never restarts, so read these through State to
     // always see the latest lambdas (e.g. after the reading direction flips).
     val currentOnTap by rememberUpdatedState(onTap)
@@ -246,7 +262,7 @@ private fun ZoomablePage(
         contentAlignment = Alignment.Center,
     ) {
         AsyncImage(
-            model = imageUrls.comicPage(fileId, page),
+            model = model,
             contentDescription = stringResource(R.string.page, page + 1),
             contentScale = ContentScale.Fit,
             modifier = Modifier

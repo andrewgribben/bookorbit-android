@@ -4,7 +4,7 @@ import com.bookorbit.core.model.BookDetail
 import com.bookorbit.core.model.BookFileRef
 import com.bookorbit.core.model.BookFiles
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -77,9 +77,16 @@ class ComicPagingTest {
     }
 
     @Test
-    fun `CBZ stays in the foliate reader and is no longer treated as server paged`() {
-        assertTrue(BookFiles.readingTarget(book("cbz" to "primary")) is BookFiles.ReadingTarget.Foliate)
-        assertNull(BookFiles.comicFile(book("cbz" to "primary")))
+    fun `CBZ opens in the comic reader too`() {
+        val target = BookFiles.readingTarget(book("cbz" to "primary"))
+        assertTrue(target is BookFiles.ReadingTarget.Comic)
+        assertEquals("cbz", (target as BookFiles.ReadingTarget.Comic).file.format)
+        assertFalse(BookFiles.isReadableEbook("cbz"))
+    }
+
+    @Test
+    fun `an EPUB beats a CBZ when a book has both`() {
+        assertTrue(BookFiles.readingTarget(book("cbz" to "primary", "epub" to "alternate")) is BookFiles.ReadingTarget.Foliate)
     }
 
     @Test
