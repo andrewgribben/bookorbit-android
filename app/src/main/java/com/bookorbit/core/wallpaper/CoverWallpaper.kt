@@ -24,6 +24,9 @@ object CoverWallpaper {
     /** Covers smaller than this (long side) are scaled up so the wallpaper isn't soft. */
     private const val MIN_LONG_SIDE = 1600
 
+    /** Larger covers are scaled down: a full-size blur of a huge scan would risk OOM. */
+    private const val MAX_LONG_SIDE = 2560
+
     /** The blur runs on a copy this size (long side): cheap, and still smooth once scaled up. */
     private const val BLUR_WORK_LONG_SIDE = 480
 
@@ -33,7 +36,7 @@ object CoverWallpaper {
     data class Result(val home: Boolean, val lock: Boolean, val error: String? = null)
 
     fun apply(context: Context, source: Bitmap, home: Boolean, lock: Boolean): Result {
-        val cover = scaleLongSide(source, max(MIN_LONG_SIDE, max(source.width, source.height)))
+        val cover = scaleLongSide(source, max(source.width, source.height).coerceIn(MIN_LONG_SIDE, MAX_LONG_SIDE))
         val manager = WallpaperManager.getInstance(context)
         if (!manager.isWallpaperSupported || !manager.isSetWallpaperAllowed) {
             return Result(false, false, "Wallpaper changes are not allowed on this device")
