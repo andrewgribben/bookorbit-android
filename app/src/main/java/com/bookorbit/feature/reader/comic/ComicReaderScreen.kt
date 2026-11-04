@@ -3,6 +3,7 @@ package com.bookorbit.feature.reader.comic
 import com.bookorbit.ui.asString
 import androidx.compose.ui.res.stringResource
 import com.bookorbit.R
+import com.bookorbit.feature.reader.PeekToggle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -63,7 +64,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -320,20 +320,7 @@ private fun ComicTopBar(
                 style = MaterialTheme.typography.labelSmall,
             )
         }
-        if (peek) {
-            Text(
-                stringResource(R.string.peeking),
-                color = Color.White,
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(Color(0x33FFFFFF))
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-            )
-            TextButton(onClick = onStartReading) {
-                Text(stringResource(R.string.start_reading), color = Color.White)
-            }
-        }
+        if (peek) PeekToggle(onTurnOff = onStartReading)
         IconButton(onClick = onToggleDirection, modifier = Modifier.minTapTarget()) {
             Icon(
                 if (direction == ComicDirection.RTL) Icons.AutoMirrored.Filled.FormatTextdirectionRToL else Icons.AutoMirrored.Filled.FormatTextdirectionLToR,
