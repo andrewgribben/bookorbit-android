@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.FormatQuote
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.TouchApp
@@ -65,16 +66,23 @@ fun ReaderScreen(
     vm: ReaderViewModel = hiltViewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
+    // Held as State: it ticks twice a second while narrating, so only the readers recompose, not this screen.
+    val playerState = vm.playerState.collectAsStateWithLifecycle()
     val controller = remember { ReaderController() }
     var ready by remember { mutableStateOf(false) }
     var opened by remember { mutableStateOf(false) }
     var rendererFailed by remember { mutableStateOf(false) }
     var chromeVisible by rememberSaveable { mutableStateOf(true) }
     var tocVisible by remember { mutableStateOf(false) }
+    var history by remember { mutableStateOf(ReaderEvent.History(canGoBack = false, canGoForward = false)) }
     var settingsVisible by remember { mutableStateOf(false) }
     var highlightsVisible by remember { mutableStateOf(false) }
     var searchVisible by remember { mutableStateOf(false) }
     var noteDialog by remember { mutableStateOf<String?>(null) }
+    // Narration player controls (stage 4): speed/sleep open the same sheets the standalone
+    // audiobook player uses, whether triggered from the bottom bar or the Playback settings tab.
+    var showSpeedSheet by remember { mutableStateOf(false) }
+    var showSleepTimerSheet by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
 
@@ -108,8 +116,9 @@ fun ReaderScreen(
         controller.listener = { event ->
             when (event) {
                 is ReaderEvent.Ready -> ready = true
-                is ReaderEvent.Loaded -> vm.onLoaded(event.toc, event.title)
+                is ReaderEvent.Loaded -> vm.onLoaded(event.toc, event.title, event.hasMediaOverlay)
                 is ReaderEvent.Relocate -> vm.onRelocate(event.cfi, event.fraction, event.chapterTitle)
+                is ReaderEvent.History -> history = event
                 is ReaderEvent.Error -> vm.onError(event.message)
                 is ReaderEvent.Tap -> onTap.value(event.x)
                 is ReaderEvent.SearchResults -> vm.onSearchResults(event.label, event.hits)
@@ -118,6 +127,21 @@ fun ReaderScreen(
                 is ReaderEvent.Selection -> vm.onSelection(event.text, event.cfi, event.rect)
                 ReaderEvent.SelectionCleared -> vm.onSelectionCleared()
                 is ReaderEvent.AnnotationTap -> vm.onAnnotationTap(event.cfi, event.rect)
+                is ReaderEvent.NarrationReady -> vm.onNarrationReady(event.timeline, event.generation)
+                is ReaderEvent.NarrationFailed -> vm.onNarrationFailed(event.message, event.generation)
+            }
+        }
+    }
+
+    // Narration's SMIL parsing and highlight drawing both live in the WebView; the ViewModel only
+    // decides *what* to do and tells the screen to drive the controller.
+    LaunchedEffect(Unit) {
+        vm.commands.collect { cmd ->
+            when (cmd) {
+                is ReaderViewModel.ReaderCommand.NarrationPrepare -> controller.narrationPrepare(cmd.generation)
+                ReaderViewModel.ReaderCommand.NarrationCancelPrepare -> controller.narrationCancelPrepare()
+                is ReaderViewModel.ReaderCommand.NarrationHighlight -> controller.narrationHighlight(cmd.textHref)
+                ReaderViewModel.ReaderCommand.NarrationUnhighlight -> controller.narrationUnhighlight()
             }
         }
     }
@@ -178,9 +202,11 @@ fun ReaderScreen(
             ReaderWebView(
                 controller = controller,
                 modifier = Modifier.fillMaxSize(),
-                onRendererGone = {
-                    rendererFailed = true
-                    vm.onRendererGone()
+                onRendererGone = remember(vm) {
+                    {
+                        rendererFailed = true
+                        vm.onRendererGone()
+                    }
                 },
             )
         }
@@ -219,6 +245,16 @@ fun ReaderScreen(
                 IconButton(onClick = { settingsVisible = true }) {
                     Icon(Icons.Filled.TextFields, contentDescription = stringResource(R.string.settings), tint = Color.White)
                 }
+                if (ui.hasMediaOverlay) {
+                    IconButton(onClick = { vm.toggleNarration() }) {
+                        val description = if (ui.narrationOn) stringResource(R.string.narration_stop_listening) else stringResource(R.string.narration_listen)
+                        Icon(
+                            Icons.Filled.Headphones,
+                            contentDescription = description,
+                            tint = if (ui.narrationOn) Color(0xFFFFCC00) else Color.White,
+                        )
+                    }
+                }
             }
 
             Box(
@@ -230,7 +266,30 @@ fun ReaderScreen(
                     .padding(vertical = 6.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("${ui.percentage}%", color = Color.White.copy(alpha = 0.8f))
+                // Narration on swaps the ordinary reading-progress row for the player's own
+                // transport controls (requirement 1); audio keeps playing when chrome (and this
+                // bar with it) is hidden - see readerBottomBarContent()/NarrationPlayerBar doc.
+                when (readerBottomBarContent(ui.narrationOn)) {
+                    ReaderBottomBarContent.NARRATION_PLAYER -> NarrationPlayerBar(
+                        state = { playerState.value },
+                        chapterTitle = ui.chapterTitle,
+                        progressFraction = ui.percentage / 100f,
+                        onTogglePlay = vm::togglePlayback,
+                        onSkipBack = vm::playerSkipBack,
+                        onSkipForward = vm::playerSkipForward,
+                        onOpenSpeed = { showSpeedSheet = true },
+                        onOpenSleepTimer = { showSleepTimerSheet = true },
+                    )
+                    ReaderBottomBarContent.PROGRESS -> ReadingProgressBar(
+                        chapterTitle = ui.chapterTitle,
+                        percentage = ui.percentage,
+                        onSeek = { controller.goToFraction(it.toDouble()) },
+                        canGoBack = history.canGoBack,
+                        canGoForward = history.canGoForward,
+                        onBack = controller::historyBack,
+                        onForward = controller::historyForward,
+                    )
+                }
             }
         }
 
@@ -357,11 +416,40 @@ fun ReaderScreen(
             onSaveAsDefault = { vm.saveAsDefault(ui.scope) },
             onResetToSavedDefault = { vm.resetToSavedDefault(ui.scope) },
             onRestoreBuiltIn = { vm.restoreBuiltInDefaults(ui.scope) },
+            playerState = playerState.value,
+            onSkipBackChange = vm::setSkipBackSeconds,
+            onSkipForwardChange = vm::setSkipForwardSeconds,
+            onProgressBarModeChange = vm::setProgressBarMode,
+            onOpenSpeedSheet = { settingsVisible = false; showSpeedSheet = true },
+            onOpenSleepTimerSheet = { settingsVisible = false; showSleepTimerSheet = true },
+            onOpenChapters = { settingsVisible = false; tocVisible = true },
+            onOpenBookmarks = { settingsVisible = false; vm.loadBookmarks(); highlightsVisible = true },
             onSetWallpaper = {
                 settingsVisible = false
                 vm.setCoverAsWallpaper()
             },
             onDismiss = { settingsVisible = false },
+        )
+    }
+
+    if (showSpeedSheet) {
+        com.bookorbit.feature.player.SpeedSheet(
+            speed = playerState.value.speed,
+            perBook = playerState.value.speedIsPerBook,
+            onChange = { speed, forThisBook -> vm.setPlaybackSpeed(speed, forThisBook) },
+            onDismiss = { showSpeedSheet = false },
+        )
+    }
+
+    if (showSleepTimerSheet) {
+        com.bookorbit.feature.player.SleepTimerSheet(
+            remainingSec = playerState.value.sleepTimerRemainingSec,
+            endOfChapter = playerState.value.sleepTimerEndOfChapter,
+            hasChapters = playerState.value.chapters.isNotEmpty(),
+            onSetMinutes = { vm.setSleepTimer(it) },
+            onSetEndOfChapter = { vm.setSleepTimerEndOfChapter() },
+            onCancel = { vm.cancelSleepTimer() },
+            onDismiss = { showSleepTimerSheet = false },
         )
     }
 }

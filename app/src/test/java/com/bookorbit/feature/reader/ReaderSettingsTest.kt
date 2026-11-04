@@ -108,4 +108,17 @@ class ReaderSettingsTest {
         assertEquals(3, FONT_FAMILIES.size)
         assertTrue(FONT_FAMILIES.all { it.value != null })
     }
+
+    @Test
+    fun `font size and margins stay editable with book layout on (owner decision, stage 4)`() {
+        assertTrue(fontSizeAndMarginsEditable(scopeEditable = true))
+        assertFalse(fontSizeAndMarginsEditable(scopeEditable = false))
+    }
+
+    @Test
+    fun `publisher layout overrides stay locked while book layout is on`() {
+        assertFalse(publisherLayoutOverridesEditable(scopeEditable = true, useBookLayout = true))
+        assertTrue(publisherLayoutOverridesEditable(scopeEditable = true, useBookLayout = false))
+        assertFalse(publisherLayoutOverridesEditable(scopeEditable = false, useBookLayout = false))
+    }
 }
