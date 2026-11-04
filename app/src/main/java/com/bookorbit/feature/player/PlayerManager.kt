@@ -378,7 +378,8 @@ class PlayerManager @Inject constructor(
             // the EPUB was read further and the server mapped that onto this audiobook) - refresh
             // before resuming playback, not only when the screen becomes visible again, so
             // resuming doesn't later report (and overwrite) the stale position.
-            refreshIfStaleNow()
+            // Bounded so offline/slow networks don't stall the play button.
+            withTimeoutOrNull(REFRESH_BEFORE_PLAY_TIMEOUT_MS) { refreshIfStaleNow() }
             c.play()
         }
     }
@@ -619,5 +620,7 @@ class PlayerManager @Inject constructor(
         const val STALE_THRESHOLD_SEC = 5.0
         /** How long a launch restore waits to load a book that has to come from the server. */
         const val RESTORE_RESOLVE_TIMEOUT_MS = 8_000L
+        /** How long Play waits for a fresher server position before resuming where it is. */
+        const val REFRESH_BEFORE_PLAY_TIMEOUT_MS = 1_500L
     }
 }

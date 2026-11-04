@@ -790,6 +790,9 @@ async function finishOpen(meta) {
     }
   }
   if (!navigated) await view.goTo(0).catch(() => {});
+  // goTo can resolve without relocating (paginator locked, index out of range); never let the
+  // flag outlive the open and swallow the user's first real page turn.
+  setTimeout(() => { restoringPosition = false; }, 0);
   postHistory();
 }
 
