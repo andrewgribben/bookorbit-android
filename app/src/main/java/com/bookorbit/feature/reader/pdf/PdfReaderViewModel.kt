@@ -12,6 +12,7 @@ import com.bookorbit.feature.downloads.DownloadsRepository
 import com.bookorbit.core.wallpaper.CoverWallpaperFollowController
 import com.bookorbit.feature.reader.ReaderProgressRepository
 import com.bookorbit.feature.reader.ReaderSource
+import com.bookorbit.feature.reader.trackingEnabled
 import com.bookorbit.feature.sessions.ReadingSessionTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -41,6 +42,10 @@ class PdfReaderViewModel @Inject constructor(
 
     val bookId: Int = savedStateHandle.get<Int>("id") ?: 0
 
+    /** Peek mode: no saved-position load, no progress writes, no reading session (see
+     * ReaderViewModel.tracking for the full doc). */
+    private var tracking: Boolean = trackingEnabled(savedStateHandle)
+
     /** A single search match: which page it is on, and its bounds in page-point space. */
     data class SearchHit(val page: Int, val rect: RectF)
 
@@ -64,9 +69,10 @@ class PdfReaderViewModel @Inject constructor(
         val settings: PdfReaderSettings = PdfReaderSettings(),
         val hasTextLayer: Boolean = Build.VERSION.SDK_INT >= 35,
         val search: SearchState? = null,
+        val peek: Boolean = false,
     )
 
-    private val _ui = MutableStateFlow(UiState())
+    private val _ui = MutableStateFlow(UiState(peek = !tracking))
     val ui = _ui.asStateFlow()
 
     private var fileId: Int = 0
@@ -76,7 +82,7 @@ class PdfReaderViewModel @Inject constructor(
 
     init {
         load()
-        wallpaperFollow.noteOpenBook(bookId)
+        if (tracking) wallpaperFollow.noteOpenBook(bookId)
     }
 
     private fun load() {
@@ -96,9 +102,10 @@ class PdfReaderViewModel @Inject constructor(
                 val resolved = source.resolvePdf(book)
                 fileId = resolved.fileId
                 val core = PdfRenderCore.open(context, resolved.ref)
-                val initial = progress.resolveInitial(resolved.fileId)
+                // Peeking opens at the start: no saved-position load, no reading session.
+                val initial = if (tracking) progress.resolveInitial(resolved.fileId) else com.bookorbit.feature.reader.InitialProgress(null, null)
                 val page = PdfProgress.fractionToPage(initial.fraction, core.pageCount)
-                sessions.beginReading(resolved.fileId, PdfProgress.pageToPercentage(page, core.pageCount))
+                if (tracking) sessions.beginReading(resolved.fileId, PdfProgress.pageToPercentage(page, core.pageCount))
                 _ui.update {
                     it.copy(
                         loading = false,
@@ -121,7 +128,7 @@ class PdfReaderViewModel @Inject constructor(
         if (clamped == _ui.value.currentPage) return
         _ui.update { it.copy(currentPage = clamped) }
         report(clamped)
-        sessions.onReadingProgress(PdfProgress.pageToPercentage(clamped, total))
+        if (tracking) sessions.onReadingProgress(PdfProgress.pageToPercentage(clamped, total))
     }
 
     fun updateSettings(settings: PdfReaderSettings) {
@@ -172,11 +179,13 @@ class PdfReaderViewModel @Inject constructor(
     }
 
     private fun report(pageIndex: Int) {
+        if (!tracking) return
         pendingPage = pageIndex
         if (System.currentTimeMillis() - lastSaved >= PROGRESS_THROTTLE_MS) flush()
     }
 
     fun flush() {
+        if (!tracking) return
         val page = pendingPage ?: return
         val total = _ui.value.pageCount
         if (fileId == 0 || total <= 0) return
@@ -185,6 +194,22 @@ class PdfReaderViewModel @Inject constructor(
         val percentage = PdfProgress.pageToPercentage(page, total)
         val pageNumber = PdfProgress.pageNumber(page)
         viewModelScope.launch { progress.report(fileId, cfi = null, percentage = percentage, pageNumber = pageNumber) }
+    }
+
+    /** "Start reading": switches this reader to tracked mode in place and immediately saves the
+     * current page position (see ReaderViewModel.startReading for the full doc). */
+    fun startReading() {
+        if (!tracking) return
+        tracking = true
+        _ui.update { it.copy(peek = false) }
+        wallpaperFollow.noteOpenBook(bookId)
+        val total = _ui.value.pageCount
+        if (fileId == 0 || total <= 0) return
+        val page = _ui.value.currentPage
+        sessions.beginReading(fileId, PdfProgress.pageToPercentage(page, total))
+        pendingPage = page
+        lastSaved = 0L
+        flush()
     }
 
     override fun onCleared() {

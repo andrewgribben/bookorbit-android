@@ -18,6 +18,7 @@ import com.bookorbit.feature.reader.ReaderControlsSettings
 import com.bookorbit.feature.reader.ReaderControlsStore
 import com.bookorbit.feature.reader.ReaderProgressRepository
 import com.bookorbit.feature.reader.ReaderSettingsScope
+import com.bookorbit.feature.reader.trackingEnabled
 import com.bookorbit.feature.sessions.ReadingSessionTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -76,6 +77,10 @@ class ComicReaderViewModel @Inject constructor(
 
     val bookId: Int = savedStateHandle.get<Int>("id") ?: 0
 
+    /** Peek mode: no saved-position load, no progress writes, no reading session (see
+     * ReaderViewModel.tracking for the full doc). */
+    private var tracking: Boolean = trackingEnabled(savedStateHandle)
+
     data class UiState(
         val loading: Boolean = true,
         val error: UiText? = null,
@@ -118,12 +123,13 @@ class ComicReaderViewModel @Inject constructor(
         /** One-shot: the screen opens this book (replacing the reader in the back stack) then
          * calls [consumeOpenNextBookRequest]. */
         val openNextBookRequest: OpenBookRequest? = null,
+        val peek: Boolean = false,
     ) {
         /** What's actually applied to the reader: the book's own override, else Global. */
         val effective: ComicReaderSettings get() = effectiveComicSettings(globalSettings, bookState)
     }
 
-    private val _ui = MutableStateFlow(UiState())
+    private val _ui = MutableStateFlow(UiState(peek = !tracking))
     val ui = _ui.asStateFlow()
 
     private var lastSaved = 0L
@@ -138,7 +144,7 @@ class ComicReaderViewModel @Inject constructor(
         load()
         loadSettings()
         loadControlsSettings()
-        wallpaperFollow.noteOpenBook(bookId)
+        if (tracking) wallpaperFollow.noteOpenBook(bookId)
     }
 
     fun load() {
@@ -164,9 +170,10 @@ class ComicReaderViewModel @Inject constructor(
                 }
                 return@launch
             }
-            val initial = progress.resolveInitial(file.id)
-            val page = ComicPaging.resumePage(initial.pageNumber, initial.fraction, count)
-            sessions.beginReading(file.id, ComicPaging.percentage(page, count))
+            // Peeking opens at the start: no saved-position load, no reading session.
+            val initial = if (tracking) progress.resolveInitial(file.id) else com.bookorbit.feature.reader.InitialProgress(null, null)
+            val page = if (tracking) ComicPaging.resumePage(initial.pageNumber, initial.fraction, count) else 0
+            if (tracking) sessions.beginReading(file.id, ComicPaging.percentage(page, count))
             _ui.update {
                 it.copy(
                     loading = false,
@@ -412,11 +419,12 @@ class ComicReaderViewModel @Inject constructor(
         if (s.pageCount <= 0 || page == s.currentPage) return
         _ui.update { it.copy(currentPage = page) }
         pendingPage = page
-        sessions.onReadingProgress(ComicPaging.percentage(page, s.pageCount))
-        if (System.currentTimeMillis() - lastSaved >= PROGRESS_THROTTLE_MS) flush()
+        if (tracking) sessions.onReadingProgress(ComicPaging.percentage(page, s.pageCount))
+        if (tracking && System.currentTimeMillis() - lastSaved >= PROGRESS_THROTTLE_MS) flush()
     }
 
     fun flush() {
+        if (!tracking) return
         val page = pendingPage ?: return
         val s = _ui.value
         if (s.fileId == 0 || s.pageCount <= 0) return
@@ -425,6 +433,21 @@ class ComicReaderViewModel @Inject constructor(
         viewModelScope.launch {
             progress.report(s.fileId, cfi = null, percentage = ComicPaging.percentage(page, s.pageCount), pageNumber = ComicPaging.pageNumber(page))
         }
+    }
+
+    /** "Start reading": switches this reader to tracked mode in place and immediately saves the
+     * current page position (see ReaderViewModel.startReading for the full doc). */
+    fun startReading() {
+        if (!tracking) return
+        tracking = true
+        _ui.update { it.copy(peek = false) }
+        wallpaperFollow.noteOpenBook(bookId)
+        val s = _ui.value
+        if (s.fileId == 0 || s.pageCount <= 0) return
+        sessions.beginReading(s.fileId, ComicPaging.percentage(s.currentPage, s.pageCount))
+        pendingPage = s.currentPage
+        lastSaved = 0L
+        flush()
     }
 
     override fun onCleared() {

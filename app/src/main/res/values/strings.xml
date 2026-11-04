@@ -122,6 +122,9 @@
     <string name="rating">Rating</string>
     <string name="read">Read</string>
     <string name="read_2">%1$s read</string>
+    <string name="peek">Peek</string>
+    <string name="peeking">Peeking</string>
+    <string name="start_reading">Start reading</string>
     <string name="reading_status">Reading Status</string>
     <string name="remember_for_this_book">Remember for this book</string>
     <string name="remove">Remove</string>
