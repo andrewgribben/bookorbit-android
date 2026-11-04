@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material3.Button
 import com.bookorbit.feature.reader.highlightColor
@@ -85,6 +86,9 @@ fun BookDetailScreen(
     onRead: (Int) -> Unit,
     onReadPdf: (Int) -> Unit,
     onReadComic: (Int) -> Unit,
+    onPeek: (Int) -> Unit,
+    onPeekPdf: (Int) -> Unit,
+    onPeekComic: (Int) -> Unit,
     onListen: (Int) -> Unit,
     onBookClick: (Int) -> Unit,
     onAuthorClick: (id: Int, name: String) -> Unit,
@@ -150,6 +154,9 @@ fun BookDetailScreen(
                     onRead = onRead,
                     onReadPdf = onReadPdf,
                     onReadComic = onReadComic,
+                    onPeek = onPeek,
+                    onPeekPdf = onPeekPdf,
+                    onPeekComic = onPeekComic,
                     onListen = onListen,
                     onBookClick = onBookClick,
                     onAuthorClick = onAuthorClick,
@@ -192,6 +199,9 @@ private fun BookDetailContent(
     onRead: (Int) -> Unit,
     onReadPdf: (Int) -> Unit,
     onReadComic: (Int) -> Unit,
+    onPeek: (Int) -> Unit,
+    onPeekPdf: (Int) -> Unit,
+    onPeekComic: (Int) -> Unit,
     onListen: (Int) -> Unit,
     onBookClick: (Int) -> Unit,
     onAuthorClick: (id: Int, name: String) -> Unit,
@@ -229,6 +239,19 @@ private fun BookDetailContent(
                     ) {
                         Icon(Icons.Filled.Book, contentDescription = null)
                         Text(stringResource(R.string.read), modifier = Modifier.padding(start = 8.dp))
+                    }
+                    // Secondary action: open without saving position, starting a reading
+                    // session or changing read status -- see ReaderViewModel.tracking.
+                    androidx.compose.material3.IconButton(
+                        onClick = {
+                            when (readingTarget) {
+                                is BookFiles.ReadingTarget.Pdf -> onPeekPdf(book.id)
+                                is BookFiles.ReadingTarget.Comic -> onPeekComic(book.id)
+                                else -> onPeek(book.id)
+                            }
+                        },
+                    ) {
+                        Icon(Icons.Filled.Visibility, contentDescription = stringResource(R.string.peek))
                     }
                 }
                 if (canListen) {

@@ -63,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -210,6 +211,8 @@ fun ComicReaderScreen(
                 onToggleDirection = vm::toggleDirection,
                 onOpenPagesGrid = { showPagesGrid = true },
                 onOpenConfigure = vm::openConfigureSheet,
+                peek = ui.peek,
+                onStartReading = vm::startReading,
             )
 
             ComicBottomBar(
@@ -293,6 +296,8 @@ private fun ComicTopBar(
     onToggleDirection: () -> Unit,
     onOpenPagesGrid: () -> Unit,
     onOpenConfigure: () -> Unit,
+    peek: Boolean = false,
+    onStartReading: () -> Unit = {},
 ) {
     Row(
         Modifier
@@ -314,6 +319,20 @@ private fun ComicTopBar(
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.labelSmall,
             )
+        }
+        if (peek) {
+            Text(
+                stringResource(R.string.peeking),
+                color = Color.White,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Color(0x33FFFFFF))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+            TextButton(onClick = onStartReading) {
+                Text(stringResource(R.string.start_reading), color = Color.White)
+            }
         }
         IconButton(onClick = onToggleDirection, modifier = Modifier.minTapTarget()) {
             Icon(

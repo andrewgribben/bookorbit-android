@@ -38,6 +38,15 @@ import kotlin.math.roundToInt
 private const val PROGRESS_THROTTLE_MS = 2_000L
 private const val TAG = "ReaderViewModel"
 
+/**
+ * Whether a reader opened with this [SavedStateHandle] should track reading: save progress
+ * locally/to the server, run a reading session, and register as the cover-wallpaper "open book".
+ * False only when the nav arg "peek" is explicitly `true` (the book detail screen's "Peek"
+ * action) -- missing/null/false all mean normal tracked reading. Shared by [ReaderViewModel],
+ * `PdfReaderViewModel` and `ComicReaderViewModel` so the three readers agree on what peek means.
+ */
+fun trackingEnabled(savedStateHandle: SavedStateHandle): Boolean = savedStateHandle.get<Boolean>("peek") != true
+
 @HiltViewModel
 class ReaderViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -58,6 +67,13 @@ class ReaderViewModel @Inject constructor(
 ) : ViewModel() {
 
     val bookId: Int = savedStateHandle.get<Int>("id") ?: 0
+
+    /** Peek mode (opened via the book detail screen's "Peek" action): the book opens at the
+     * start, reads nothing from and writes nothing to local/server progress, starts no reading
+     * session, and doesn't register as the cover-wallpaper "open book". Flipped to normal
+     * tracked reading in place by [startReading] -- never by reopening the reader -- mirroring
+     * the web client's `trackingEnabled` (see ReaderView.vue / useReaderProgress.ts upstream). */
+    private var tracking: Boolean = trackingEnabled(savedStateHandle)
 
     data class ResolvedOpen(
         val ref: LocalRef,
@@ -111,6 +127,9 @@ class ReaderViewModel @Inject constructor(
         /** The open book's own page-progression direction, from foliate's `view.book.dir`; used
          * to mirror Controls tap zones for RTL/manga content (owner decision - not device locale). */
         val isRtl: Boolean = false,
+        /** True while in peek mode (see [ReaderViewModel.tracking]): drives the "Peeking" badge
+         * and "Start reading" action in the chrome header. */
+        val peek: Boolean = false,
     ) {
         /** What's actually applied to the reader: the book's own snapshot, else Global. */
         val effective: ReaderSettings get() = effectiveSettings(globalSettings, bookState)
@@ -143,7 +162,7 @@ class ReaderViewModel @Inject constructor(
 
     data class SearchGroup(val label: String, val hits: List<SearchHit>)
 
-    private val _ui = MutableStateFlow(UiState())
+    private val _ui = MutableStateFlow(UiState(peek = !tracking))
     val ui = _ui.asStateFlow()
 
     private val _commands = MutableSharedFlow<ReaderCommand>(extraBufferCapacity = 8)
@@ -168,7 +187,8 @@ class ReaderViewModel @Inject constructor(
     init {
         load()
         loadAnnotations()
-        wallpaperFollow.noteOpenBook(bookId)
+        // Peeking must not register as the opened book for the cover-wallpaper "follow" feature.
+        if (tracking) wallpaperFollow.noteOpenBook(bookId)
         viewModelScope.launch { _ui.update { it.copy(controlsSettings = controlsStore.load()) } }
     }
 
@@ -204,11 +224,11 @@ class ReaderViewModel @Inject constructor(
                 val resolved = source.resolve(book)
                 // Listening may have moved this book's audiobook position past what's synced to
                 // the server (poller reports only every 5s while playing; see PlayerManager). Push
-                // it now so the server's syncFromAudioProgress has mapped it onto this EPUB file
-                // before we read the file's own saved progress (defect: #1136-style race).
-                playerManager.flushPendingIfCurrent(bookId)
-                val initial = progress.resolveInitial(resolved.fileId)
-                sessions.beginReading(resolved.fileId, initial.fraction?.let { it * 100 })
+                // it now so the server has mapped it onto this EPUB file before we read its progress.
+                // Peeking opens at the start, like web's isPeekMode: no saved-position load, no session.
+                if (tracking) playerManager.flushPendingIfCurrent(bookId)
+                val initial = if (tracking) progress.resolveInitial(resolved.fileId) else InitialProgress(null, null)
+                if (tracking) sessions.beginReading(resolved.fileId, initial.fraction?.let { it * 100 })
                 _ui.update {
                     it.copy(
                         loadingFile = false,
@@ -394,7 +414,7 @@ class ReaderViewModel @Inject constructor(
         Log.d(TAG, "onRelocate fileId=${_ui.value.resolved?.fileId} reason=$reason restoring=$restoring reporting=${!isRepositionOnly}")
         if (cfi != null && fraction != null && !isRepositionOnly) {
             report(cfi, fraction * 100)
-            sessions.onReadingProgress(fraction * 100)
+            if (tracking) sessions.onReadingProgress(fraction * 100)
         }
     }
 
@@ -652,16 +672,33 @@ class ReaderViewModel @Inject constructor(
     }
 
     private fun report(cfi: String?, percentage: Double) {
+        if (!tracking) return
         pending = cfi to percentage
         if (System.currentTimeMillis() - lastSaved >= PROGRESS_THROTTLE_MS) flush()
     }
 
     fun flush() {
+        if (!tracking) return
         val fileId = _ui.value.resolved?.fileId ?: return
         val p = pending ?: return
         pending = null
         lastSaved = System.currentTimeMillis()
         viewModelScope.launch { progress.report(fileId, p.first, p.second) }
+    }
+
+    /** "Start reading" (web's `startTrackedReading()`): switches this same open reader to normal
+     * tracked mode in place -- no reopen -- and immediately saves the current position, so the
+     * server's read-status logic (which only reacts to progress writes) picks it up right away. */
+    fun startReading() {
+        if (tracking) return
+        tracking = true
+        _ui.update { it.copy(peek = false) }
+        wallpaperFollow.noteOpenBook(bookId)
+        sessions.beginReading(_ui.value.resolved?.fileId ?: return, _ui.value.percentage.toDouble())
+        val cfi = currentCfi ?: _ui.value.resolved?.initial?.cfi
+        pending = cfi to _ui.value.percentage.toDouble()
+        lastSaved = 0L
+        flush()
     }
 
     override fun onCleared() {
