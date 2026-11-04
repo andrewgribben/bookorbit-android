@@ -19,6 +19,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bookorbit.core.model.BookFiles
 import com.bookorbit.core.settings.ReaderInterface
 import com.bookorbit.feature.reader.comic.ComicReaderScreen
 import com.bookorbit.feature.reader.pdf.PdfReaderScreen
@@ -27,7 +28,12 @@ enum class ReaderKind { EBOOK, PDF, COMIC }
 
 /** Select before creating a native reader VM, so web reading has only one progress/session writer. */
 @Composable
-fun ReaderDestination(kind: ReaderKind, onBack: () -> Unit, vm: ReaderHostViewModel = hiltViewModel()) {
+fun ReaderDestination(
+    kind: ReaderKind,
+    onBack: () -> Unit,
+    onOpenNextBook: (bookId: Int, target: BookFiles.ReadingTarget) -> Unit = { _, _ -> },
+    vm: ReaderHostViewModel = hiltViewModel(),
+) {
     val preferences by vm.preferences.collectAsStateWithLifecycle()
     var useApp by rememberSaveable { mutableStateOf(false) }
     val prefs = preferences ?: return
@@ -45,7 +51,7 @@ fun ReaderDestination(kind: ReaderKind, onBack: () -> Unit, vm: ReaderHostViewMo
         when (kind) {
             ReaderKind.EBOOK -> ReaderScreen(onBack, fullscreen = prefs.fullscreen)
             ReaderKind.PDF -> PdfReaderScreen(onBack)
-            ReaderKind.COMIC -> ComicReaderScreen(onBack, fullscreen = prefs.fullscreen)
+            ReaderKind.COMIC -> ComicReaderScreen(onBack, fullscreen = prefs.fullscreen, onOpenNextBook = onOpenNextBook)
         }
     }
 }

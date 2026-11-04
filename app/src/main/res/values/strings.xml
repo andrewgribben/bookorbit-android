@@ -601,4 +601,12 @@
     <string name="cr_pages_grid_title">Pages</string>
     <string name="cr_resumed_at_page">Resumed at page %1$d</string>
     <string name="cr_start_over">Start over</string>
+    <string name="cr_next_in_series">Next in series</string>
+    <string name="cr_next_open">Read next</string>
+    <string name="cr_next_open_title">Read next: %1$s</string>
+    <string name="cr_next_numbered">#%1$s %2$s</string>
+    <string name="cr_next_untitled">Untitled</string>
+    <string name="cr_next_auto_advance_countdown">Opening in %1$ds</string>
+    <string name="cr_next_end_title">That\'s the end</string>
+    <string name="cr_next_back_to_book">Back to book</string>
 </resources>

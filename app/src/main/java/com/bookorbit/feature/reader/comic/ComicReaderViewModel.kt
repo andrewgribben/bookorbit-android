@@ -7,6 +7,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bookorbit.core.model.BookFiles
+import com.bookorbit.core.model.BookRecommendation
 import com.bookorbit.core.network.ApiService
 import com.bookorbit.core.settings.AppSettingsStore
 import com.bookorbit.core.storage.LocalRef
@@ -21,6 +22,8 @@ import com.bookorbit.feature.sessions.ReadingSessionTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -30,6 +33,23 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 private const val PROGRESS_THROTTLE_MS = 2_000L
+
+/** How long the "Next in series" card's auto-advance countdown runs before it opens the next
+ * book on its own (cancellable the whole time - see [ComicReaderViewModel.cancelAutoAdvance]). */
+private const val AUTO_ADVANCE_SECONDS = 3
+
+/** The next book's own card data (see [pickNextInSeries]), independent of which reader it opens
+ * in - that's resolved lazily, only when the user (or auto-advance) actually opens it. */
+data class NextSeriesBook(
+    val id: Int,
+    val title: String?,
+    val hasCover: Boolean,
+    val seriesIndex: Double?,
+)
+
+/** A one-shot "open this book, replacing the current reader" request - see
+ * [ComicReaderViewModel.openNextBook]. */
+data class OpenBookRequest(val bookId: Int, val target: BookFiles.ReadingTarget)
 
 /**
  * Pages through a comic (CBZ, CBR or CB7). A downloaded CBZ is read from the device; anything else
@@ -81,6 +101,23 @@ class ComicReaderViewModel @Inject constructor(
         /** App-wide tap/gesture Controls (owner decisions 2 and 5): device-only, no Global/This-
          * book scope - shared verbatim with the ebook reader's own Controls tab. */
         val controlsSettings: ReaderControlsSettings = ReaderControlsSettings(),
+        /** This book's own series position (`BookDetail.seriesIndex`), used to pick its
+         * successor in [resolveNextBook]; null when the book isn't in a series or has no index. */
+        val seriesIndex: Double? = null,
+        /** True once the end has been reached (any of the ways [onEndReached] is called) and the
+         * "Next in series" end card should be showing. */
+        val nextBookCardVisible: Boolean = false,
+        /** True while the series-books lookup for the end card is in flight. */
+        val nextBookLoading: Boolean = false,
+        /** The chosen next book, once resolved; null while loading or when there isn't one
+         * (last in series, offline, or the lookup failed). */
+        val nextBook: NextSeriesBook? = null,
+        /** Seconds left in the auto-advance countdown, or null when it isn't running - see
+         * [startAutoAdvanceCountdown]/[cancelAutoAdvance]. */
+        val autoAdvanceSecondsLeft: Int? = null,
+        /** One-shot: the screen opens this book (replacing the reader in the back stack) then
+         * calls [consumeOpenNextBookRequest]. */
+        val openNextBookRequest: OpenBookRequest? = null,
     ) {
         /** What's actually applied to the reader: the book's own override, else Global. */
         val effective: ComicReaderSettings get() = effectiveComicSettings(globalSettings, bookState)
@@ -92,6 +129,10 @@ class ComicReaderViewModel @Inject constructor(
     private var lastSaved = 0L
     private var pendingPage: Int? = null
     private var localArchive: LocalComicArchive? = null
+    /** Cached result of `books/{id}/series-books` - fetched only once the end is actually
+     * reached ([onEndReached]), never eagerly on load. */
+    private var seriesBooksCache: List<BookRecommendation>? = null
+    private var autoAdvanceJob: Job? = null
 
     init {
         load()
@@ -135,6 +176,7 @@ class ComicReaderViewModel @Inject constructor(
                     source = source,
                     initialPage = page,
                     currentPage = page,
+                    seriesIndex = book.seriesIndex,
                 )
             }
         }
@@ -270,6 +312,81 @@ class ComicReaderViewModel @Inject constructor(
         _ui.update { if (page in it.widePages) it else it.copy(widePages = it.widePages + page) }
     }
 
+    /**
+     * Called whenever the reader tries to move past the last page: a tap-zone Next, a swipe past
+     * the end, the volume-key/hardware-arrow or bottom-bar Next, or just scrolling to the end in
+     * the infinite modes. Shows the "Next in series" end card, resolving the next book (and
+     * starting the auto-advance countdown, if it's on) once the lookup completes. A no-op while
+     * the card is already showing.
+     */
+    fun onEndReached() {
+        if (_ui.value.nextBookCardVisible) return
+        _ui.update { it.copy(nextBookCardVisible = true, nextBookLoading = true, nextBook = null) }
+        viewModelScope.launch {
+            val next = resolveNextBook()
+            _ui.update { it.copy(nextBookLoading = false, nextBook = next) }
+            if (next != null && _ui.value.effective.autoAdvance) startAutoAdvanceCountdown()
+        }
+    }
+
+    /** Fetches `books/{id}/series-books` once (cached in [seriesBooksCache] for the rest of this
+     * screen's life) and picks the next one with [pickNextInSeries]. Offline or any failure shows
+     * the card with no next book, never crashes. */
+    private suspend fun resolveNextBook(): NextSeriesBook? {
+        val books = seriesBooksCache
+            ?: runCatching { api.getSeriesBooksForBook(bookId) }.getOrNull()?.also { seriesBooksCache = it }
+            ?: return null
+        val next = pickNextInSeries(bookId, _ui.value.seriesIndex, books) ?: return null
+        return NextSeriesBook(id = next.id, title = next.title, hasCover = next.hasCover, seriesIndex = next.seriesIndex)
+    }
+
+    /** "Open"/auto-advance: resolves which reader the next book opens in (comic for comics, the
+     * matching route for other formats, or its book detail page when it isn't readable at all -
+     * see [BookFiles.readingTarget]) and publishes a one-shot [OpenBookRequest] for the screen. */
+    fun openNextBook() {
+        val next = _ui.value.nextBook ?: return
+        cancelAutoAdvance()
+        viewModelScope.launch {
+            val detail = runCatching { bookRepo.detail(next.id) }.getOrNull()
+            val target = detail?.let(BookFiles::readingTarget) ?: BookFiles.ReadingTarget.None
+            _ui.update { it.copy(openNextBookRequest = OpenBookRequest(next.id, target)) }
+        }
+    }
+
+    /** Consumed by the screen immediately after acting on [UiState.openNextBookRequest]. */
+    fun consumeOpenNextBookRequest() = _ui.update { it.copy(openNextBookRequest = null) }
+
+    /** Dismisses the end card ("Back to book" / the close control), cancelling any running
+     * auto-advance countdown without opening anything. */
+    fun dismissNextBookCard() {
+        cancelAutoAdvance()
+        _ui.update { it.copy(nextBookCardVisible = false, nextBookLoading = false, nextBook = null) }
+    }
+
+    /** Starts (or restarts) the ~3-second auto-advance countdown; opens [openNextBook] when it
+     * reaches zero unless [cancelAutoAdvance] stops it first. */
+    private fun startAutoAdvanceCountdown() {
+        autoAdvanceJob?.cancel()
+        _ui.update { it.copy(autoAdvanceSecondsLeft = AUTO_ADVANCE_SECONDS) }
+        autoAdvanceJob = viewModelScope.launch {
+            var remaining = AUTO_ADVANCE_SECONDS
+            while (remaining > 0) {
+                delay(1_000L)
+                remaining--
+                _ui.update { it.copy(autoAdvanceSecondsLeft = remaining) }
+            }
+            openNextBook()
+        }
+    }
+
+    /** Cancels a running auto-advance countdown (the card's own Cancel control, or dismissing/
+     * leaving the card entirely); harmless when none is running. */
+    fun cancelAutoAdvance() {
+        autoAdvanceJob?.cancel()
+        autoAdvanceJob = null
+        _ui.update { it.copy(autoAdvanceSecondsLeft = null) }
+    }
+
     /** The downloaded CBZ for [fileId], if there is one and it opens with at least one page. */
     private suspend fun openLocal(fileId: Int, format: String?): ComicPageSource.Local? {
         closeLocal()
@@ -311,6 +428,7 @@ class ComicReaderViewModel @Inject constructor(
     }
 
     override fun onCleared() {
+        autoAdvanceJob?.cancel()
         flush()
         sessions.end()
         closeLocal()

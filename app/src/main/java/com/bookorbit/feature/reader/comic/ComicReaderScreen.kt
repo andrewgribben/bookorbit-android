@@ -122,9 +122,15 @@ private data class ComicNavState(
 fun ComicReaderScreen(
     onBack: () -> Unit,
     fullscreen: Boolean = false,
+    onOpenNextBook: (bookId: Int, target: com.bookorbit.core.model.BookFiles.ReadingTarget) -> Unit = { _, _ -> },
     vm: ComicReaderViewModel = hiltViewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
+    LaunchedEffect(ui.openNextBookRequest) {
+        val request = ui.openNextBookRequest ?: return@LaunchedEffect
+        onOpenNextBook(request.bookId, request.target)
+        vm.consumeOpenNextBookRequest()
+    }
     var chromeVisible by remember { mutableStateOf(true) }
     val settings = ui.effective
 
@@ -227,6 +233,19 @@ fun ComicReaderScreen(
                     resumeNoteDismissed = true
                 },
                 onDismiss = { resumeNoteDismissed = true },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+
+        if (ui.nextBookCardVisible) {
+            ComicNextInSeriesCard(
+                loading = ui.nextBookLoading,
+                nextBook = ui.nextBook,
+                autoAdvanceSecondsLeft = ui.autoAdvanceSecondsLeft,
+                insets = bottomBarInsets,
+                onOpen = vm::openNextBook,
+                onCancelAutoAdvance = vm::cancelAutoAdvance,
+                onDismiss = vm::dismissNextBookCard,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -494,7 +513,7 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPagedPages(
                 scope.launch {
                     when (turn) {
                         com.bookorbit.feature.reader.PageTurnKey.NEXT ->
-                            if (pagerState.currentPage < spreads.size - 1) pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                            if (pagerState.currentPage < spreads.size - 1) pagerState.animateScrollToPage(pagerState.currentPage + 1) else vm.onEndReached()
                         com.bookorbit.feature.reader.PageTurnKey.PREVIOUS ->
                             if (pagerState.currentPage > 0) pagerState.animateScrollToPage(pagerState.currentPage - 1)
                     }
@@ -523,7 +542,7 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPagedPages(
             val spread = spreads.getOrNull(spreadIndex)
             if (spread == null) return@HorizontalPager
             val onSpreadTap: (Float, Float) -> Unit = { xFraction, yFraction ->
-                handleTap(ui.controlsSettings, xFraction, yFraction, rtl, scope, pagerState, spreads.size, onToggleChrome)
+                handleTap(ui.controlsSettings, xFraction, yFraction, rtl, scope, pagerState, spreads.size, onToggleChrome, vm::onEndReached)
             }
             if (spread.kind == ComicSpreadKind.SINGLE || spread.pages.size == 1) {
                 ZoomablePage(
@@ -586,9 +605,10 @@ private fun handleTap(
     pagerState: androidx.compose.foundation.pager.PagerState,
     pageCount: Int,
     onToggleChrome: () -> Unit,
+    onEndReached: () -> Unit,
 ) {
     when (controls.resolveTapAction(xFraction, yFraction, rtl)) {
-        TapAction.NEXT -> scope.launch { if (pagerState.currentPage < pageCount - 1) pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+        TapAction.NEXT -> scope.launch { if (pagerState.currentPage < pageCount - 1) pagerState.animateScrollToPage(pagerState.currentPage + 1) else onEndReached() }
         TapAction.PREVIOUS -> scope.launch { if (pagerState.currentPage > 0) pagerState.animateScrollToPage(pagerState.currentPage - 1) }
         TapAction.MENU -> onToggleChrome()
         TapAction.NOTHING -> Unit
@@ -626,6 +646,9 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicScrollStrip(
                 label = comicPageCounterLabel(listOf(page), ui.pageCount),
                 onSeek = { target -> scrollScope.launch { listState.scrollToItem(target.coerceIn(0, (ui.pageCount - 1).coerceAtLeast(0))) } },
             )
+            // "Reaching the end in the infinite modes" (task: auto-advance/next-in-series):
+            // the strip scrolled all the way to its last item on its own, no extra action needed.
+            if (ui.pageCount > 0 && page >= ui.pageCount - 1) vm.onEndReached()
         }
     }
     // Volume keys / hardware arrows (task 2): "next/previous scrolls by one screen" in the
@@ -635,7 +658,11 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicScrollStrip(
             scrollScope.launch {
                 when (turn) {
                     com.bookorbit.feature.reader.PageTurnKey.NEXT ->
-                        listState.animateScrollToItem((listState.firstVisibleItemIndex + 1).coerceAtMost((ui.pageCount - 1).coerceAtLeast(0)))
+                        if (listState.firstVisibleItemIndex < ui.pageCount - 1) {
+                            listState.animateScrollToItem((listState.firstVisibleItemIndex + 1).coerceAtMost((ui.pageCount - 1).coerceAtLeast(0)))
+                        } else {
+                            vm.onEndReached()
+                        }
                     com.bookorbit.feature.reader.PageTurnKey.PREVIOUS ->
                         listState.animateScrollToItem((listState.firstVisibleItemIndex - 1).coerceAtLeast(0))
                 }
@@ -670,6 +697,8 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicScrollStrip(
     // scroll by one screen and the zones are never mirrored for right-to-left here.
     val currentControls by rememberUpdatedState(ui.controlsSettings)
     val currentOnToggleChrome by rememberUpdatedState(onToggleChrome)
+    val currentPageCount by rememberUpdatedState(ui.pageCount)
+    val currentOnEndReached by rememberUpdatedState(vm::onEndReached)
     val doubleTapZoom = ui.controlsSettings.doubleTapZoomEnabled
     Box(
         Modifier
@@ -682,7 +711,11 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicScrollStrip(
                         val y = pos.y / size.height.coerceAtLeast(1)
                         val screen = size.height * STRIP_TAP_SCROLL_FRACTION
                         when (currentControls.resolveTapAction(x, y, isRtl = false)) {
-                            TapAction.NEXT -> scrollScope.launch { listState.animateScrollBy(screen) }
+                            TapAction.NEXT -> if (listState.firstVisibleItemIndex < currentPageCount - 1) {
+                                scrollScope.launch { listState.animateScrollBy(screen) }
+                            } else {
+                                currentOnEndReached()
+                            }
                             TapAction.PREVIOUS -> scrollScope.launch { listState.animateScrollBy(-screen) }
                             TapAction.MENU -> currentOnToggleChrome()
                             TapAction.NOTHING -> Unit
