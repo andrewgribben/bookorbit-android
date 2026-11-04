@@ -49,7 +49,7 @@ fun trackingEnabled(savedStateHandle: SavedStateHandle): Boolean = savedStateHan
 
 @HiltViewModel
 class ReaderViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     private val bookRepo: BookDetailRepository,
     private val downloads: DownloadsRepository,
     private val source: ReaderSource,
@@ -692,6 +692,7 @@ class ReaderViewModel @Inject constructor(
     fun startReading() {
         if (tracking) return
         tracking = true
+        savedStateHandle["peek"] = false // survive process death
         _ui.update { it.copy(peek = false) }
         wallpaperFollow.noteOpenBook(bookId)
         sessions.beginReading(_ui.value.resolved?.fileId ?: return, _ui.value.percentage.toDouble())
