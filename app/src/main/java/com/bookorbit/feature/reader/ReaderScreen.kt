@@ -86,15 +86,22 @@ fun ReaderScreen(
 
     val context = LocalContext.current
 
-    // Taps arrive from the page (so text selection keeps working): edges turn the page, the middle
-    // toggles the chrome, and any tap while the highlight toolbar is open just dismisses it.
-    val onTap = remember { mutableStateOf<(Double) -> Unit>({}) }
-    onTap.value = { x ->
-        when {
-            ui.toolbar != null -> vm.dismissToolbar()
-            ui.effective.flow == "paginated" && x < 0.3 -> controller.prev()
-            ui.effective.flow == "paginated" && x > 0.7 -> controller.next()
-            else -> chromeVisible = !chromeVisible
+    // Taps arrive from the page (so text selection keeps working): a plain tap that isn't on a
+    // link or selection is resolved through the shared Controls zone model (preset, zone size,
+    // per-zone action, mirrored for RTL using the book's own page-progression direction) - the
+    // same pure function the comic reader uses. Any tap while the highlight toolbar is open just
+    // dismisses it, taking priority over the zone action.
+    val onTap = remember { mutableStateOf<(Double, Double) -> Unit>({ _, _ -> }) }
+    onTap.value = { x, y ->
+        if (ui.toolbar != null) {
+            vm.dismissToolbar()
+        } else {
+            when (ui.controlsSettings.resolveTapAction(x.toFloat(), y.toFloat(), ui.isRtl)) {
+                TapAction.NEXT -> controller.next()
+                TapAction.PREVIOUS -> controller.prev()
+                TapAction.MENU -> chromeVisible = !chromeVisible
+                TapAction.NOTHING -> Unit
+            }
         }
     }
 
@@ -103,6 +110,23 @@ fun ReaderScreen(
     DisposableEffect(Unit) {
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
+    }
+
+    // Volume keys and hardware arrows turn pages while this screen is showing (task 2): the
+    // registry is consulted from MainActivity.dispatchKeyEvent, not Compose focus, so it works
+    // regardless of whether the WebView currently holds focus.
+    DisposableEffect(controller) {
+        val onPageTurn: (PageTurnKey) -> Unit = { turn ->
+            when (turn) {
+                PageTurnKey.NEXT -> controller.next()
+                PageTurnKey.PREVIOUS -> controller.prev()
+            }
+        }
+        ReaderKeyBindings.enter(onPageTurn)
+        onDispose { ReaderKeyBindings.leave(onPageTurn) }
+    }
+    LaunchedEffect(ui.controlsSettings.volumeKeysTurnPages) {
+        ReaderKeyBindings.setVolumeKeysEnabled(ui.controlsSettings.volumeKeysTurnPages)
     }
 
     // Tapping the page centre toggles the reader's own chrome and Android's system bars together
@@ -116,11 +140,11 @@ fun ReaderScreen(
         controller.listener = { event ->
             when (event) {
                 is ReaderEvent.Ready -> ready = true
-                is ReaderEvent.Loaded -> vm.onLoaded(event.toc, event.title, event.hasMediaOverlay)
+                is ReaderEvent.Loaded -> vm.onLoaded(event.toc, event.title, event.hasMediaOverlay, event.isRtl)
                 is ReaderEvent.Relocate -> vm.onRelocate(event.cfi, event.fraction, event.chapterTitle)
                 is ReaderEvent.History -> history = event
                 is ReaderEvent.Error -> vm.onError(event.message)
-                is ReaderEvent.Tap -> onTap.value(event.x)
+                is ReaderEvent.Tap -> onTap.value(event.x, event.y)
                 is ReaderEvent.SearchResults -> vm.onSearchResults(event.label, event.hits)
                 is ReaderEvent.SearchProgress -> vm.onSearchProgress(event.progress)
                 is ReaderEvent.SearchDone -> vm.onSearchDone(event.total, event.capped)
@@ -149,6 +173,9 @@ fun ReaderScreen(
     // Draw the book's highlights in the page whenever they (or the loaded page) change.
     LaunchedEffect(ui.annotations, ui.loaded) {
         if (ui.loaded) controller.setAnnotations(ui.annotations)
+    }
+    LaunchedEffect(ui.loaded, ui.controlsSettings.swipeEnabled) {
+        if (ui.loaded) controller.setSwipeEnabled(ui.controlsSettings.swipeEnabled)
     }
 
     // Drop the page's text selection once the toolbar goes away (saved, dismissed or deleted).
@@ -428,6 +455,8 @@ fun ReaderScreen(
                 settingsVisible = false
                 vm.setCoverAsWallpaper()
             },
+            controlsSettings = ui.controlsSettings,
+            onControlsSettingsChange = vm::updateControlsSettings,
             onDismiss = { settingsVisible = false },
         )
     }

@@ -27,6 +27,21 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+
+        // Volume keys and hardware arrows turn pages while a reader screen is showing (see
+        // ReaderKeyBindings). Wrapping the Window.Callback (rather than overriding
+        // ComponentActivity.dispatchKeyEvent, which androidx.lint flags as a restricted API not
+        // meant to be overridden/called outside the androidx library group) intercepts the event
+        // before the usual focus-based dispatch, so it works even if a child view (the ebook
+        // reader's WebView, in particular) currently holds focus.
+        val originalCallback = window.callback
+        window.callback = object : android.view.Window.Callback by originalCallback {
+            override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+                if (com.bookorbit.feature.reader.ReaderKeyBindings.dispatch(event)) return true
+                return originalCallback.dispatchKeyEvent(event)
+            }
+        }
+
         setContent {
             val themeVm: ThemeViewModel = hiltViewModel()
             val mode by themeVm.themeMode.collectAsStateWithLifecycle()

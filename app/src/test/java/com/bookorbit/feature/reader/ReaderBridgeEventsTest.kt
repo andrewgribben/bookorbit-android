@@ -10,8 +10,25 @@ import org.junit.Test
 class ReaderBridgeEventsTest {
     @Test
     fun `parses a tap`() {
-        val e = ReaderBridge.parseEvent("""{"type":"tap","x":0.82}""")
-        assertEquals(ReaderEvent.Tap(0.82), e)
+        val e = ReaderBridge.parseEvent("""{"type":"tap","x":0.82,"y":0.4}""")
+        assertEquals(ReaderEvent.Tap(0.82, 0.4), e)
+    }
+
+    @Test
+    fun `a tap missing y is dropped rather than failing`() {
+        assertNull(ReaderBridge.parseEvent("""{"type":"tap","x":0.82}"""))
+    }
+
+    @Test
+    fun `parses loaded with its rtl flag`() {
+        val e = ReaderBridge.parseEvent("""{"type":"loaded","toc":[],"isRtl":true}""") as ReaderEvent.Loaded
+        assertEquals(true, e.isRtl)
+    }
+
+    @Test
+    fun `loaded defaults to ltr when isRtl is absent`() {
+        val e = ReaderBridge.parseEvent("""{"type":"loaded","toc":[]}""") as ReaderEvent.Loaded
+        assertEquals(false, e.isRtl)
     }
 
     @Test

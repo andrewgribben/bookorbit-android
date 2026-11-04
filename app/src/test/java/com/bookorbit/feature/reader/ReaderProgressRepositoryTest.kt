@@ -2,6 +2,7 @@ package com.bookorbit.feature.reader
 
 import com.bookorbit.core.db.ReaderProgressDao
 import com.bookorbit.core.db.ReaderProgressEntity
+import com.bookorbit.core.model.FileProgress
 import com.bookorbit.core.model.SaveFileProgress
 import com.bookorbit.core.network.ApiService
 import com.bookorbit.core.sync.SyncScheduler
@@ -11,6 +12,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -63,6 +65,48 @@ class ReaderProgressRepositoryTest {
 
         assertFalse(repo.flushPending())
         coVerify { dao.markSynced(1) }
+    }
+
+    @Test
+    fun `report keeps the page number locally and sends it to the server`() = runTest {
+        coEvery { api.saveFileProgress(any(), any()) } returns Unit
+
+        repo.report(fileId = 3, cfi = null, percentage = 70.8, pageNumber = 34)
+
+        coVerify { dao.upsert(match { it.fileId == 3 && it.pageNumber == 34 && it.dirty }) }
+        coVerify { api.saveFileProgress(3, SaveFileProgress(null, 70.8, 34)) }
+    }
+
+    @Test
+    fun `flushPending resends a pending page number`() = runTest {
+        coEvery { dao.dirtyEntries() } returnsMany listOf(
+            listOf(ReaderProgressEntity(3, null, 70.8, 100L, dirty = true, pageNumber = 34)),
+            emptyList(),
+        )
+        coEvery { api.saveFileProgress(any(), any()) } returns Unit
+
+        repo.flushPending()
+
+        coVerify { api.saveFileProgress(3, SaveFileProgress(null, 70.8, 34)) }
+    }
+
+    @Test
+    fun `resolveInitial carries the server page number`() = runTest {
+        coEvery { dao.get(3) } returns null
+        coEvery { api.getFileProgress(3) } returns FileProgress(cfi = null, percentage = 70.8, pageNumber = 34)
+
+        val initial = repo.resolveInitial(3)
+
+        assertEquals(34, initial.pageNumber)
+        assertEquals(0.708, initial.fraction!!, 1e-9)
+    }
+
+    @Test
+    fun `resolveInitial prefers a pending local page number`() = runTest {
+        coEvery { dao.get(3) } returns ReaderProgressEntity(3, null, 75.0, 100L, dirty = true, pageNumber = 36)
+        coEvery { api.getFileProgress(3) } returns FileProgress(cfi = null, percentage = 70.8, pageNumber = 34)
+
+        assertEquals(36, repo.resolveInitial(3).pageNumber)
     }
 
     @Test

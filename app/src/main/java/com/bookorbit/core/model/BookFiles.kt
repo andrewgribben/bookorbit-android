@@ -8,14 +8,15 @@ object BookFiles {
     /** Audio container formats handled by the player. */
     val AUDIO_FORMATS = setOf("m4b", "mp3", "m4a", "opus", "ogg", "flac", "aac", "wav")
 
-    /** Formats the in-app foliate reader can render (PDF excluded; azw/txt unreliable). */
-    val READER_SUPPORTED = setOf("epub", "mobi", "azw3", "fb2", "cbz")
+    /** Formats the in-app foliate reader can render (PDF and comics excluded; azw/txt unreliable). */
+    val READER_SUPPORTED = setOf("epub", "mobi", "azw3", "fb2")
 
     /**
-     * Comic archives foliate can't open (it only understands ZIP). The server renders their pages as
-     * images (`/cbz/files/{id}/pages/{n}`), which the native comic reader pages through.
+     * Comic archives, all opened in the native comic reader. A downloaded CBZ is read from the zip
+     * on the device; otherwise (and always for CBR/CB7, which have no on-device decoder) the server
+     * renders the pages as images (`/cbz/files/{id}/pages/{n}`).
      */
-    val COMIC_SERVER_PAGED = setOf("cbr", "cb7")
+    val COMIC_FORMATS = setOf("cbz", "cbr", "cb7")
 
     /** Formats handled by the native PdfRenderer-based reader (a separate engine from foliate). */
     val PDF_FORMATS = setOf("pdf")
@@ -24,7 +25,7 @@ object BookFiles {
     val EBOOK_OPENABLE = setOf("epub", "pdf", "cbz", "cbr", "cb7", "mobi", "azw3", "azw", "fb2", "txt")
 
     /** Legitimate book content formats, as opposed to incidental files like a folder's cover image. */
-    private val CONTENT_FORMATS = AUDIO_FORMATS + READER_SUPPORTED + COMIC_SERVER_PAGED + PDF_FORMATS
+    private val CONTENT_FORMATS = AUDIO_FORMATS + READER_SUPPORTED + COMIC_FORMATS + PDF_FORMATS
 
     /**
      * Format to show as a card's badge: the primary file if it's a known content format, else the
@@ -69,14 +70,14 @@ object BookFiles {
 
     fun isPdf(book: BookDetail): Boolean = pdfFile(book) != null
 
-    fun isComicServerPaged(format: String?): Boolean =
-        format != null && format.lowercase() in COMIC_SERVER_PAGED
+    fun isComicFormat(format: String?): Boolean =
+        format != null && format.lowercase() in COMIC_FORMATS
 
-    /** The CBR/CB7 file the native comic reader should open: primary if it is one, else the first. */
+    /** The comic archive the native comic reader should open: primary if it is one, else the first. */
     fun comicFile(book: BookDetail): BookFileRef? {
         val primary = book.files.firstOrNull { it.role == "primary" }
-        if (primary != null && isComicServerPaged(primary.format)) return primary
-        return book.files.firstOrNull { isComicServerPaged(it.format) }
+        if (primary != null && isComicFormat(primary.format)) return primary
+        return book.files.firstOrNull { isComicFormat(it.format) }
     }
 
     /** Which reading engine a book should open in, and the file to feed it. */
@@ -89,7 +90,7 @@ object BookFiles {
 
     /**
      * Picks the reading engine for a book. The foliate reader wins when a foliate-readable file
-     * exists (it covers the common ebook formats); then CBR/CB7 comics open in the native comic reader,
+     * exists (it covers the common ebook formats); then comics (CBZ/CBR/CB7) open in the native comic reader,
      * otherwise a PDF opens in the native PDF reader.
      */
     fun readingTarget(book: BookDetail): ReadingTarget {

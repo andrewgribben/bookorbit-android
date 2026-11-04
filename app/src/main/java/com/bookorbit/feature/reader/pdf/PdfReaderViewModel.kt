@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bookorbit.feature.bookdetail.BookDetailRepository
 import com.bookorbit.feature.downloads.DownloadsRepository
+import com.bookorbit.core.wallpaper.CoverWallpaperFollowController
 import com.bookorbit.feature.reader.ReaderProgressRepository
 import com.bookorbit.feature.reader.ReaderSource
 import com.bookorbit.feature.sessions.ReadingSessionTracker
@@ -34,6 +35,7 @@ class PdfReaderViewModel @Inject constructor(
     private val progress: ReaderProgressRepository,
     private val settingsStore: PdfReaderSettingsStore,
     private val sessions: ReadingSessionTracker,
+    private val wallpaperFollow: CoverWallpaperFollowController,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -74,6 +76,7 @@ class PdfReaderViewModel @Inject constructor(
 
     init {
         load()
+        wallpaperFollow.noteOpenBook(bookId)
     }
 
     private fun load() {

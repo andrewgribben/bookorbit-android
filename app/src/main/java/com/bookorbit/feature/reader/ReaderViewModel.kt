@@ -49,6 +49,7 @@ class ReaderViewModel @Inject constructor(
     private val narrationSource: NarrationAudioSource,
     private val wallpaper: CoverWallpaperController,
     private val wallpaperFollow: CoverWallpaperFollowController,
+    private val controlsStore: ReaderControlsStore,
 ) : ViewModel() {
 
     val bookId: Int = savedStateHandle.get<Int>("id") ?: 0
@@ -99,6 +100,12 @@ class ReaderViewModel @Inject constructor(
         val narrationLoading: Boolean = false,
         /** The text href foliate should currently highlight, or null to clear it. */
         val narrationHighlightTextHref: String? = null,
+        /** App-wide tap/gesture Controls (owner decisions 2 and 5): device-only, no Global/This-
+         * book scope - shared verbatim with the comic reader's own Controls tab. */
+        val controlsSettings: ReaderControlsSettings = ReaderControlsSettings(),
+        /** The open book's own page-progression direction, from foliate's `view.book.dir`; used
+         * to mirror Controls tap zones for RTL/manga content (owner decision - not device locale). */
+        val isRtl: Boolean = false,
     ) {
         /** What's actually applied to the reader: the book's own snapshot, else Global. */
         val effective: ReaderSettings get() = effectiveSettings(globalSettings, bookState)
@@ -157,6 +164,7 @@ class ReaderViewModel @Inject constructor(
         load()
         loadAnnotations()
         wallpaperFollow.noteOpenBook(bookId)
+        viewModelScope.launch { _ui.update { it.copy(controlsSettings = controlsStore.load()) } }
     }
 
     private fun load() {
@@ -203,8 +211,8 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun onLoaded(toc: List<TocItem>, title: String?, hasMediaOverlay: Boolean = false) {
-        _ui.update { it.copy(loaded = true, toc = toc, chapterTitle = it.chapterTitle ?: title, hasMediaOverlay = hasMediaOverlay) }
+    fun onLoaded(toc: List<TocItem>, title: String?, hasMediaOverlay: Boolean = false, isRtl: Boolean = false) {
+        _ui.update { it.copy(loaded = true, toc = toc, chapterTitle = it.chapterTitle ?: title, hasMediaOverlay = hasMediaOverlay, isRtl = isRtl) }
     }
 
     // --- narration player controls (stage 4) ---
@@ -545,6 +553,12 @@ class ReaderViewModel @Inject constructor(
     }
 
     fun setScope(scope: ReaderSettingsScope) = _ui.update { it.copy(scope = scope) }
+
+    /** Edited from the Controls tab; applies immediately and persists app-wide (owner decision 5). */
+    fun updateControlsSettings(settings: ReaderControlsSettings) {
+        _ui.update { it.copy(controlsSettings = settings) }
+        viewModelScope.launch { controlsStore.save(settings) }
+    }
 
     /** The "Use global settings" master switch (requirement 2): one per book, all-or-nothing. */
     fun setUseGlobal(useGlobal: Boolean) {

@@ -37,7 +37,14 @@ data class SearchHit(val cfi: String, val pre: String, val match: String, val po
 
 sealed interface ReaderEvent {
     data object Ready : ReaderEvent
-    data class Loaded(val toc: List<TocItem>, val title: String?, val hasMediaOverlay: Boolean = false) : ReaderEvent
+    data class Loaded(
+        val toc: List<TocItem>,
+        val title: String?,
+        val hasMediaOverlay: Boolean = false,
+        /** The book's own page-progression direction (foliate `view.book.dir === 'rtl'`), used to
+         * mirror the Controls tap zones for manga/RTL content, not the device locale. */
+        val isRtl: Boolean = false,
+    ) : ReaderEvent
     data class Relocate(
         val cfi: String?,
         val fraction: Double?,
@@ -45,8 +52,9 @@ sealed interface ReaderEvent {
     ) : ReaderEvent
     data class Error(val message: String) : ReaderEvent
 
-    /** A tap on the page body (not on a link or highlight). [x] is 0..1 across the viewport. */
-    data class Tap(val x: Double) : ReaderEvent
+    /** A tap on the page body (not on a link, selection or highlight). [x]/[y] are 0..1 across
+     * the viewport, used to resolve the Controls tap zones ([hitZone]). */
+    data class Tap(val x: Double, val y: Double) : ReaderEvent
     data class Selection(val text: String, val cfi: String?, val rect: ViewportRect?) : ReaderEvent
     data object SelectionCleared : ReaderEvent
     data class History(val canGoBack: Boolean, val canGoForward: Boolean) : ReaderEvent
@@ -112,7 +120,8 @@ object ReaderBridge {
                 } ?: emptyList()
                 val title = obj["metadata"]?.jsonObject?.get("title")?.jsonPrimitive?.contentOrNull
                 val hasMediaOverlay = obj["hasMediaOverlay"]?.jsonPrimitive?.booleanOrNull ?: false
-                ReaderEvent.Loaded(toc, title, hasMediaOverlay)
+                val isRtl = obj["isRtl"]?.jsonPrimitive?.booleanOrNull ?: false
+                ReaderEvent.Loaded(toc, title, hasMediaOverlay, isRtl)
             }
             "relocate" -> ReaderEvent.Relocate(
                 cfi = obj["cfi"]?.jsonPrimitive?.contentOrNull,
@@ -124,7 +133,11 @@ object ReaderBridge {
                 canGoForward = obj["canGoForward"]?.jsonPrimitive?.booleanOrNull ?: false,
             )
             "error" -> ReaderEvent.Error(obj["message"]?.jsonPrimitive?.contentOrNull ?: "Reader error")
-            "tap" -> obj["x"]?.jsonPrimitive?.doubleOrNull?.let { ReaderEvent.Tap(it) }
+            "tap" -> {
+                val x = obj["x"]?.jsonPrimitive?.doubleOrNull
+                val y = obj["y"]?.jsonPrimitive?.doubleOrNull
+                if (x != null && y != null) ReaderEvent.Tap(x, y) else null
+            }
             "selection" -> obj["text"]?.jsonPrimitive?.contentOrNull?.let {
                 ReaderEvent.Selection(it, obj["cfi"]?.jsonPrimitive?.contentOrNull, parseRect(obj["rect"]))
             }

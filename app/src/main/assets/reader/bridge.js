@@ -617,12 +617,13 @@ function attachDocHandlers(doc, index) {
     const sel = doc.getSelection();
     if (sel && !sel.isCollapsed) return;
     const frame = doc.defaultView?.frameElement;
-    const left = frame ? frame.getBoundingClientRect().left : 0;
-    const x = (left + e.clientX) / window.innerWidth;
+    const off = frame ? frame.getBoundingClientRect() : { left: 0, top: 0 };
+    const x = (off.left + e.clientX) / window.innerWidth;
+    const y = (off.top + e.clientY) / window.innerHeight;
     // Foliate's own click listener reports taps on highlights; give it a tick to run first.
     setTimeout(() => {
       if (performance.now() - lastAnnotationHitAt < 50) return;
-      post({ type: 'tap', x });
+      post({ type: 'tap', x, y });
     }, 0);
   });
 
@@ -748,6 +749,7 @@ async function finishOpen(meta) {
     type: 'loaded',
     toc: serializeToc(view.book?.toc),
     hasMediaOverlay,
+    isRtl: view.book?.dir === 'rtl',
     metadata: {
       title: view.book?.metadata?.title ?? null,
       language: view.book?.metadata?.language ?? null,
@@ -877,6 +879,10 @@ window.__readerCommand = (json) => {
       break;
     case 'next':
       view.next?.();
+      break;
+    case 'setSwipe':
+      // Read by the paginator's touch handling; a global so it survives the renderer being rebuilt.
+      globalThis.__bookorbitNoSwipe = !cmd.enabled;
       break;
     case 'applyStyles':
       applyStyles(cmd.settings);

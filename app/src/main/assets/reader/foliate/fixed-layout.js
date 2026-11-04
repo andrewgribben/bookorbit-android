@@ -84,6 +84,10 @@ export class FixedLayout extends HTMLElement {
     iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts')
     iframe.setAttribute('scrolling', 'no')
     iframe.setAttribute('part', 'filter')
+    // Record which section this frame shows so getContents() can report it: view.js's goTo()
+    // checks contents' indices to confirm a navigation landed, and without them every resume of a
+    // fixed-layout book (comics, manga EPUBs) looked like a failure and fell back to page 1.
+    if (typeof index === 'number' && index >= 0) iframe.dataset.sectionIndex = String(index)
     this.#root.append(element)
     if (!src) return { blank: true, element, iframe }
     return new Promise((resolve) => {
@@ -303,7 +307,8 @@ export class FixedLayout extends HTMLElement {
   getContents() {
     return Array.from(this.#root.querySelectorAll('iframe'), (frame) => ({
       doc: frame.contentDocument,
-      // TODO: index, overlayer
+      index: frame.dataset.sectionIndex != null ? Number(frame.dataset.sectionIndex) : undefined,
+      // TODO: overlayer
     }))
   }
   destroy() {

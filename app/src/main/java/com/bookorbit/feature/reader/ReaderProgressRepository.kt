@@ -8,7 +8,7 @@ import com.bookorbit.core.sync.SyncScheduler
 import javax.inject.Inject
 import javax.inject.Singleton
 
-data class InitialProgress(val cfi: String?, val fraction: Double?)
+data class InitialProgress(val cfi: String?, val fraction: Double?, val pageNumber: Int? = null)
 
 /**
  * Offline-first reading-position store keyed by server file id, backed by Room: every position is
@@ -23,11 +23,11 @@ class ReaderProgressRepository @Inject constructor(
 ) {
     /**
      * Save locally, then attempt to push to the server (clearing dirty on success). [pageNumber] is
-     * forwarded to the server for cross-client parity (used by the PDF reader); the local Room store
-     * keeps only cfi + percentage, from which a stable PDF page count is recoverable on resume.
+     * forwarded to the server for cross-client parity (the web comic reader resumes from it) and kept
+     * locally so a later offline retry re-sends it.
      */
     suspend fun report(fileId: Int, cfi: String?, percentage: Double, pageNumber: Int? = null) {
-        dao.upsert(ReaderProgressEntity(fileId, cfi, percentage, System.currentTimeMillis(), dirty = true))
+        dao.upsert(ReaderProgressEntity(fileId, cfi, percentage, System.currentTimeMillis(), dirty = true, pageNumber = pageNumber))
         val ok = runCatching {
             api.saveFileProgress(fileId, SaveFileProgress(cfi, percentage, pageNumber))
         }.isSuccess
@@ -38,7 +38,7 @@ class ReaderProgressRepository @Inject constructor(
     suspend fun flushPending(): Boolean {
         for (entry in dao.dirtyEntries()) {
             val ok = runCatching {
-                api.saveFileProgress(entry.fileId, SaveFileProgress(entry.cfi, entry.percentage))
+                api.saveFileProgress(entry.fileId, SaveFileProgress(entry.cfi, entry.percentage, entry.pageNumber))
             }.isSuccess
             if (ok) dao.markSynced(entry.fileId)
         }
@@ -49,7 +49,7 @@ class ReaderProgressRepository @Inject constructor(
     suspend fun syncBeforeWeb(fileId: Int) {
         val local = dao.get(fileId) ?: return
         if (!local.dirty) return
-        api.saveFileProgress(fileId, SaveFileProgress(local.cfi, local.percentage))
+        api.saveFileProgress(fileId, SaveFileProgress(local.cfi, local.percentage, local.pageNumber))
         dao.markSynced(fileId)
     }
 
@@ -63,15 +63,18 @@ class ReaderProgressRepository @Inject constructor(
 
         val cfi: String?
         val percentage: Double?
+        val pageNumber: Int?
         if (local != null && (local.dirty || server == null)) {
             cfi = local.cfi
             percentage = local.percentage
+            pageNumber = local.pageNumber
         } else if (server != null) {
             cfi = server.cfi
             percentage = server.percentage
+            pageNumber = server.pageNumber
         } else {
             return InitialProgress(null, null)
         }
-        return InitialProgress(cfi, percentage?.let { it / 100.0 })
+        return InitialProgress(cfi, percentage?.let { it / 100.0 }, pageNumber)
     }
 }

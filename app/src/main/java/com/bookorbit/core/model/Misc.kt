@@ -6,6 +6,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
+/** `PUT /reader/defaults/{formatGroup}` and `PUT /reader/preferences/{bookFileId}` body. */
+@Serializable
+data class UpsertReaderSettings(val settings: JsonObject)
+
 @Serializable
 data class AppInfo(
     val version: String,
