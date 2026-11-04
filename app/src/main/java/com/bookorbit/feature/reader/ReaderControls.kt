@@ -9,6 +9,8 @@ import kotlinx.serialization.Serializable
  */
 enum class TapZone { LEFT, RIGHT, TOP, BOTTOM, CENTER, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
 
+/** [MENU] shows or hides the reader's toolbars (and the system bars with them); the name is kept
+ * because it is persisted in saved zone overrides. */
 enum class TapAction { NEXT, PREVIOUS, MENU, NOTHING }
 
 enum class ZoneLayoutPreset { SIDES, SIDES_AND_CORNERS, EDGES, CENTRE_ONLY }

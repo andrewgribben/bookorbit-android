@@ -234,9 +234,10 @@ private fun ZoneCell(
     }
 }
 
+@Composable
 private fun shortActionLabel(action: TapAction): String = when (action) {
-    TapAction.NEXT -> "Next"
-    TapAction.PREVIOUS -> "Prev"
-    TapAction.MENU -> "Menu"
-    TapAction.NOTHING -> "-"
+    TapAction.NEXT -> stringResource(R.string.rc_action_next_short)
+    TapAction.PREVIOUS -> stringResource(R.string.rc_action_previous_short)
+    TapAction.MENU -> stringResource(R.string.rc_action_menu_short)
+    TapAction.NOTHING -> "–"
 }

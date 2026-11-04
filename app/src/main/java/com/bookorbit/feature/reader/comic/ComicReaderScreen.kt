@@ -4,6 +4,7 @@ import com.bookorbit.ui.asString
 import androidx.compose.ui.res.stringResource
 import com.bookorbit.R
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -133,7 +134,7 @@ fun ComicReaderScreen(
         onDispose { view.keepScreenOn = false }
     }
 
-    // Tapping "Show menu" toggles the reader's own chrome and Android's system bars together,
+    // The "Show/hide toolbars" tap action toggles the reader's own chrome and Android's system bars together,
     // exactly like the ebook reader (ReaderScreen.kt) - see readerWantsSystemBarsVisible for the
     // precise rule. ReaderDestination no longer applies its own screen-agnostic immersive effect
     // for the comic reader now that this screen owns it directly.
@@ -429,8 +430,8 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPages(
 ) {
     when (settings.scrollMode) {
         ComicScrollMode.PAGINATED -> ComicPagedPages(ui, settings, vm, onToggleChrome, pageTurnHandler, jumpToPage, nav)
-        ComicScrollMode.INFINITE -> ComicScrollStrip(ui, settings, vm, gap = 16.dp, pageTurnHandler = pageTurnHandler, jumpToPage = jumpToPage, nav = nav)
-        ComicScrollMode.LONG_STRIP -> ComicScrollStrip(ui, settings, vm, gap = 0.dp, pageTurnHandler = pageTurnHandler, jumpToPage = jumpToPage, nav = nav)
+        ComicScrollMode.INFINITE -> ComicScrollStrip(ui, settings, vm, gap = 16.dp, onToggleChrome = onToggleChrome, pageTurnHandler = pageTurnHandler, jumpToPage = jumpToPage, nav = nav)
+        ComicScrollMode.LONG_STRIP -> ComicScrollStrip(ui, settings, vm, gap = 0.dp, onToggleChrome = onToggleChrome, pageTurnHandler = pageTurnHandler, jumpToPage = jumpToPage, nav = nav)
     }
 }
 
@@ -514,12 +515,16 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPagedPages(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
             reverseLayout = rtl,
-            userScrollEnabled = !zoomed,
+            // Swipe to turn pages is a Controls setting; a zoomed page always keeps the drag for panning.
+            userScrollEnabled = !zoomed && ui.controlsSettings.swipeEnabled,
             beyondViewportPageCount = 1,
             key = { it },
         ) { spreadIndex ->
             val spread = spreads.getOrNull(spreadIndex)
             if (spread == null) return@HorizontalPager
+            val onSpreadTap: (Float, Float) -> Unit = { xFraction, yFraction ->
+                handleTap(ui.controlsSettings, xFraction, yFraction, rtl, scope, pagerState, spreads.size, onToggleChrome)
+            }
             if (spread.kind == ComicSpreadKind.SINGLE || spread.pages.size == 1) {
                 ZoomablePage(
                     source = checkNotNull(ui.source),
@@ -527,14 +532,25 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPagedPages(
                     fitMode = settings.fitMode,
                     active = spreadIndex == pagerState.currentPage,
                     onZoomChanged = { if (spreadIndex == pagerState.currentPage) zoomed = it },
-                    onTap = { xFraction, yFraction ->
-                        handleTap(ui.controlsSettings, xFraction, yFraction, rtl, scope, pagerState, spreads.size, onToggleChrome)
-                    },
+                    onTap = onSpreadTap,
                     onImageSize = { w, h -> vm.markPageDimensions(spread.pages.first(), w, h) },
                     doubleTapZoomEnabled = ui.controlsSettings.doubleTapZoomEnabled,
                 )
             } else {
-                Row(Modifier.fillMaxSize()) {
+                // A two-page spread has no zoom, so a plain tap goes straight to the tap zones,
+                // measured across the whole spread (the zones are screen zones, not page zones).
+                val currentOnSpreadTap by rememberUpdatedState(onSpreadTap)
+                var spreadSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+                Row(
+                    Modifier
+                        .fillMaxSize()
+                        .onSizeChanged { spreadSize = it }
+                        .pointerInput(Unit) {
+                            detectTapGestures(onTap = { pos ->
+                                currentOnSpreadTap(pos.x / spreadSize.width.coerceAtLeast(1), pos.y / spreadSize.height.coerceAtLeast(1))
+                            })
+                        },
+                ) {
                     val ordered = if (rtl) spread.pages.reversed() else spread.pages
                     ordered.forEachIndexed { i, page ->
                         Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -579,6 +595,10 @@ private fun handleTap(
     }
 }
 
+/** Fraction of the viewport a tap-zone Next/Previous scrolls in the infinite modes: one screen,
+ * less a little overlap so the reader keeps their place. */
+private const val STRIP_TAP_SCROLL_FRACTION = 0.9f
+
 /** Infinite/No-gaps mode: a vertical strip of pages, [gap] apart, with pinch and double-tap zoom
  * over the whole strip (not per-page): both gestures scale/translate the list as a unit via
  * [graphicsLayer], and list scrolling is suspended while zoomed so a pan drag doesn't fight the
@@ -590,6 +610,7 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicScrollStrip(
     settings: ComicReaderSettings,
     vm: ComicReaderViewModel,
     gap: androidx.compose.ui.unit.Dp,
+    onToggleChrome: () -> Unit,
     pageTurnHandler: androidx.compose.runtime.MutableState<(com.bookorbit.feature.reader.PageTurnKey) -> Unit>,
     jumpToPage: androidx.compose.runtime.MutableState<Int?>,
     nav: androidx.compose.runtime.MutableState<ComicNavState>,
@@ -645,13 +666,31 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicScrollStrip(
         offset = clamp(offset + panChange * scale, scale)
     }
 
+    // Taps go through the shared Controls zones. The strip scrolls vertically, so Next/Previous
+    // scroll by one screen and the zones are never mirrored for right-to-left here.
+    val currentControls by rememberUpdatedState(ui.controlsSettings)
+    val currentOnToggleChrome by rememberUpdatedState(onToggleChrome)
+    val doubleTapZoom = ui.controlsSettings.doubleTapZoomEnabled
     Box(
         Modifier
             .fillMaxSize()
             .onSizeChanged { size = it }
-            .pointerInput(Unit) {
+            .pointerInput(doubleTapZoom) {
                 detectTapGestures(
-                    onDoubleTap = { pos ->
+                    onTap = { pos ->
+                        val x = pos.x / size.width.coerceAtLeast(1)
+                        val y = pos.y / size.height.coerceAtLeast(1)
+                        val screen = size.height * STRIP_TAP_SCROLL_FRACTION
+                        when (currentControls.resolveTapAction(x, y, isRtl = false)) {
+                            TapAction.NEXT -> scrollScope.launch { listState.animateScrollBy(screen) }
+                            TapAction.PREVIOUS -> scrollScope.launch { listState.animateScrollBy(-screen) }
+                            TapAction.MENU -> currentOnToggleChrome()
+                            TapAction.NOTHING -> Unit
+                        }
+                    },
+                    // Without a double-tap handler a single tap fires straight away instead of
+                    // waiting to see whether a second tap follows.
+                    onDoubleTap = if (!doubleTapZoom) null else { pos ->
                         if (scale > 1.02f) {
                             scale = 1f
                             offset = Offset.Zero
@@ -773,21 +812,21 @@ private fun ZoomablePage(
     Box(
         Modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
+            // Restarts when double-tap zoom is switched, so a single tap fires immediately when
+            // there is no double tap to wait for.
+            .pointerInput(currentDoubleTapZoomEnabled) {
                 detectTapGestures(
                     onTap = { pos -> currentOnTap(pos.x / size.width.coerceAtLeast(1), pos.y / size.height.coerceAtLeast(1)) },
-                    onDoubleTap = { pos ->
-                        if (currentDoubleTapZoomEnabled) {
-                            if (scale > 1.02f) {
-                                scale = 1f
-                                offset = Offset.Zero
-                            } else {
-                                scale = 2.5f
-                                // Zoom toward the tapped point.
-                                offset = clamp(Offset((size.width / 2f - pos.x) * 1.5f, (size.height / 2f - pos.y) * 1.5f), scale)
-                            }
-                            currentOnZoomChanged(scale > 1.02f)
+                    onDoubleTap = if (!currentDoubleTapZoomEnabled) null else { pos ->
+                        if (scale > 1.02f) {
+                            scale = 1f
+                            offset = Offset.Zero
+                        } else {
+                            scale = 2.5f
+                            // Zoom toward the tapped point.
+                            offset = clamp(Offset((size.width / 2f - pos.x) * 1.5f, (size.height / 2f - pos.y) * 1.5f), scale)
                         }
+                        currentOnZoomChanged(scale > 1.02f)
                     },
                 )
             }
