@@ -53,6 +53,12 @@ class BookFilesTest {
     }
 
     @Test
+    fun `merged audiobook and epub downloads the audio and the epub`() {
+        val b = book(file(1, "m4b", role = "primary"), file(2, "epub"), file(3, "jpg"))
+        assertEquals(listOf(1, 2), BookFiles.downloadableFiles(b).map { it.id })
+    }
+
+    @Test
     fun `audio-only book is neither readable nor pdf`() {
         val b = book(file(1, "mp3", role = "primary"))
         assertFalse(BookFiles.isReadable(b))
