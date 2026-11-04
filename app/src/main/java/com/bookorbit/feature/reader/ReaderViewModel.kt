@@ -673,7 +673,7 @@ class ReaderViewModel @Inject constructor(
      * tracked mode in place -- no reopen -- and immediately saves the current position, so the
      * server's read-status logic (which only reacts to progress writes) picks it up right away. */
     fun startReading() {
-        if (!tracking) return
+        if (tracking) return
         tracking = true
         _ui.update { it.copy(peek = false) }
         wallpaperFollow.noteOpenBook(bookId)

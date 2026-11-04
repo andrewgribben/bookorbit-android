@@ -199,7 +199,7 @@ class PdfReaderViewModel @Inject constructor(
     /** "Start reading": switches this reader to tracked mode in place and immediately saves the
      * current page position (see ReaderViewModel.startReading for the full doc). */
     fun startReading() {
-        if (!tracking) return
+        if (tracking) return
         tracking = true
         _ui.update { it.copy(peek = false) }
         wallpaperFollow.noteOpenBook(bookId)
