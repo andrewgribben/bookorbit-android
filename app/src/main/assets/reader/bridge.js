@@ -219,6 +219,10 @@ let lastManualNavAt = -Infinity;
 /** How long a manual page turn pauses narration's auto-follow before it resumes. */
 const NARRATION_FOLLOW_PAUSE_MS = 10_000;
 
+/** True for the single relocate caused by navigating to the saved CFI/fraction while opening a
+ * book (see finishOpen) - cleared by the relocate listener once it has tagged that one event. */
+let restoringPosition = false;
+
 // Ported from epub.js's internal (unexported) `parseClock`/`resolveURL` - MediaOverlay#loadSMIL
 // uses the same two helpers, but they're module-private, so narration timing is parsed
 // independently here rather than depending on foliate internals that aren't part of its API.
@@ -701,12 +705,20 @@ function createView() {
     // Narration following the audio dispatches its own goTo with `_narrationNav` set (see
     // foliate/view.js); anything else reaching here is the user turning pages themselves.
     if (!view._narrationNav) lastManualNavAt = performance.now();
+    const restoring = restoringPosition;
+    restoringPosition = false;
     post({
       type: 'relocate',
       cfi: d.cfi ?? null,
       fraction: typeof d.fraction === 'number' ? d.fraction : null,
       chapterTitle: d.tocItem?.label ?? null,
       location: d.location ?? null,
+      // 'anchor' is a reflow (rotation/settings relayout) re-landing on the same spot - see
+      // foliate-paginator render()/#afterScroll. `restoring` flags the relocate that comes from
+      // navigating to the saved CFI/fraction when the book was opened (see finishOpen below).
+      // Neither is the user moving through the book - the host skips saving progress for both.
+      reason: d.reason ?? null,
+      restoring,
     });
   });
 
@@ -758,18 +770,22 @@ async function finishOpen(meta) {
 
   let navigated = false;
   if (meta.cfi) {
+    restoringPosition = true;
     try {
       await view.goTo(meta.cfi);
       navigated = true;
     } catch {
+      restoringPosition = false;
       navigated = false;
     }
   }
   if (!navigated && typeof meta.fraction === 'number' && meta.fraction > 0 && typeof view.goToFraction === 'function') {
+    restoringPosition = true;
     try {
       view.goToFraction(meta.fraction);
       navigated = true;
     } catch {
+      restoringPosition = false;
       navigated = false;
     }
   }

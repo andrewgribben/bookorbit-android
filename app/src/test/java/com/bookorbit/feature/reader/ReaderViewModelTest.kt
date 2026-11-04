@@ -1,0 +1,146 @@
+package com.bookorbit.feature.reader
+
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModelStore
+import com.bookorbit.core.model.BookDetail
+import com.bookorbit.core.model.BookFileRef
+import com.bookorbit.core.storage.LocalRef
+import com.bookorbit.core.wallpaper.CoverWallpaperController
+import com.bookorbit.core.wallpaper.CoverWallpaperFollowController
+import com.bookorbit.feature.bookdetail.BookDetailRepository
+import com.bookorbit.feature.downloads.DownloadsRepository
+import com.bookorbit.feature.player.PlayerManager
+import com.bookorbit.feature.reader.narration.NarrationAudioSource
+import com.bookorbit.feature.sessions.ReadingSessionTracker
+import com.bookorbit.util.MainDispatcherRule
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import java.io.File
+
+/**
+ * Covers the read-aloud EPUB <-> audiobook position-sync fixes:
+ *  - a relocate caused by reflow or by restoring the saved position must not overwrite progress
+ *    the server may have mapped onto this file from listening (defect #1).
+ *  - the final pending position at [onCleared] must still reach the repository even though
+ *    `viewModelScope` is already cancelled by then (defect #2).
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class ReaderViewModelTest {
+    @get:Rule val mainDispatcherRule = MainDispatcherRule()
+
+    private lateinit var bookRepo: BookDetailRepository
+    private lateinit var downloads: DownloadsRepository
+    private lateinit var source: ReaderSource
+    private lateinit var progress: ReaderProgressRepository
+    private lateinit var settingsStore: ReaderSettingsStore
+    private lateinit var sessions: ReadingSessionTracker
+    private lateinit var annotationRepo: ReaderAnnotationRepository
+    private lateinit var bookmarkRepo: ReaderBookmarkRepository
+    private lateinit var playerManager: PlayerManager
+    private lateinit var narrationSource: NarrationAudioSource
+    private lateinit var wallpaper: CoverWallpaperController
+    private lateinit var wallpaperFollow: CoverWallpaperFollowController
+    private lateinit var controlsStore: ReaderControlsStore
+
+    private val book = BookDetail(
+        id = 1, libraryId = 1, libraryName = "L", status = "active", addedAt = "2024-01-01",
+        files = listOf(BookFileRef(id = 5, format = "epub", role = "primary")),
+    )
+    private val resolvedFile = ReaderSource.ResolvedFile(LocalRef.PlainFile(File("book.epub")), "epub", fileId = 5)
+
+    private fun vm(appScope: CoroutineScope = CoroutineScope(Dispatchers.Unconfined)) = ReaderViewModel(
+        SavedStateHandle(mapOf("id" to 1)),
+        bookRepo, downloads, source, progress, settingsStore, sessions, annotationRepo, bookmarkRepo,
+        playerManager, narrationSource, wallpaper, wallpaperFollow, controlsStore, appScope,
+    )
+
+    @Before
+    fun setUp() {
+        bookRepo = mockk()
+        downloads = mockk(relaxed = true)
+        source = mockk()
+        progress = mockk(relaxed = true)
+        settingsStore = mockk(relaxed = true)
+        sessions = mockk(relaxed = true)
+        annotationRepo = mockk(relaxed = true)
+        bookmarkRepo = mockk(relaxed = true)
+        playerManager = mockk(relaxed = true)
+        narrationSource = mockk(relaxed = true)
+        wallpaper = mockk(relaxed = true)
+        wallpaperFollow = mockk(relaxed = true)
+        controlsStore = mockk(relaxed = true)
+
+        coEvery { settingsStore.loadGlobal() } returns ReaderSettings()
+        coEvery { settingsStore.loadBookState(any()) } returns BookSettingsState()
+        coEvery { settingsStore.loadGlobalSavedDefault() } returns null
+        coEvery { settingsStore.loadBookSavedDefault(any()) } returns null
+        coEvery { settingsStore.hasSeenPagingHint() } returns true
+        coEvery { controlsStore.load() } returns ReaderControlsSettings()
+        coEvery { bookRepo.detail(1) } returns book
+        coEvery { source.resolve(book) } returns resolvedFile
+        coEvery { progress.resolveInitial(5) } returns InitialProgress(null, 0.0)
+        every { playerManager.state } returns MutableStateFlow(PlayerManager.UiState())
+        coEvery { playerManager.flushPendingIfCurrent(any()) } returns Unit
+    }
+
+    @Test
+    fun `a reflow relocate does not report a fresh position`() = runTest {
+        val model = vm()
+        model.onRelocate("epubcfi(/6/2)", 0.5, "Ch 1", reason = "anchor", restoring = false)
+        model.flush()
+
+        coVerify(exactly = 0) { progress.report(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `the relocate that restores the saved position does not report a fresh position`() = runTest {
+        val model = vm()
+        model.onRelocate("epubcfi(/6/2)", 0.5, "Ch 1", reason = "navigation", restoring = true)
+        model.flush()
+
+        coVerify(exactly = 0) { progress.report(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `a real page turn still reports`() = runTest {
+        coEvery { progress.report(any(), any(), any(), any()) } returns Unit
+        val model = vm()
+        model.onRelocate("epubcfi(/6/4)", 0.6, "Ch 1", reason = "page", restoring = false)
+        model.flush()
+
+        coVerify { progress.report(5, "epubcfi(/6/4)", 60.0, null) }
+    }
+
+    @Test
+    fun `the final pending position is still written when the screen is left`() = runTest {
+        coEvery { progress.report(any(), any(), any(), any()) } returns Unit
+        // A real app-lifetime scope (not the test dispatcher) proves this does not depend on
+        // viewModelScope, which is already cancelled by the time onCleared() runs for real.
+        val model = vm(appScope = CoroutineScope(Dispatchers.Unconfined))
+        // The first relocate auto-flushes (lastSaved starts at 0, so the throttle always passes
+        // the first time) - the second lands inside the 2s throttle window and stays pending
+        // until onCleared() has to flush it itself.
+        model.onRelocate("epubcfi(/6/2)", 0.1, "Ch 1", reason = "page", restoring = false)
+        model.onRelocate("epubcfi(/6/8)", 0.9, "Ch 2", reason = "page", restoring = false)
+
+        // Drive onCleared() the real way: ViewModelStore.clear() cancels viewModelScope THEN
+        // calls onCleared() - the exact ordering that drops a `viewModelScope.launch` started
+        // from onCleared(). A direct onCleared() call wouldn't exercise that at all.
+        val store = ViewModelStore()
+        store.put("reader", model)
+        store.clear()
+
+        coVerify { progress.report(5, "epubcfi(/6/8)", 90.0, null) }
+    }
+}
