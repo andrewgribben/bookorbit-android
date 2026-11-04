@@ -357,6 +357,10 @@ fun ReaderScreen(
             onSaveAsDefault = { vm.saveAsDefault(ui.scope) },
             onResetToSavedDefault = { vm.resetToSavedDefault(ui.scope) },
             onRestoreBuiltIn = { vm.restoreBuiltInDefaults(ui.scope) },
+            onSetWallpaper = {
+                settingsVisible = false
+                vm.setCoverAsWallpaper()
+            },
             onDismiss = { settingsVisible = false },
         )
     }

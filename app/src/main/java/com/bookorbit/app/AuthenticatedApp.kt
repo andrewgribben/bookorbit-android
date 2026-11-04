@@ -35,7 +35,7 @@ fun AuthenticatedApp(user: AuthUser, onSignOut: () -> Unit) {
     // manager makes this a once-per-process no-op, so recompositions and recreations are harmless.
     LaunchedEffect(Unit) { playerVm.restoreLastBook() }
 
-    NavHost(navController = navController, startDestination = AppRoutes.MAIN) {
+    NavHost(navController = navController, startDestination = AppRoutes.MAIN, enterTransition = navEnter, exitTransition = navExit) {
         composable(AppRoutes.MAIN) {
             // Book detail lives INSIDE the shell (so the bottom bar + mini-player persist); only the
             // immersive reader/player are full-screen app-level destinations.

@@ -92,6 +92,13 @@ class SettingsViewModel @Inject constructor(
     val wifiOnlyDownloads: StateFlow<Boolean> = appSettings.wifiOnlyDownloads
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    val coverWallpaperFollow: StateFlow<Boolean> = appSettings.coverWallpaperFollow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setCoverWallpaperFollow(enabled: Boolean) {
+        viewModelScope.launch { appSettings.setCoverWallpaperFollow(enabled) }
+    }
+
     val certificateHost: String get() = UserCaSettings.httpsHost(session.serverUrl).orEmpty()
 
     val trustUserCas: StateFlow<Boolean> = userCaSettings.hosts.map { userCaSettings.isEnabledForUrl(session.serverUrl) }

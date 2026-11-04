@@ -69,6 +69,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
     val themeMode by vm.themeMode.collectAsStateWithLifecycle()
     val navItems by vm.navItems.collectAsStateWithLifecycle()
     val wifiOnly by vm.wifiOnlyDownloads.collectAsStateWithLifecycle()
+    val coverWallpaperFollow by vm.coverWallpaperFollow.collectAsStateWithLifecycle()
     val dynamicColor by vm.dynamicColor.collectAsStateWithLifecycle()
     val trustUserCas by vm.trustUserCas.collectAsStateWithLifecycle()
     val downloadsSummary by vm.downloadsSummary.collectAsStateWithLifecycle()
@@ -145,6 +146,13 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                     title = stringResource(R.string.settings_reading_fullscreen),
                     subtitle = stringResource(R.string.settings_reading_fullscreen_desc),
                     trailing = { Switch(checked = readingFullscreen, onCheckedChange = vm::setReadingFullscreen) },
+                )
+            }
+            item {
+                SettingsRow(
+                    title = stringResource(R.string.settings_cover_wallpaper_follow),
+                    subtitle = stringResource(R.string.settings_cover_wallpaper_follow_desc),
+                    trailing = { Switch(checked = coverWallpaperFollow, onCheckedChange = vm::setCoverWallpaperFollow) },
                 )
             }
             item { HorizontalDivider() }

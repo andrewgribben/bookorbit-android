@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -154,6 +155,9 @@ fun PlayerScreen(
                 showBookmarks = true
             }) {
                 Icon(Icons.Filled.Bookmarks, contentDescription = stringResource(R.string.bookmarks))
+            }
+            IconButton(onClick = vm::setCoverAsWallpaper) {
+                Icon(Icons.Filled.Wallpaper, contentDescription = stringResource(R.string.wallpaper_set_as_wallpaper))
             }
             CastButton()
             val timerActive = state.sleepTimerRemainingSec != null

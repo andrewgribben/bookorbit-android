@@ -71,6 +71,7 @@ fun ReaderSettingsSheet(
     onSaveAsDefault: () -> Unit,
     onResetToSavedDefault: () -> Unit,
     onRestoreBuiltIn: () -> Unit,
+    onSetWallpaper: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var showResetDialog by remember { mutableStateOf(false) }
@@ -341,6 +342,9 @@ fun ReaderSettingsSheet(
                 }
                 TextButton(onClick = { showRestoreDialog = true }, enabled = scopeEditable, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.rs_restore_built_in))
+                }
+                TextButton(onClick = onSetWallpaper, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.wallpaper_set_as_wallpaper))
                 }
             }
         }

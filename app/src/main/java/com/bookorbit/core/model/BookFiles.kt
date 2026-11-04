@@ -99,9 +99,18 @@ object BookFiles {
         return ReadingTarget.None
     }
 
-    /** Files to persist for offline use: all audio files, else the primary/first non-audio file. */
+    /** Files to persist for offline use: all audio files plus the readable ebook (a book can be
+     * both, e.g. an EPUB with an audiobook), else the primary/first non-audio file. */
     fun downloadableFiles(book: BookDetail): List<BookFileRef> {
-        if (isAudiobook(book)) return audioFiles(book)
+        if (isAudiobook(book)) {
+            val ebook = when (val target = readingTarget(book)) {
+                is ReadingTarget.Foliate -> target.file
+                is ReadingTarget.Pdf -> target.file
+                is ReadingTarget.Comic -> target.file
+                ReadingTarget.None -> null
+            }
+            return audioFiles(book) + listOfNotNull(ebook)
+        }
         val primary = book.files.firstOrNull { it.role == "primary" }
         if (primary != null) return listOf(primary)
         val audioIds = audioFiles(book).map { it.id }.toSet()
