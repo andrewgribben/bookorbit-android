@@ -119,7 +119,14 @@ class PlayerManager @Inject constructor(
             _state.update { it.copy(isPlaying = isPlaying, playerError = if (isPlaying) null else it.playerError) }
             // Narration isn't a server audiobook "listening" session - it's driven by the reader's
             // own reading-session tracking instead (see ReaderViewModel).
-            if (!_state.value.narrationActive) sessions.setListeningActive(isPlaying)
+            if (!_state.value.narrationActive) {
+                sessions.setListeningActive(isPlaying)
+                // The poller only reports every 5s while playing (see startPoller); pausing used to
+                // leave whatever position was last polled unsent, so opening the EPUB right after
+                // could resolve an earlier position than where listening actually stopped. Force a
+                // report the moment playback stops.
+                if (!isPlaying) scope.launch { report(force = true) }
+            }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -364,7 +371,16 @@ class PlayerManager @Inject constructor(
 
     fun togglePlay() = scope.launch {
         val c = controller()
-        if (c.isPlaying) c.pause() else c.play()
+        if (c.isPlaying) {
+            c.pause()
+        } else {
+            // A paused, already-loaded book's in-memory position can be behind the server (e.g.
+            // the EPUB was read further and the server mapped that onto this audiobook) - refresh
+            // before resuming playback, not only when the screen becomes visible again, so
+            // resuming doesn't later report (and overwrite) the stale position.
+            refreshIfStaleNow()
+            c.play()
+        }
     }
 
     fun skipBack() = scope.launch {
@@ -479,22 +495,37 @@ class PlayerManager @Inject constructor(
      * whenever the player screen (or mini-player) becomes visible again, since a long-lived app
      * process otherwise never re-fetches after the initial [loadAndPlay].
      */
-    fun refreshIfStale() = scope.launch {
+    fun refreshIfStale() = scope.launch { refreshIfStaleNow() }
+
+    private suspend fun refreshIfStaleNow() {
         val generation = loadGeneration.get()
-        val c = controller ?: return@launch
-        if (c.isPlaying) return@launch
-        val book = _state.value.currentBook ?: return@launch
+        val c = controller ?: return
+        if (c.isPlaying) return
+        val book = _state.value.currentBook ?: return
         val files = _state.value.files
-        if (files.isEmpty()) return@launch
-        val resume = audioProgress.resolveResume(book.id) ?: return@launch
-        if (generation != loadGeneration.get() || c.isPlaying) return@launch
+        if (files.isEmpty()) return
+        val resume = audioProgress.resolveResume(book.id) ?: return
+        if (generation != loadGeneration.get() || c.isPlaying) return
         val resumeIdx = files.indexOfFirst { it.id == resume.currentFileId }.coerceAtLeast(0)
         val resumeAbs = PlaybackQueue.toAbsoluteSec(files, resumeIdx, resume.positionSeconds)
-        val currentAbs = (bookPositionMs() ?: return@launch) / 1000.0
+        val currentAbs = (bookPositionMs() ?: return) / 1000.0
         if (kotlin.math.abs(resumeAbs - currentAbs) > STALE_THRESHOLD_SEC) {
             c.seekTo(resumeIdx, (resume.positionSeconds * 1000).toLong())
             updatePosition()
         }
+    }
+
+    /**
+     * Pushes [bookId]'s pending audio progress to the server, forcing a fresh report first if
+     * [bookId] is the one currently loaded (its in-memory position may be ahead of the last
+     * poller report - see [report]). Called before the reader resolves its initial position so a
+     * read-aloud EPUB never opens behind where listening actually left off.
+     */
+    suspend fun flushPendingIfCurrent(bookId: Int) {
+        if (_state.value.currentBook?.id == bookId && !_state.value.narrationActive) {
+            report(force = true)
+        }
+        audioProgress.flushPending()
     }
 
     fun stop() = scope.launch {

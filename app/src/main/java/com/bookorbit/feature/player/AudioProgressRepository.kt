@@ -76,10 +76,16 @@ class AudioProgressRepository @Inject constructor(
         val local = dao.get(bookId)
         val server = runCatching { serverProgress(bookId) }.getOrNull()
         val serverMillis = server?.updatedAt?.let(::epochMillis)
+        val useServer = local == null || (server != null && serverMillis != null && serverMillis > local.updatedAt)
+        Log.d(
+            TAG,
+            "resumePoint bookId=$bookId source=${if (useServer) "server" else "local"} " +
+                "localUpdatedAt=${local?.updatedAt} serverUpdatedAt=$serverMillis",
+        )
         return when {
             local == null -> server?.let { ResumePoint(it, serverMillis ?: 0L) }
             server == null -> ResumePoint(local.toAudioProgress(), local.updatedAt)
-            serverMillis != null && serverMillis > local.updatedAt -> ResumePoint(server, serverMillis)
+            useServer -> ResumePoint(server, serverMillis!!)
             else -> ResumePoint(local.toAudioProgress(), local.updatedAt)
         }
     }
