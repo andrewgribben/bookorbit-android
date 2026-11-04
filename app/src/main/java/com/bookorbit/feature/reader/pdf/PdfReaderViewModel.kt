@@ -29,7 +29,7 @@ private const val PROGRESS_THROTTLE_MS = 2_000L
 
 @HiltViewModel
 class PdfReaderViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     private val bookRepo: BookDetailRepository,
     private val downloads: DownloadsRepository,
     private val source: ReaderSource,
@@ -201,6 +201,7 @@ class PdfReaderViewModel @Inject constructor(
     fun startReading() {
         if (tracking) return
         tracking = true
+        savedStateHandle["peek"] = false // survive process death
         _ui.update { it.copy(peek = false) }
         wallpaperFollow.noteOpenBook(bookId)
         val total = _ui.value.pageCount

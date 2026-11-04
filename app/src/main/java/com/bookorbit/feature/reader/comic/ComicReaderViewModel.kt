@@ -61,7 +61,7 @@ data class OpenBookRequest(val bookId: Int, val target: BookFiles.ReadingTarget)
  */
 @HiltViewModel
 class ComicReaderViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     private val bookRepo: BookDetailRepository,
     private val downloads: DownloadsRepository,
     private val api: ApiService,
@@ -440,6 +440,7 @@ class ComicReaderViewModel @Inject constructor(
     fun startReading() {
         if (tracking) return
         tracking = true
+        savedStateHandle["peek"] = false // survive process death
         _ui.update { it.copy(peek = false) }
         wallpaperFollow.noteOpenBook(bookId)
         val s = _ui.value
