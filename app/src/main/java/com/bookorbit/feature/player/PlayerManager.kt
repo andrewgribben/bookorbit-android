@@ -113,7 +113,7 @@ class PlayerManager @Inject constructor(
     private val seekGeneration = AtomicInteger()
 
     /** Non-null while a play-start refresh is checking the server for that book - [report] skips
-     * its periodic (non-forced) send for that book meanwhile, so the 500ms poller can't push the
+     * every send for that book meanwhile (poller and pause alike), so nothing can push the
      * stale pre-refresh position to the server ahead of the refresh's answer. */
     private var refreshSuppressingReportsForBookId: Int? = null
 
@@ -634,10 +634,10 @@ class PlayerManager @Inject constructor(
         val files = _state.value.files
         if (files.isEmpty()) return
         if (!force && !c.isPlaying) return
-        // A play-start refresh is checking the server for a newer position on this book; don't let
-        // the periodic poller push the (possibly stale) pre-refresh position ahead of its answer.
-        // A forced report (pause/stop) still goes through - that's a real stop, not stale polling.
-        if (!force && refreshSuppressingReportsForBookId == book.id) return
+        // A play-start refresh is checking the server for a newer position on this book; don't push
+        // the (possibly stale) pre-refresh position ahead of its answer - not even on pause, whose
+        // fresh timestamp would win over the server's newer position. Costs at most a few seconds.
+        if (refreshSuppressingReportsForBookId == book.id) return
         val posMs = bookPositionMs() ?: return
         // Book time comes from ActiveBookPlayer (the controller's position may be chapter-relative);
         // recompute the real file + in-file offset together rather than pairing a stale
