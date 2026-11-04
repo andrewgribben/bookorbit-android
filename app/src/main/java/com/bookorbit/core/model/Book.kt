@@ -31,6 +31,19 @@ data class AudioMetadata(
     val chapters: List<AudiobookChapter>? = null,
 )
 
+/**
+ * Whether the server keeps this book's audiobook position in step with a read-aloud EPUB's
+ * reading progress (see server `ReadAloudProgressSync`). Only [state] is decoded for now - that's
+ * all [PlayerManager]'s play-start refresh needs to decide whether to bother checking the server
+ * for a position the reader may have moved. Absent on older servers and in offline-cached
+ * [BookDetail] JSON predating this field, both of which decode as "not read-aloud" via the
+ * null default.
+ */
+@Serializable
+data class ReadAloudProgressSync(
+    val state: String? = null,
+)
+
 @Serializable
 data class BookAuthorRef(
     val id: Int,
@@ -101,6 +114,7 @@ data class BookDetail(
     val readStatus: UserBookStatus? = null,
     val collections: List<CollectionRef> = emptyList(),
     val audioMetadata: AudioMetadata? = null,
+    val readAloudSync: ReadAloudProgressSync? = null,
 )
 
 @Serializable
