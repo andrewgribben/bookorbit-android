@@ -92,6 +92,11 @@ function themeFor(name) {
 // (amoled's `light.bg` is exactly '#ffffff') and no background gets forced onto the page at all,
 // so the publisher's own (often off-white/grey) stylesheet shows through instead of true black.
 // Keep this forcing in sync with ReaderThemes.kt's effectiveIsDark() on the Kotlin side.
+function narrationHighlightSelector() {
+  const classes = new Set([DEFAULT_ACTIVE_CLASS, narrationActiveClass].filter(Boolean));
+  return [...classes].map((c) => `.${CSS.escape(c)}`).join(', ');
+}
+
 function themeCSS(s) {
   const theme = themeFor(s.themeName);
   const dark = s.isDark || s.themeName === 'amoled';
@@ -112,7 +117,9 @@ function themeCSS(s) {
            html { background: ${mode.bg} !important; }
            body * { color: inherit !important; border-color: currentColor !important; background-color: ${mode.bg} !important; }
            a:any-link { color: ${mode.link} !important; }
-           svg, img { background-color: transparent !important; ${!dark ? 'mix-blend-mode: multiply;' : ''} }`
+           svg, img { background-color: transparent !important; ${!dark ? 'mix-blend-mode: multiply;' : ''} }
+           /* The forced body * background above hides the publisher's read-aloud highlight, so these themes deliberately draw ours instead. */
+           ${narrationHighlightSelector()} { background-color: ${NARRATION_HIGHLIGHT} !important; }`
         : ''
     }
     ::selection { background-color: rgba(128, 128, 128, 0.3); }
@@ -121,6 +128,7 @@ function themeCSS(s) {
 
 // Only reached when `s.useBookLayout` is false (see themeCSS doc above). Every rule here used to
 // be unconditional in the pre-stage-2 generateCSS; now it is the opt-in "my own settings" layer.
+// Font size moved out to fontSizeCSS() below (owner decision, stage 4) - it applies either way.
 function overrideCSS(s) {
   const fontFamilyRule = s.fontFamily
     ? `body { font-family: ${s.fontFamily} !important; } body * { font-family: inherit !important; }`
@@ -130,7 +138,6 @@ function overrideCSS(s) {
     : '';
   return `
     @media screen {
-      html { font-size: ${s.fontSize}px; }
       ${fontFamilyRule}
     }
     html { line-height: ${s.lineHeight}; hanging-punctuation: allow-end last; orphans: 2; widows: 2; }
@@ -144,8 +151,17 @@ function overrideCSS(s) {
   `;
 }
 
+// Owner decision (stage 4): font size stays adjustable even with "Use book layout" on - only
+// family/line-height/paragraph-spacing/justify/hyphenate (overrideCSS above) still follow the
+// publisher's own layout. Sets only the root `html` font-size, with no `!important` and no
+// descendant selector, so the publisher's own em/%/rem-based sizing further down the document
+// still scales proportionally from this root instead of being clobbered.
+function fontSizeCSS(s) {
+  return `@media screen { html { font-size: ${s.fontSize}px; } }`;
+}
+
 function generateCSS(s) {
-  return themeCSS(s) + (s.useBookLayout ? '' : overrideCSS(s));
+  return themeCSS(s) + fontSizeCSS(s) + (s.useBookLayout ? '' : overrideCSS(s));
 }
 
 // Ported from useReaderState.applyToRenderer.
@@ -160,15 +176,13 @@ function applyStyles(settings) {
   r.setAttribute('max-inline-size', `${s.maxInlineSize}px`);
   r.setAttribute('max-block-size', `${s.maxBlockSize}px`);
   // Four independent page margins (paginator.js was extended from one `margin` attribute to
-  // these four, see that file's comments) - margins are a user layout setting, part of the
-  // override layer like the rest of Layout tab, so they only take their reader-chosen values
-  // when book layout is off; book layout on always uses the publisher's own in-page spacing by
-  // falling back to the built-in default margin (still needed as a safe frame around the page).
-  const m = s.useBookLayout ? DEFAULT_SETTINGS : s;
-  r.setAttribute('margin-top', `${m.marginTop}px`);
-  r.setAttribute('margin-bottom', `${m.marginBottom}px`);
-  r.setAttribute('margin-left', `${m.marginLeft}px`);
-  r.setAttribute('margin-right', `${m.marginRight}px`);
+  // these four, see that file's comments). Owner decision (stage 4): paginator margins are the
+  // reader's own page frame, not publisher CSS, so they always apply - unlike the rest of the
+  // Layout tab (flow/column count), margins are never tied to "Use book layout".
+  r.setAttribute('margin-top', `${s.marginTop}px`);
+  r.setAttribute('margin-bottom', `${s.marginBottom}px`);
+  r.setAttribute('margin-left', `${s.marginLeft}px`);
+  r.setAttribute('margin-right', `${s.marginRight}px`);
   r.setAttribute('flow', s.flow);
   if (typeof r.setStyles === 'function') r.setStyles(generateCSS(s));
 }
@@ -181,6 +195,213 @@ function serializeToc(items) {
     href: it?.href ?? null,
     subitems: serializeToc(it?.subitems),
   }));
+}
+
+/* --------------------------------------------------------- narration/SMIL */
+// EPUB 3 Media Overlays (read-along narration). Audio actually plays through the native Media3
+// stack (PlayerManager/PlaybackService), never the WebView - this module only parses SMIL timing
+// and drives the highlight that foliate's own view.js wiring (below) already knows how to draw.
+const SMIL_NS = 'http://www.w3.org/ns/SMIL';
+/** EPUB 3 spec default for `book.media.activeClass` when the package doesn't set one. */
+const DEFAULT_ACTIVE_CLASS = '-epub-media-overlay-active';
+/** Read-aloud highlight colour used whenever the reader draws its own. */
+const NARRATION_HIGHLIGHT = 'rgba(255, 214, 10, 0.4)';
+
+/** `activeClass`/`playbackActiveClass` for the book currently open, or null without narration. */
+let narrationActiveClass = null;
+let narrationPlaybackActiveClass = null;
+/** Bumped by a new `narrationPrepare` or a `narrationCancelPrepare`; a `buildNarrationTimeline`
+ * run that sees this move on before it resolves is abandoned - its result is never posted. */
+let narrationPrepareToken = 0;
+/** `performance.now()` of the last navigation NOT driven by narration's own follow-the-audio
+ * `goTo` (see `view._narrationNav` in foliate/view.js) - i.e. a real manual page turn. */
+let lastManualNavAt = -Infinity;
+/** How long a manual page turn pauses narration's auto-follow before it resumes. */
+const NARRATION_FOLLOW_PAUSE_MS = 10_000;
+
+// Ported from epub.js's internal (unexported) `parseClock`/`resolveURL` - MediaOverlay#loadSMIL
+// uses the same two helpers, but they're module-private, so narration timing is parsed
+// independently here rather than depending on foliate internals that aren't part of its API.
+function parseSmilClock(str) {
+  if (!str) return undefined;
+  const parts = str.split(':').map((x) => parseFloat(x));
+  if (parts.length === 3) {
+    const [h, m, s] = parts;
+    return h * 60 * 60 + m * 60 + s;
+  }
+  if (parts.length === 2) {
+    const [m, s] = parts;
+    return m * 60 + s;
+  }
+  const match = str.match(/^([\d.]+)([a-z]*)$/i);
+  if (!match) return parseFloat(str) || 0;
+  const n = parseFloat(match[1]);
+  const unit = match[2];
+  const f = unit === 'h' ? 60 * 60 : unit === 'min' ? 60 : unit === 'ms' ? 0.001 : 1;
+  return n * f;
+}
+
+function resolveSmilRef(url, relativeTo) {
+  if (!url) return null;
+  try {
+    if (relativeTo.includes(':')) return new URL(url, relativeTo).href;
+    const root = 'https://invalid.invalid/';
+    const obj = new URL(url, root + relativeTo);
+    obj.search = '';
+    return decodeURI(obj.href.replace(root, ''));
+  } catch {
+    return url;
+  }
+}
+
+/** Builds the whole book's narration timeline by parsing every section's SMIL file, in natural
+ * reading order. `audioSrcs` are EPUB-internal zip paths the host extracts with the same
+ * resolution foliate itself uses for `book.loadBlob`, so they double as zip entry names.
+ *
+ * SMIL files are fetched with bounded parallelism (small batches, in order) rather than one at a
+ * time, which matters for books with many sections; results are still assembled in section order
+ * so the timeline itself is deterministic regardless of which fetch in a batch finishes first. */
+const SMIL_BATCH_SIZE = 6;
+
+async function buildNarrationTimeline() {
+  const book = view?.book;
+  if (!book) return null;
+  const sections = book.sections ?? [];
+  const audioSrcs = [];
+  const audioIndexBySrc = new Map();
+
+  const sectionIndices = [];
+  for (let i = 0; i < sections.length; i++) {
+    if (sections[i]?.mediaOverlay?.href) sectionIndices.push(i);
+  }
+
+  // Parse every section's SMIL into its own ordered list of pars first (parallel, in batches),
+  // then flatten in section order - so a later section finishing first can't reorder the timeline.
+  const parsedBySection = new Map();
+  for (let start = 0; start < sectionIndices.length; start += SMIL_BATCH_SIZE) {
+    const batch = sectionIndices.slice(start, start + SMIL_BATCH_SIZE);
+    const results = await Promise.all(batch.map((sectionIndex) => parseSectionSmil(book, sections[sectionIndex])));
+    batch.forEach((sectionIndex, i) => parsedBySection.set(sectionIndex, results[i]));
+  }
+
+  const items = [];
+  for (const sectionIndex of sectionIndices) {
+    for (const par of parsedBySection.get(sectionIndex) ?? []) {
+      let audioIndex = audioIndexBySrc.get(par.audioSrc);
+      if (audioIndex === undefined) {
+        audioIndex = audioSrcs.length;
+        audioSrcs.push(par.audioSrc);
+        audioIndexBySrc.set(par.audioSrc, audioIndex);
+      }
+      items.push({ sectionIndex, textHref: par.textHref, beginSec: par.beginSec, endSec: par.endSec, audioIndex });
+    }
+  }
+
+  if (items.length === 0 || audioSrcs.length === 0) return null;
+
+  // The section the user had open when narration was turned on, so playback starts there instead
+  // of from the beginning of the book (mirrors MediaOverlay#start's own section-then-href match).
+  const currentHref = view?.lastLocation?.source ?? null;
+  const currentSectionIndex = currentHref ? sections.findIndex((s) => s.id === currentHref) : -1;
+  let startTextHref = currentSectionIndex >= 0 ? firstVisibleTextHref(items, currentSectionIndex) : null;
+  if (!startTextHref && currentSectionIndex >= 0) {
+    for (let i = currentSectionIndex; i < sections.length && !startTextHref; i++) {
+      startTextHref = items.find((it) => it.sectionIndex === i)?.textHref ?? null;
+    }
+  }
+  if (!startTextHref) startTextHref = items[0].textHref;
+
+  return {
+    audioSrcs,
+    items,
+    activeClass: book.media?.activeClass || DEFAULT_ACTIVE_CLASS,
+    playbackActiveClass: book.media?.playbackActiveClass || null,
+    startTextHref,
+  };
+}
+
+/** textHref of the first narrated element that ends at or after the top of the visible page. */
+function firstVisibleTextHref(items, sectionIndex) {
+  const range = view?.lastLocation?.range;
+  const doc = range?.startContainer?.ownerDocument;
+  if (!range || !doc) return null;
+  for (const it of items) {
+    if (it.sectionIndex !== sectionIndex) continue;
+    const hash = it.textHref.indexOf('#');
+    if (hash < 0) continue;
+    const el = doc.getElementById(decodeURIComponent(it.textHref.slice(hash + 1)));
+    if (!el) continue;
+    try {
+      if (range.comparePoint(el, el.childNodes.length) >= 0) return it.textHref;
+    } catch {
+      // element in a different document than the range; ignore
+    }
+  }
+  return null;
+}
+
+/** Parses one section's SMIL file into its `<par>` entries. Never throws - an unreadable or
+ * malformed SMIL file just contributes no entries, so one bad section can't sink the whole book. */
+async function parseSectionSmil(book, section) {
+  const mo = section?.mediaOverlay;
+  if (!mo?.href) return [];
+  let xmlText;
+  try {
+    xmlText = await book.loadText(mo.href);
+  } catch {
+    return [];
+  }
+  if (!xmlText) return [];
+  let doc;
+  try {
+    doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  } catch {
+    return [];
+  }
+  if (doc.getElementsByTagName('parsererror').length) return [];
+
+  let pars = [...doc.getElementsByTagNameNS(SMIL_NS, 'par')];
+  if (pars.length === 0) pars = [...doc.getElementsByTagName('par')];
+
+  const out = [];
+  for (const par of pars) {
+    const children = [...par.children];
+    const textEl = children.find((c) => c.localName === 'text');
+    const audioEl = children.find((c) => c.localName === 'audio');
+    if (!textEl || !audioEl) continue;
+    const textHref = resolveSmilRef(textEl.getAttribute('src'), mo.href);
+    const audioSrc = resolveSmilRef(audioEl.getAttribute('src'), mo.href);
+    if (!textHref || !audioSrc) continue;
+    const beginSec = parseSmilClock(audioEl.getAttribute('clipBegin')) ?? 0;
+    const clipEnd = audioEl.getAttribute('clipEnd');
+    const endSec = clipEnd ? parseSmilClock(clipEnd) ?? null : null;
+    out.push({ textHref, audioSrc, beginSec, endSec });
+  }
+  return out;
+}
+
+/** Injects a default highlight style for the book's active-overlay class into a freshly loaded
+ * section, unless the book's own stylesheet already styles that class. */
+function injectDefaultNarrationStyle(doc) {
+  if (!narrationActiveClass || !doc) return;
+  try {
+    const alreadyStyled = [...doc.styleSheets].some((sheet) => {
+      try {
+        return [...sheet.cssRules].some(
+          (r) => typeof r.selectorText === 'string' && r.selectorText.includes(`.${narrationActiveClass}`),
+        );
+      } catch {
+        return false;
+      }
+    });
+    if (alreadyStyled) return;
+    const style = doc.createElement('style');
+    style.setAttribute('data-bookorbit-narration', '1');
+    style.textContent = `.${narrationActiveClass} { background-color: ${NARRATION_HIGHLIGHT}; border-radius: 2px; }`;
+    doc.head?.appendChild(style);
+  } catch {
+    /* best-effort default styling only */
+  }
 }
 
 /* ------------------------------------------------------- annotations */
@@ -396,12 +617,13 @@ function attachDocHandlers(doc, index) {
     const sel = doc.getSelection();
     if (sel && !sel.isCollapsed) return;
     const frame = doc.defaultView?.frameElement;
-    const left = frame ? frame.getBoundingClientRect().left : 0;
-    const x = (left + e.clientX) / window.innerWidth;
+    const off = frame ? frame.getBoundingClientRect() : { left: 0, top: 0 };
+    const x = (off.left + e.clientX) / window.innerWidth;
+    const y = (off.top + e.clientY) / window.innerHeight;
     // Foliate's own click listener reports taps on highlights; give it a tick to run first.
     setTimeout(() => {
       if (performance.now() - lastAnnotationHitAt < 50) return;
-      post({ type: 'tap', x });
+      post({ type: 'tap', x, y });
     }, 0);
   });
 
@@ -428,12 +650,19 @@ function attachDocHandlers(doc, index) {
 }
 
 /* ----------------------------------------------------------- create view */
+function postHistory() {
+  post({ type: 'history', canGoBack: !!view?.history?.canGoBack, canGoForward: !!view?.history?.canGoForward });
+}
+
 function createView() {
   if (view) return view;
   view = document.createElement('foliate-view');
   view.setAttribute('id', 'foliate');
   view.style.cssText = 'width:100%;height:100%;display:block;';
   container.appendChild(view);
+
+  // Jumps (TOC, links, search, scrubber) push history; page turns don't. Mirrors Readest's back/forward.
+  view.history.addEventListener('index-change', postHistory);
 
   view.addEventListener('load', () => {
     // The paginator swaps its internal view in a microtask after 'load'; defer so
@@ -444,6 +673,7 @@ function createView() {
   view.addEventListener('load', (e) => {
     const { doc, index } = e.detail ?? {};
     if (doc) attachDocHandlers(doc, index);
+    if (doc) injectDefaultNarrationStyle(doc);
   });
 
   view.addEventListener('draw-annotation', (e) => {
@@ -468,6 +698,9 @@ function createView() {
 
   view.addEventListener('relocate', (e) => {
     const d = e.detail ?? {};
+    // Narration following the audio dispatches its own goTo with `_narrationNav` set (see
+    // foliate/view.js); anything else reaching here is the user turning pages themselves.
+    if (!view._narrationNav) lastManualNavAt = performance.now();
     post({
       type: 'relocate',
       cfi: d.cfi ?? null,
@@ -506,11 +739,17 @@ const MIME = {
 // Shared tail of opening a book, whichever of openBook/openLocalEpub produced it: apply styles,
 // report the TOC/metadata, then navigate to the requested position (CFI, else fraction, else start).
 async function finishOpen(meta) {
+  const hasMediaOverlay = !!view.book?.sections?.some((s) => s.mediaOverlay);
+  narrationActiveClass = hasMediaOverlay ? view.book.media?.activeClass || DEFAULT_ACTIVE_CLASS : null;
+  narrationPlaybackActiveClass = hasMediaOverlay ? view.book.media?.playbackActiveClass || null : null;
+
   applyStyles(meta.settings ?? currentSettings);
 
   post({
     type: 'loaded',
     toc: serializeToc(view.book?.toc),
+    hasMediaOverlay,
+    isRtl: view.book?.dir === 'rtl',
     metadata: {
       title: view.book?.metadata?.title ?? null,
       language: view.book?.metadata?.language ?? null,
@@ -535,6 +774,7 @@ async function finishOpen(meta) {
     }
   }
   if (!navigated) await view.goTo(0).catch(() => {});
+  postHistory();
 }
 
 async function openBook(meta, parts) {
@@ -631,8 +871,18 @@ window.__readerCommand = (json) => {
     case 'prev':
       view.prev?.();
       break;
+    case 'historyBack':
+      view.history?.back();
+      break;
+    case 'historyForward':
+      view.history?.forward();
+      break;
     case 'next':
       view.next?.();
+      break;
+    case 'setSwipe':
+      // Read by the paginator's touch handling; a global so it survives the renderer being rebuilt.
+      globalThis.__bookorbitNoSwipe = !cmd.enabled;
       break;
     case 'applyStyles':
       applyStyles(cmd.settings);
@@ -648,6 +898,35 @@ window.__readerCommand = (json) => {
       break;
     case 'clearSearch':
       clearSearch();
+      break;
+    case 'narrationPrepare': {
+      const generation = cmd.generation;
+      const token = ++narrationPrepareToken;
+      void buildNarrationTimeline()
+        .then((timeline) => {
+          if (token !== narrationPrepareToken) return; // abandoned - a newer prepare or a cancel.
+          if (timeline) post({ type: 'narrationTimeline', generation, ...timeline });
+          else post({ type: 'narrationTimelineError', generation, message: "Couldn't read this book's narration" });
+        })
+        .catch((e) => {
+          if (token !== narrationPrepareToken) return;
+          post({ type: 'narrationTimelineError', generation, message: e?.message ?? "Couldn't read this book's narration" });
+        });
+      break;
+    }
+    case 'narrationCancelPrepare':
+      narrationPrepareToken++;
+      break;
+    case 'narrationHighlight':
+      if (cmd.textHref && view.mediaOverlay) {
+        // Pause auto-follow (keep drawing the highlight, just don't page-turn to it) for a while
+        // after the user last turned a page themselves.
+        view.pauseNarrationFollow = performance.now() - lastManualNavAt < NARRATION_FOLLOW_PAUSE_MS;
+        view.mediaOverlay.dispatchEvent(new CustomEvent('highlight', { detail: { text: cmd.textHref } }));
+      }
+      break;
+    case 'narrationUnhighlight':
+      view.mediaOverlay?.dispatchEvent(new CustomEvent('unhighlight'));
       break;
     default:
       break;

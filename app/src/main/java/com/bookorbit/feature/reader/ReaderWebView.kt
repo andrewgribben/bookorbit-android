@@ -112,6 +112,11 @@ class ReaderController {
     fun next() = command(buildJsonObject { put("type", "next") }.toString())
     fun prev() = command(buildJsonObject { put("type", "prev") }.toString())
 
+    /** The Controls tab's "Swipe to turn pages": off stops a swipe from moving the paginated page. */
+    fun setSwipeEnabled(enabled: Boolean) = command(buildJsonObject { put("type", "setSwipe"); put("enabled", enabled) }.toString())
+    fun historyBack() = command(buildJsonObject { put("type", "historyBack") }.toString())
+    fun historyForward() = command(buildJsonObject { put("type", "historyForward") }.toString())
+
     /** Replace the set of highlights drawn in the page. Only CFI-anchored, resolvable ones are drawn. */
     fun setAnnotations(items: List<BookAnnotation>) {
         val arr = kotlinx.serialization.json.buildJsonArray {
@@ -127,6 +132,22 @@ class ReaderController {
     fun search(query: String) = command(buildJsonObject { put("type", "search"); put("query", query) }.toString())
 
     fun clearSearch() = command(buildJsonObject { put("type", "clearSearch") }.toString())
+
+    /** Asks the WebView to parse every section's SMIL into a [com.bookorbit.feature.reader.narration.NarrationTimeline]
+     * and post it back as a `narrationTimeline`/`narrationTimelineError` event, echoing [generation]. */
+    fun narrationPrepare(generation: Int) =
+        command(buildJsonObject { put("type", "narrationPrepare"); put("generation", generation) }.toString())
+
+    /** Abandons any `buildNarrationTimeline` the WebView still has in flight; its own generation
+     * token keeps a result arriving after this from being posted. */
+    fun narrationCancelPrepare() = command(buildJsonObject { put("type", "narrationCancelPrepare") }.toString())
+
+    /** Navigates to [textHref] and adds the book's (or the default) active-overlay class there,
+     * reusing foliate's own highlight wiring (view.js) by replaying the event it would have fired. */
+    fun narrationHighlight(textHref: String) =
+        command(buildJsonObject { put("type", "narrationHighlight"); put("textHref", textHref) }.toString())
+
+    fun narrationUnhighlight() = command(buildJsonObject { put("type", "narrationUnhighlight") }.toString())
 
     fun clearSelection() = command(buildJsonObject { put("type", "clearSelection") }.toString())
 

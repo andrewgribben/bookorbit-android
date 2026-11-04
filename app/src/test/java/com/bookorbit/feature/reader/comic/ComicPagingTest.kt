@@ -4,16 +4,16 @@ import com.bookorbit.core.model.BookDetail
 import com.bookorbit.core.model.BookFileRef
 import com.bookorbit.core.model.BookFiles
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ComicPagingTest {
     @Test
-    fun `percentage spans 0 to 100 and the last page is 100`() {
-        assertEquals(0.0, ComicPaging.percentage(0, 8), 1e-9)
+    fun `percentage matches the web reader - the first page is 1 of n and the last page is 100`() {
+        assertEquals(12.5, ComicPaging.percentage(0, 8), 1e-9)
         assertEquals(100.0, ComicPaging.percentage(7, 8), 1e-9)
-        assertEquals(100.0 * 3 / 7, ComicPaging.percentage(3, 8), 1e-9)
+        assertEquals(50.0, ComicPaging.percentage(3, 8), 1e-9)
     }
 
     @Test
@@ -25,22 +25,33 @@ class ComicPagingTest {
     @Test
     fun `percentage clamps an out-of-range page`() {
         assertEquals(100.0, ComicPaging.percentage(99, 8), 1e-9)
-        assertEquals(0.0, ComicPaging.percentage(-3, 8), 1e-9)
+        assertEquals(12.5, ComicPaging.percentage(-3, 8), 1e-9)
     }
 
     @Test
     fun `resume page round-trips through the saved fraction`() {
         for (page in 0 until 8) {
             val fraction = ComicPaging.percentage(page, 8) / 100.0
-            assertEquals(page, ComicPaging.pageForFraction(fraction, 8))
+            assertEquals(page, ComicPaging.resumePage(pageNumber = null, fraction = fraction, pageCount = 8))
         }
     }
 
     @Test
+    fun `a saved page number wins over the percentage, as on the web`() {
+        assertEquals(33, ComicPaging.resumePage(pageNumber = 34, fraction = 0.1, pageCount = 48))
+    }
+
+    @Test
+    fun `a page number past the end clamps to the last page`() {
+        assertEquals(47, ComicPaging.resumePage(pageNumber = 90, fraction = null, pageCount = 48))
+    }
+
+    @Test
     fun `resume page defaults to the start without a saved position`() {
-        assertEquals(0, ComicPaging.pageForFraction(null, 8))
-        assertEquals(0, ComicPaging.pageForFraction(0.9, 1))
-        assertEquals(7, ComicPaging.pageForFraction(5.0, 8))
+        assertEquals(0, ComicPaging.resumePage(pageNumber = null, fraction = null, pageCount = 8))
+        assertEquals(0, ComicPaging.resumePage(pageNumber = null, fraction = 0.9, pageCount = 1))
+        assertEquals(0, ComicPaging.resumePage(pageNumber = 0, fraction = null, pageCount = 8))
+        assertEquals(7, ComicPaging.resumePage(pageNumber = null, fraction = 5.0, pageCount = 8))
     }
 
     @Test
@@ -66,9 +77,16 @@ class ComicPagingTest {
     }
 
     @Test
-    fun `CBZ stays in the foliate reader and is no longer treated as server paged`() {
-        assertTrue(BookFiles.readingTarget(book("cbz" to "primary")) is BookFiles.ReadingTarget.Foliate)
-        assertNull(BookFiles.comicFile(book("cbz" to "primary")))
+    fun `CBZ opens in the comic reader too`() {
+        val target = BookFiles.readingTarget(book("cbz" to "primary"))
+        assertTrue(target is BookFiles.ReadingTarget.Comic)
+        assertEquals("cbz", (target as BookFiles.ReadingTarget.Comic).file.format)
+        assertFalse(BookFiles.isReadableEbook("cbz"))
+    }
+
+    @Test
+    fun `an EPUB beats a CBZ when a book has both`() {
+        assertTrue(BookFiles.readingTarget(book("cbz" to "primary", "epub" to "alternate")) is BookFiles.ReadingTarget.Foliate)
     }
 
     @Test

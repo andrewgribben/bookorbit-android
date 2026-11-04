@@ -46,6 +46,9 @@
     <string name="custom_speed">Custom speed</string>
     <string name="dark">Dark</string>
     <string name="decrease">Decrease</string>
+    <string name="reading_position">Reading position</string>
+    <string name="reader_history_back">Back to previous location</string>
+    <string name="reader_history_forward">Forward to next location</string>
     <string name="decrease_named">Decrease %1$s</string>
     <string name="increase_named">Increase %1$s</string>
     <string name="default_speed">Default speed</string>
@@ -336,6 +339,9 @@
     <string name="reader_err_highlight_save">Couldn\'t save the highlight.</string>
     <string name="reader_err_highlight_delete">Couldn\'t delete the highlight.</string>
     <string name="reader_err_generic">Reader error</string>
+    <string name="narration_listen">Listen (narration)</string>
+    <string name="narration_stop_listening">Stop listening</string>
+    <string name="narration_err_unavailable">Couldn\'t read this book\'s narration.</string>
     <string name="pdf_err_open">Could not open this PDF.</string>
     <string name="pdf_no_text">No selectable text on this page</string>
     <string name="pdf_text_copied">Page text copied</string>
@@ -416,6 +422,19 @@
     <string name="rs_label_font">Font</string>
     <string name="rs_label_columns">Columns</string>
     <string name="rs_label_margins">Margins</string>
+    <string name="rs_label_playback">Playback</string>
+    <string name="rs_seconds_value">%1$ds</string>
+    <string name="narration_player_position">%1$s · %2$s</string>
+    <string name="narration_player_skip_back">Skip back %1$d seconds</string>
+    <string name="narration_player_skip_forward">Skip forward %1$d seconds</string>
+    <string name="rs_playback_skip_back">Skip back</string>
+    <string name="rs_playback_skip_forward">Skip forward</string>
+    <string name="rs_playback_speed">Speed</string>
+    <string name="rs_playback_sleep_timer">Sleep timer</string>
+    <string name="rs_playback_chapters">Chapters</string>
+    <string name="rs_playback_bookmarks">Bookmarks</string>
+    <string name="rs_playback_cast">Cast</string>
+    <string name="rs_playback_note">Playback settings apply app-wide. Save, Reset and Restore below only affect Typography, Layout and Theme.</string>
     <string name="use_book_layout">Use book layout</string>
     <string name="use_book_layout_banner">Using the book\'s own layout. Turn this off to set your own.</string>
     <string name="locked_typography_note">Turn off \"Use book layout\" to edit font, size, line height, justification and hyphenation.</string>
@@ -497,4 +516,97 @@
     <string name="rs_reset_done_book">This book\'s settings reset to the saved default</string>
     <string name="rs_restore_done_global">Global settings restored to built-in defaults</string>
     <string name="rs_restore_done_book">This book\'s settings restored to built-in defaults</string>
+
+    <!-- Comic reader Configure sheet (phase 4): tabs, controls - wording from the web's
+         reader.cbz.* / settings.reader.comics.* locale keys. -->
+    <string name="cr_tab_layout">Layout</string>
+    <string name="cr_tab_spreads">Spreads</string>
+    <string name="cr_tab_theme">Theme</string>
+    <string name="cr_reading_mode">Reading mode</string>
+    <string name="cr_reading_mode_hint">How pages are navigated - use \"Infinite (no gaps)\" for webtoons</string>
+    <string name="cr_mode_paged">Paged</string>
+    <string name="cr_mode_infinite">Infinite</string>
+    <string name="cr_mode_no_gaps">No gaps</string>
+    <string name="cr_page_view">Page view</string>
+    <string name="cr_page_view_single">Single</string>
+    <string name="cr_page_view_two_page">Two-page</string>
+    <string name="cr_fit_mode">Fit</string>
+    <string name="cr_fit_page">Page</string>
+    <string name="cr_fit_width">Width</string>
+    <string name="cr_fit_height">Height</string>
+    <string name="cr_fit_actual">Actual</string>
+    <string name="cr_direction">Direction</string>
+    <string name="cr_direction_ltr">Left to right</string>
+    <string name="cr_direction_rtl">Right to left</string>
+    <string name="cr_force_two_page">Force two-page on small screens</string>
+    <string name="cr_spread_alignment">Spread alignment</string>
+    <string name="cr_spread_alignment_hint">Shift pairing by one page after the cover for off-by-one scans</string>
+    <string name="cr_alignment_normal">Normal</string>
+    <string name="cr_alignment_shifted">Shifted</string>
+    <string name="cr_wide_pages">Wide pages</string>
+    <string name="cr_wide_pages_auto">Auto</string>
+    <string name="cr_wide_pages_in_spreads">In spreads</string>
+    <string name="cr_spread_gap">Spread gap</string>
+    <string name="cr_spread_gap_value">%1$dpx</string>
+    <string name="cr_spreads_locked_note">Spreads only apply in Paged mode with Two-page view.</string>
+    <string name="cr_background">Background</string>
+    <string name="cr_bg_black">Black</string>
+    <string name="cr_bg_gray">Gray</string>
+    <string name="cr_bg_white">White</string>
+    <string name="cr_bg_true_black">True black</string>
+    <string name="cr_auto_advance">Auto-advance to next book</string>
+    <string name="cr_keep_screen_on">Keep screen on</string>
+    <string name="cr_configure">Configure</string>
+
+    <!-- Controls tab (stage 5, owner decision 2/5): app-wide, device-only tap/gesture settings
+         shared by the comic and ebook Configure sheets. No Save/Reset/Restore footer and the
+         Global/This book scope switch is disabled here, unlike every other tab. -->
+    <string name="cr_tab_controls">Controls</string>
+    <string name="rc_app_wide_note">Controls apply to every book and comic on this device.</string>
+    <string name="rc_zone_layout">Tap zone layout</string>
+    <string name="rc_layout_sides">Sides</string>
+    <string name="rc_layout_sides_and_corners">Sides and corners</string>
+    <string name="rc_layout_edges">Edges</string>
+    <string name="rc_layout_centre_only">Centre only</string>
+    <string name="rc_zone_size">Zone size</string>
+    <string name="rc_zone_size_narrow">Narrow</string>
+    <string name="rc_zone_size_medium">Medium</string>
+    <string name="rc_zone_size_wide">Wide</string>
+    <string name="rc_zones">Zones</string>
+    <string name="rc_zone_action_hint">Tap a zone to choose what it does</string>
+    <string name="rc_action_next">Next page</string>
+    <string name="rc_action_previous">Previous page</string>
+    <string name="rc_action_menu">Show or hide toolbars</string>
+    <string name="rc_action_next_short">Next</string>
+    <string name="rc_action_previous_short">Prev</string>
+    <string name="rc_action_menu_short">Bars</string>
+    <string name="rc_action_nothing">Nothing</string>
+    <string name="rc_mirror_rtl">Mirror for right-to-left</string>
+    <string name="rc_swipe_to_turn">Swipe to turn pages</string>
+    <string name="rc_double_tap_zoom">Double-tap to zoom</string>
+    <string name="rc_double_tap_zoom_ebook_note">In an ebook, double-tap selects a word instead - this control does not apply here.</string>
+    <string name="rc_volume_keys">Volume keys turn pages</string>
+    <string name="rc_infinite_scroll_hint">In the infinite modes, next/previous scroll by one screen.</string>
+    <string name="rc_scrolled_hint">In scrolled mode, next/previous scroll by one screen.</string>
+
+    <!-- Comic reader chrome: top bar (Page N of M, Pages grid icon) and bottom bar (first/previous/next/last). -->
+    <string name="cr_page_of">Page %1$s of %2$d</string>
+    <string name="cr_pages">Pages</string>
+    <string name="cr_first_page">First page</string>
+    <string name="cr_previous_page">Previous page</string>
+    <string name="cr_next_page">Next page</string>
+    <string name="cr_last_page">Last page</string>
+
+    <!-- Comic reader Pages grid and resume note. -->
+    <string name="cr_pages_grid_title">Pages</string>
+    <string name="cr_resumed_at_page">Resumed at page %1$d</string>
+    <string name="cr_start_over">Start over</string>
+    <string name="cr_next_in_series">Next in series</string>
+    <string name="cr_next_open">Read next</string>
+    <string name="cr_next_open_title">Read next: %1$s</string>
+    <string name="cr_next_numbered">#%1$s %2$s</string>
+    <string name="cr_next_untitled">Untitled</string>
+    <string name="cr_next_auto_advance_countdown">Opening in %1$ds</string>
+    <string name="cr_next_end_title">That\'s the end</string>
+    <string name="cr_next_back_to_book">Back to book</string>
 </resources>
