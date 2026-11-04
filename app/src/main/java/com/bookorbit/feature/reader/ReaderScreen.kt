@@ -7,15 +7,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
@@ -37,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,9 +57,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReaderScreen(
     onBack: () -> Unit,
+    fullscreen: Boolean = false,
     vm: ReaderViewModel = hiltViewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -61,7 +69,7 @@ fun ReaderScreen(
     var ready by remember { mutableStateOf(false) }
     var opened by remember { mutableStateOf(false) }
     var rendererFailed by remember { mutableStateOf(false) }
-    var chromeVisible by remember { mutableStateOf(true) }
+    var chromeVisible by rememberSaveable { mutableStateOf(true) }
     var tocVisible by remember { mutableStateOf(false) }
     var settingsVisible by remember { mutableStateOf(false) }
     var highlightsVisible by remember { mutableStateOf(false) }
@@ -76,8 +84,8 @@ fun ReaderScreen(
     onTap.value = { x ->
         when {
             ui.toolbar != null -> vm.dismissToolbar()
-            ui.settings.flow == "paginated" && x < 0.3 -> controller.prev()
-            ui.settings.flow == "paginated" && x > 0.7 -> controller.next()
+            ui.effective.flow == "paginated" && x < 0.3 -> controller.prev()
+            ui.effective.flow == "paginated" && x > 0.7 -> controller.next()
             else -> chromeVisible = !chromeVisible
         }
     }
@@ -88,6 +96,13 @@ fun ReaderScreen(
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
     }
+
+    // Tapping the page centre toggles the reader's own chrome and Android's system bars together
+    // (see readerWantsSystemBarsVisible for the exact rule), so there is one coherent immersive
+    // state rather than two bar sets that can disagree. The WebView itself is never resized by
+    // this (it already fills the whole Box below, with the bars drawn as floating overlays), so
+    // page text never reflows when chrome/system bars toggle.
+    ReaderSystemBarsEffect(fullscreen = fullscreen, chromeVisible = chromeVisible)
 
     LaunchedEffect(Unit) {
         controller.listener = { event ->
@@ -129,15 +144,30 @@ fun ReaderScreen(
         if (ready && resolved != null && !opened && !rendererFailed) {
             opened = true
             withContext(Dispatchers.IO) {
-                controller.open(openParamsFor(resolved.ref, resolved.format, resolved.initial, ui.settings), context)
+                controller.open(openParamsFor(resolved.ref, resolved.format, resolved.initial, ui.effective), context)
             }
         }
     }
 
-    val surface = themeBackgroundColor(ui.settings.themeName, ui.settings.isDark)
-    val paginated = ui.settings.flow == "paginated"
+    // Re-apply live whenever the effective settings change for any reason - editing, switching
+    // scope, flipping "Use global settings", save/reset/restore - not just the sheet's onChange.
+    LaunchedEffect(ui.effective) {
+        if (ui.loaded) controller.applyStyles(ui.effective)
+    }
+
+    val surface = themeBackgroundColor(ui.effective.themeName, ui.effective.isDark)
+    val paginated = ui.effective.flow == "paginated"
     val showChrome = chromeVisible
-    val onSurface = if (ui.settings.isDark) Color.White else Color.Black
+    val onSurface = if (effectiveIsDark(ui.effective.themeName, ui.effective.isDark)) Color.White else Color.Black
+    // Bars must clear both the status bar AND the display-cutout (camera punch-hole) — on a
+    // Galaxy Z Fold's inner/outer screens in particular, statusBarsPadding() alone leaves the top
+    // bar under the cutout whenever the status bar inset collapses to 0 (which happens while
+    // system bars are hidden/transient, since that inset tracks *visibility*, not the cutout's
+    // physical presence). "IgnoringVisibility" keeps the reserved space constant whether or not the
+    // system bar is currently shown, and union(displayCutout) extends it to cover the punch-hole in
+    // any orientation/fold state.
+    val topBarInsets = WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout)
+    val bottomBarInsets = WindowInsets.navigationBarsIgnoringVisibility.union(WindowInsets.displayCutout)
 
     Box(
         modifier = Modifier
@@ -160,7 +190,7 @@ fun ReaderScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color(0xCC0A0A0A))
-                    .statusBarsPadding()
+                    .windowInsetsPadding(topBarInsets)
                     .padding(horizontal = 4.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -196,7 +226,7 @@ fun ReaderScreen(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .background(Color(0xCC0A0A0A))
-                    .navigationBarsPadding()
+                    .windowInsetsPadding(bottomBarInsets)
                     .padding(vertical = 6.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -318,11 +348,15 @@ fun ReaderScreen(
     }
     if (settingsVisible) {
         ReaderSettingsSheet(
-            settings = ui.settings,
-            onChange = { updated ->
-                vm.updateSettings(updated)
-                controller.applyStyles(updated)
-            },
+            scope = ui.scope,
+            onScopeChange = vm::setScope,
+            globalSettings = ui.globalSettings,
+            bookState = ui.bookState,
+            onUseGlobalChange = vm::setUseGlobal,
+            onSettingsChange = { updated -> vm.updateSettings(ui.scope, updated) },
+            onSaveAsDefault = { vm.saveAsDefault(ui.scope) },
+            onResetToSavedDefault = { vm.resetToSavedDefault(ui.scope) },
+            onRestoreBuiltIn = { vm.restoreBuiltInDefaults(ui.scope) },
             onSetWallpaper = {
                 settingsVisible = false
                 vm.setCoverAsWallpaper()

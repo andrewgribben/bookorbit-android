@@ -31,12 +31,19 @@ fun ReaderDestination(kind: ReaderKind, onBack: () -> Unit, vm: ReaderHostViewMo
     val preferences by vm.preferences.collectAsStateWithLifecycle()
     var useApp by rememberSaveable { mutableStateOf(false) }
     val prefs = preferences ?: return
-    ImmersiveReaderEffect(prefs.fullscreen)
+    val usingNativeEbookScreen = kind == ReaderKind.EBOOK && (prefs.readerInterface != ReaderInterface.SERVER_WEB || useApp)
+    // The native ebook screen (ReaderScreen) owns its own system-bars effect, synced to its
+    // chrome-tap toggle (see ReaderScreen's systemBarsVisible/readerWantsSystemBarsVisible), so it
+    // opts out of this screen-agnostic "hide for the whole visit" effect used by every other path
+    // (server web view, PDF, comic — none of which tie system bars to an in-reader chrome toggle).
+    if (!usingNativeEbookScreen) {
+        ImmersiveReaderEffect(prefs.fullscreen)
+    }
     if (prefs.readerInterface == ReaderInterface.SERVER_WEB && !useApp) {
         ServerReaderScreen(kind, vm, onBack = onBack, onOpenApp = { useApp = true })
     } else {
         when (kind) {
-            ReaderKind.EBOOK -> ReaderScreen(onBack)
+            ReaderKind.EBOOK -> ReaderScreen(onBack, fullscreen = prefs.fullscreen)
             ReaderKind.PDF -> PdfReaderScreen(onBack)
             ReaderKind.COMIC -> ComicReaderScreen(onBack)
         }
@@ -79,7 +86,7 @@ private fun ImmersiveReaderEffect(enabled: Boolean) {
     }
 }
 
-private tailrec fun Context.findActivity(): Activity? = when (this) {
+internal tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null

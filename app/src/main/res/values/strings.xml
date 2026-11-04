@@ -46,6 +46,8 @@
     <string name="custom_speed">Custom speed</string>
     <string name="dark">Dark</string>
     <string name="decrease">Decrease</string>
+    <string name="decrease_named">Decrease %1$s</string>
+    <string name="increase_named">Increase %1$s</string>
     <string name="default_speed">Default speed</string>
     <string name="delete">Delete</string>
     <string name="delete_bookmark">Delete bookmark</string>
@@ -409,8 +411,25 @@
     <string name="rs_label_theme">Theme</string>
     <string name="rs_label_mode">Mode</string>
     <string name="rs_label_layout">Layout</string>
+    <string name="rs_label_typography">Typography</string>
+    <string name="rs_label_book_layout">Book layout</string>
     <string name="rs_label_font">Font</string>
-    <string name="font_original">Original</string>
+    <string name="rs_label_columns">Columns</string>
+    <string name="rs_label_margins">Margins</string>
+    <string name="use_book_layout">Use book layout</string>
+    <string name="use_book_layout_banner">Using the book\'s own layout. Turn this off to set your own.</string>
+    <string name="locked_typography_note">Turn off \"Use book layout\" to edit font, size, line height, justification and hyphenation.</string>
+    <string name="locked_layout_note">Turn off \"Use book layout\" to edit columns, margins and page flow.</string>
+    <string name="margin_top">Top margin</string>
+    <string name="margin_bottom">Bottom margin</string>
+    <string name="margin_left">Left margin</string>
+    <string name="margin_right">Right margin</string>
+    <string name="link_side_margins">Link left &amp; right margins</string>
+    <string name="paragraph_spacing">Paragraph spacing</string>
+    <string name="justify_on">Justify</string>
+    <string name="justify_off">Don\'t justify</string>
+    <string name="hyphenate_on">Hyphenate</string>
+    <string name="hyphenate_off">Don\'t hyphenate</string>
     <string name="font_serif">Serif</string>
     <string name="font_sans">Sans</string>
     <string name="font_monospace">Monospace</string>
@@ -457,4 +476,25 @@
     <string name="reader_open_app">Open in App</string>
     <string name="reader_web_menu">Web reader options</string>
     <string name="reader_web_reload">Reload web reader</string>
+
+    <!-- Stage 3: reader settings scope, inheritance, saved/built-in defaults -->
+    <string name="rs_scope_global">Global</string>
+    <string name="rs_scope_this_book">This book</string>
+    <string name="rs_use_global_settings">Use global settings</string>
+    <string name="rs_use_global_banner">This book follows your Global settings. Turn this off to set your own just for this book.</string>
+    <string name="rs_save_as_default">Save as default</string>
+    <string name="rs_reset_to_default">Reset to saved default</string>
+    <string name="rs_restore_built_in">Restore built-in defaults</string>
+    <string name="rs_reset_dialog_title">Reset %1$s to its saved default?</string>
+    <string name="rs_reset_dialog_body">This resets Theme &amp; dark mode, Typography and Layout for %1$s to the saved default. Nothing else changes until you confirm.</string>
+    <string name="rs_restore_dialog_title">Restore built-in defaults for %1$s?</string>
+    <string name="rs_restore_dialog_body">This resets Theme &amp; dark mode, Typography and Layout for %1$s to BookOrbit\'s built-in defaults. Your saved default for %1$s is not affected. This can\'t be undone.</string>
+    <string name="rs_scope_name_global">Global</string>
+    <string name="rs_scope_name_this_book">this book</string>
+    <string name="rs_saved_default_global">Saved as default for Global</string>
+    <string name="rs_saved_default_book">Saved as default for this book</string>
+    <string name="rs_reset_done_global">Global settings reset to the saved default</string>
+    <string name="rs_reset_done_book">This book\'s settings reset to the saved default</string>
+    <string name="rs_restore_done_global">Global settings restored to built-in defaults</string>
+    <string name="rs_restore_done_book">This book\'s settings restored to built-in defaults</string>
 </resources>
