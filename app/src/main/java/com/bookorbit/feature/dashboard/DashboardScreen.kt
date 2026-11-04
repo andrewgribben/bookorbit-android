@@ -62,7 +62,12 @@ fun DashboardScreen(
     vm: DashboardViewModel = hiltViewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    val isEmpty = !ui.loading && ui.continueReading.isEmpty() && ui.continueListening.isEmpty() && ui.recentlyAdded.isEmpty()
+    val isEmpty = !ui.loading &&
+        ui.continueReading.isEmpty() &&
+        ui.continueListening.isEmpty() &&
+        ui.recentlyAdded.isEmpty() &&
+        ui.wantToRead.isEmpty() &&
+        ui.upNextInSeries.isEmpty()
 
     PullToRefreshBox(
         isRefreshing = ui.loading,
@@ -104,6 +109,8 @@ fun DashboardScreen(
                     if (moreReading.isNotEmpty()) HorizontalBookScroller(stringResource(R.string.up_next_to_read), moreReading, onBookClick)
                     if (moreListening.isNotEmpty()) HorizontalBookScroller(stringResource(R.string.continue_listening), moreListening, onBookClick)
                     if (ui.recentlyAdded.isNotEmpty()) HorizontalBookScroller(stringResource(R.string.recently_added), ui.recentlyAdded, onBookClick)
+                    if (ui.wantToRead.isNotEmpty()) HorizontalBookScroller(stringResource(R.string.want_to_read_shelf), ui.wantToRead, onBookClick)
+                    if (ui.upNextInSeries.isNotEmpty()) HorizontalBookScroller(stringResource(R.string.up_next_in_series), ui.upNextInSeries, onBookClick)
                 }
             }
             Spacer(Modifier.height(24.dp))
