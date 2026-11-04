@@ -464,6 +464,40 @@ const MIME = {
   cbr: 'application/vnd.comicbook-rar',
 };
 
+// Shared tail of opening a book, whichever of openBook/openLocalEpub produced it: apply styles,
+// report the TOC/metadata, then navigate to the requested position (CFI, else fraction, else start).
+async function finishOpen(meta) {
+  applyStyles(meta.settings ?? currentSettings);
+
+  post({
+    type: 'loaded',
+    toc: serializeToc(view.book?.toc),
+    metadata: {
+      title: view.book?.metadata?.title ?? null,
+      language: view.book?.metadata?.language ?? null,
+    },
+  });
+
+  let navigated = false;
+  if (meta.cfi) {
+    try {
+      await view.goTo(meta.cfi);
+      navigated = true;
+    } catch {
+      navigated = false;
+    }
+  }
+  if (!navigated && typeof meta.fraction === 'number' && meta.fraction > 0 && typeof view.goToFraction === 'function') {
+    try {
+      view.goToFraction(meta.fraction);
+      navigated = true;
+    } catch {
+      navigated = false;
+    }
+  }
+  if (!navigated) await view.goTo(0).catch(() => {});
+}
+
 async function openBook(meta, parts) {
   try {
     createView();
@@ -472,38 +506,29 @@ async function openBook(meta, parts) {
     const file = new File([blob], `book.${format}`, { type: blob.type });
 
     await view.open(file);
-
-    applyStyles(meta.settings ?? currentSettings);
-
-    post({
-      type: 'loaded',
-      toc: serializeToc(view.book?.toc),
-      metadata: {
-        title: view.book?.metadata?.title ?? null,
-        language: view.book?.metadata?.language ?? null,
-      },
-    });
-
-    let navigated = false;
-    if (meta.cfi) {
-      try {
-        await view.goTo(meta.cfi);
-        navigated = true;
-      } catch {
-        navigated = false;
-      }
-    }
-    if (!navigated && typeof meta.fraction === 'number' && meta.fraction > 0 && typeof view.goToFraction === 'function') {
-      try {
-        view.goToFraction(meta.fraction);
-        navigated = true;
-      } catch {
-        navigated = false;
-      }
-    }
-    if (!navigated) await view.goTo(0).catch(() => {});
+    await finishOpen(meta);
   } catch (e) {
     postError(e?.message ?? 'Failed to open book');
+  }
+}
+
+// Lazy local-EPUB path: instead of assembling the whole file from base64 chunks, build an EPUB
+// loader that fetches entries one at a time from the host's LocalEpubAssetHandler (served off the
+// real on-disk zip via java.util.zip.ZipFile). Keeps peak memory and open latency proportional to
+// what the current section actually needs, not the whole book (a 441MB EPUB with embedded audio
+// no longer has to push ~590MB of base64 through evaluateJavascript before it can even open).
+async function openLocalEpub(meta, baseUrl) {
+  try {
+    createView();
+    const { makeLocalZipLoader } = await import('./foliate/local-zip-loader.js');
+    const { EPUB } = await import('./foliate/epub.js');
+    const loader = await makeLocalZipLoader(baseUrl);
+    const book = await new EPUB(loader).init();
+
+    await view.open(book);
+    await finishOpen(meta);
+  } catch (e) {
+    postError(e?.message ?? 'Failed to open local book');
   }
 }
 
@@ -534,6 +559,18 @@ window.__readerCommit = () => {
   const { meta, parts } = pending;
   pending = null;
   void openBook(meta, parts);
+};
+
+// Lazy-open a local EPUB served entry-by-entry from baseUrl (see openLocalEpub). meta is the
+// same { format, cfi, fraction, settings } shape as __readerBegin's.
+window.__readerOpenLocal = (metaJson, baseUrl) => {
+  try {
+    const meta = JSON.parse(metaJson);
+    if (meta.settings) currentSettings = { ...DEFAULT_SETTINGS, ...meta.settings };
+    void openLocalEpub(meta, baseUrl);
+  } catch (e) {
+    postError(e?.message ?? 'Bad local open payload');
+  }
 };
 
 // Imperative commands: { type: 'goTo'|'goToFraction'|'prev'|'next'|'applyStyles'|'setAnnotations'|'clearSelection'|'search'|'clearSearch', ... }.
