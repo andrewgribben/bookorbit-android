@@ -174,6 +174,9 @@ fun ReaderScreen(
     LaunchedEffect(ui.annotations, ui.loaded) {
         if (ui.loaded) controller.setAnnotations(ui.annotations)
     }
+    LaunchedEffect(ui.loaded, ui.controlsSettings.swipeEnabled) {
+        if (ui.loaded) controller.setSwipeEnabled(ui.controlsSettings.swipeEnabled)
+    }
 
     // Drop the page's text selection once the toolbar goes away (saved, dismissed or deleted).
     LaunchedEffect(ui.toolbar == null) {

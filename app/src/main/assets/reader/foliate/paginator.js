@@ -876,6 +876,8 @@ export class Paginator extends HTMLElement {
     if (state.pinched) return
     state.pinched = globalThis.visualViewport.scale > 1
     if (this.scrolled || state.pinched) return
+    // BookOrbit: the app's "Swipe to turn pages" control (set through the bridge's setSwipe command).
+    if (globalThis.__bookorbitNoSwipe) return
     if (e.touches.length > 1) {
       if (this.#touchScrolled) e.preventDefault()
       return

@@ -111,6 +111,9 @@ class ReaderController {
     fun goToFraction(value: Double) = command(buildJsonObject { put("type", "goToFraction"); put("value", value) }.toString())
     fun next() = command(buildJsonObject { put("type", "next") }.toString())
     fun prev() = command(buildJsonObject { put("type", "prev") }.toString())
+
+    /** The Controls tab's "Swipe to turn pages": off stops a swipe from moving the paginated page. */
+    fun setSwipeEnabled(enabled: Boolean) = command(buildJsonObject { put("type", "setSwipe"); put("enabled", enabled) }.toString())
     fun historyBack() = command(buildJsonObject { put("type", "historyBack") }.toString())
     fun historyForward() = command(buildJsonObject { put("type", "historyForward") }.toString())
 

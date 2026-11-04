@@ -880,6 +880,10 @@ window.__readerCommand = (json) => {
     case 'next':
       view.next?.();
       break;
+    case 'setSwipe':
+      // Read by the paginator's touch handling; a global so it survives the renderer being rebuilt.
+      globalThis.__bookorbitNoSwipe = !cmd.enabled;
+      break;
     case 'applyStyles':
       applyStyles(cmd.settings);
       break;
