@@ -65,6 +65,7 @@ val FORMAT_OPTIONS: List<String> = listOf(
 )
 
 val SORT_OPTIONS: List<Pair<String, Int>> = listOf(
+    "relevance" to R.string.sort_relevance,
     "title" to R.string.sort_title,
     "author" to R.string.sort_author,
     "addedAt" to R.string.sort_added,
@@ -85,4 +86,50 @@ enum class CatalogKind(val path: String) {
     GENRES("genres"),
     TAGS("tags"),
     LANGUAGES("languages"),
+}
+
+/** Sort options for the Series section (mirrors the server's `SERIES_LIST_SORTS`). */
+val SERIES_SORT_OPTIONS: List<Pair<String, Int>> = listOf(
+    "relevance" to R.string.sort_relevance,
+    "name" to R.string.sort_name,
+    "bookCount" to R.string.sort_book_count,
+    "lastAddedAt" to R.string.sort_added,
+    "readProgress" to R.string.sort_progress,
+)
+
+/** Sort options for the Authors section (mirrors the server's `AUTHOR_LIST_SORTS`). */
+val AUTHOR_SORT_OPTIONS: List<Pair<String, Int>> = listOf(
+    "relevance" to R.string.sort_relevance,
+    "name" to R.string.sort_name,
+    "sortName" to R.string.sort_sort_name,
+    "bookCount" to R.string.sort_book_count,
+    "lastAddedAt" to R.string.sort_added,
+    "lastEnrichedAt" to R.string.sort_last_enriched,
+)
+
+/**
+ * Sensible default direction when a user switches the sort field: name-like fields read
+ * naturally ascending, everything else (dates, counts, ratings, progress) is most useful
+ * descending (newest/highest first).
+ */
+fun defaultSortDirection(field: String): String = when (field) {
+    "title", "author", "series", "name", "sortName" -> "asc"
+    else -> "desc"
+}
+
+/** Hides the search-only "relevance" sort unless the user has actually typed a query. */
+fun visibleSortOptions(options: List<Pair<String, Int>>, hasQuery: Boolean): List<Pair<String, Int>> =
+    if (hasQuery) options else options.filterNot { it.first == "relevance" }
+
+/**
+ * When a query starts/stops, nudge an untouched default sort to/from "relevance" so search
+ * results are ranked by match quality, without overriding a sort the user picked explicitly.
+ */
+fun sortForQueryChange(current: LibrarySort, query: String, defaultField: String): LibrarySort {
+    val hasQuery = query.isNotBlank()
+    return when {
+        hasQuery && current.field == defaultField -> LibrarySort("relevance", "desc")
+        !hasQuery && current.field == "relevance" -> LibrarySort(defaultField, defaultSortDirection(defaultField))
+        else -> current
+    }
 }

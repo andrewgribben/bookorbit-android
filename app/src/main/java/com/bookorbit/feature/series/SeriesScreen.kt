@@ -4,6 +4,7 @@ import androidx.compose.ui.res.stringResource
 import com.bookorbit.R
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,7 +38,11 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import com.bookorbit.core.model.SeriesSummary
 import com.bookorbit.core.settings.SeriesViewMode
+import com.bookorbit.feature.library.filters.SERIES_SORT_OPTIONS
+import com.bookorbit.feature.library.filters.visibleSortOptions
 import com.bookorbit.ui.components.BookGrid
+import com.bookorbit.ui.components.LibrarySearchField
+import com.bookorbit.ui.components.SortControl
 
 /** Every series; tapping one opens its books ([SeriesBooksScreen]) as its own route. */
 @Composable
@@ -47,33 +52,61 @@ fun SeriesScreen(
 ) {
     val series = vm.series.collectAsLazyPagingItems()
     val viewMode by vm.viewMode.collectAsStateWithLifecycle()
+    val sort by vm.sort.collectAsStateWithLifecycle()
+    val query by vm.query.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.End,
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = { vm.setViewMode(SeriesViewMode.LIST) }) {
-                Icon(
-                    Icons.AutoMirrored.Filled.List,
-                    contentDescription = stringResource(R.string.list_view),
-                    tint = if (viewMode == SeriesViewMode.LIST) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            IconButton(onClick = { vm.setViewMode(SeriesViewMode.GRID) }) {
-                Icon(
-                    Icons.Filled.GridView,
-                    contentDescription = stringResource(R.string.grid_view),
-                    tint = if (viewMode == SeriesViewMode.GRID) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            LibrarySearchField(
+                query = query,
+                onQueryChange = vm::onQueryChange,
+                placeholder = stringResource(R.string.search_series_hint),
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SortControl(
+                sort = sort,
+                options = visibleSortOptions(SERIES_SORT_OPTIONS, hasQuery = query.isNotBlank()),
+                onSortChange = vm::updateSort,
+            )
+            Row {
+                IconButton(onClick = { vm.setViewMode(SeriesViewMode.LIST) }) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.List,
+                        contentDescription = stringResource(R.string.list_view),
+                        tint = if (viewMode == SeriesViewMode.LIST) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = { vm.setViewMode(SeriesViewMode.GRID) }) {
+                    Icon(
+                        Icons.Filled.GridView,
+                        contentDescription = stringResource(R.string.grid_view),
+                        tint = if (viewMode == SeriesViewMode.GRID) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
         val open: (SeriesSummary) -> Unit = { onSeriesClick(it.id, it.name) }
+        val emptyText = if (query.isNotBlank()) {
+            stringResource(R.string.no_series_match_filters)
+        } else {
+            stringResource(R.string.no_series_found)
+        }
         when (viewMode) {
-            SeriesViewMode.LIST -> SeriesList(series = series, onSelect = open)
-            SeriesViewMode.GRID -> SeriesGrid(series = series, onSelect = open)
+            SeriesViewMode.LIST -> SeriesList(series = series, onSelect = open, emptyText = emptyText)
+            SeriesViewMode.GRID -> SeriesGrid(series = series, onSelect = open, emptyText = emptyText)
         }
     }
 }
@@ -94,7 +127,14 @@ internal fun seriesSubtitle(series: SeriesSummary): String =
         if (series.authors.isNotEmpty()) " · ${series.authors.joinToString(", ")}" else ""
 
 @Composable
-private fun SeriesList(series: LazyPagingItems<SeriesSummary>, onSelect: (SeriesSummary) -> Unit) {
+private fun SeriesList(series: LazyPagingItems<SeriesSummary>, onSelect: (SeriesSummary) -> Unit, emptyText: String) {
+    val empty = series.loadState.refresh is androidx.paging.LoadState.NotLoading && series.itemCount == 0
+    if (empty) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(emptyText, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         items(count = series.itemCount, key = series.itemKey { it.id }) { index ->
             val item = series[index] ?: return@items

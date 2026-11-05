@@ -35,8 +35,12 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
+import com.bookorbit.feature.library.filters.SORT_OPTIONS
+import com.bookorbit.feature.library.filters.visibleSortOptions
 import com.bookorbit.feature.library.filters.countActiveFilters
 import com.bookorbit.ui.components.BookGrid
+import com.bookorbit.ui.components.LibrarySearchField
+import com.bookorbit.ui.components.SortControl
 
 @Composable
 fun LibrariesScreen(
@@ -48,6 +52,7 @@ fun LibrariesScreen(
     val selectedId by vm.selectedId.collectAsStateWithLifecycle()
     val filters by vm.filters.collectAsStateWithLifecycle()
     val sort by vm.sort.collectAsStateWithLifecycle()
+    val query by vm.query.collectAsStateWithLifecycle()
     val books = vm.books.collectAsLazyPagingItems()
 
     val selected = libraries.firstOrNull { it.id == selectedId }
@@ -106,6 +111,32 @@ fun LibrariesScreen(
         }
         HorizontalDivider()
 
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LibrarySearchField(
+                query = query,
+                onQueryChange = vm::onQueryChange,
+                placeholder = stringResource(R.string.search_books),
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            SortControl(
+                sort = sort,
+                options = visibleSortOptions(SORT_OPTIONS, hasQuery = query.isNotBlank()),
+                onSortChange = vm::updateSort,
+            )
+        }
+
         when (status) {
             LibrariesViewModel.Status.ERROR -> Column(
                 modifier = Modifier.fillMaxSize().padding(32.dp),
@@ -134,7 +165,11 @@ fun LibrariesScreen(
             else -> BookGrid(
                 items = books,
                 onBookClick = onBookClick,
-                emptyText = stringResource(R.string.no_books_in_this_library),
+                emptyText = if (query.isNotBlank() || activeFilterCount > 0) {
+                    stringResource(R.string.no_books_match_filters)
+                } else {
+                    stringResource(R.string.no_books_in_this_library)
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         }

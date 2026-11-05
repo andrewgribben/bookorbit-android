@@ -62,4 +62,22 @@ class BuildBookQueryTest {
         assertEquals(3, countActiveFilters(filters))
         assertTrue(countActiveFilters(LibraryFilters()) == 0)
     }
+
+    @Test
+    fun `search text becomes the q param, trimmed of blanks`() {
+        val query = buildBookQuery(LibraryFilters(), LibrarySort(), 0, 50, q = "dune")
+        assertEquals("dune", query.q)
+
+        assertNull(buildBookQuery(LibraryFilters(), LibrarySort(), 0, 50, q = "   ").q)
+        assertNull(buildBookQuery(LibraryFilters(), LibrarySort(), 0, 50, q = null).q)
+    }
+
+    @Test
+    fun `search text combines with an active filter`() {
+        val filters = LibraryFilters(readStatus = listOf("reading"))
+        val query = buildBookQuery(filters, LibrarySort("addedAt", "desc"), 0, 50, q = "dune")
+        assertEquals("dune", query.q)
+        assertEquals("addedAt", query.sort[0].field)
+        assertEquals(1, query.filter!!.jsonObject["rules"]!!.jsonArray.size)
+    }
 }

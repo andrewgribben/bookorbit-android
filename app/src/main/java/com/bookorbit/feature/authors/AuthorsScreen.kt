@@ -4,6 +4,7 @@ import androidx.compose.ui.res.stringResource
 import com.bookorbit.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,13 +35,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import coil.compose.AsyncImage
 import com.bookorbit.core.model.AuthorSummary
+import com.bookorbit.feature.library.filters.AUTHOR_SORT_OPTIONS
+import com.bookorbit.feature.library.filters.visibleSortOptions
 import com.bookorbit.ui.LocalImageUrls
 import com.bookorbit.ui.components.BookGrid
+import com.bookorbit.ui.components.LibrarySearchField
+import com.bookorbit.ui.components.SortControl
 
 /** Every author; tapping one opens that author's books ([AuthorBooksScreen]) as its own route. */
 @Composable
@@ -49,7 +55,42 @@ fun AuthorsScreen(
     vm: AuthorsViewModel = hiltViewModel(),
 ) {
     val authors = vm.authors.collectAsLazyPagingItems()
-    AuthorList(authors = authors, onSelect = { onAuthorClick(it.id, it.name) })
+    val sort by vm.sort.collectAsStateWithLifecycle()
+    val query by vm.query.collectAsStateWithLifecycle()
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LibrarySearchField(
+                query = query,
+                onQueryChange = vm::onQueryChange,
+                placeholder = stringResource(R.string.search_authors_hint),
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            SortControl(
+                sort = sort,
+                options = visibleSortOptions(AUTHOR_SORT_OPTIONS, hasQuery = query.isNotBlank()),
+                onSortChange = vm::updateSort,
+            )
+        }
+        val emptyText = if (query.isNotBlank()) {
+            stringResource(R.string.no_authors_match_filters)
+        } else {
+            stringResource(R.string.no_authors_found)
+        }
+        AuthorList(authors = authors, onSelect = { onAuthorClick(it.id, it.name) }, emptyText = emptyText)
+    }
 }
 
 /** One author's books, as a grid. */
@@ -64,8 +105,15 @@ fun AuthorBooksScreen(
 }
 
 @Composable
-private fun AuthorList(authors: LazyPagingItems<AuthorSummary>, onSelect: (AuthorSummary) -> Unit) {
+private fun AuthorList(authors: LazyPagingItems<AuthorSummary>, onSelect: (AuthorSummary) -> Unit, emptyText: String) {
     val imageUrls = LocalImageUrls.current
+    val empty = authors.loadState.refresh is androidx.paging.LoadState.NotLoading && authors.itemCount == 0
+    if (empty) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(emptyText, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         items(count = authors.itemCount, key = authors.itemKey { it.id }) { index ->
             val author = authors[index] ?: return@items

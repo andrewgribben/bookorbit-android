@@ -17,16 +17,22 @@ import com.bookorbit.feature.library.filters.LibrarySort
 import com.bookorbit.feature.library.filters.StoredFilterPrefs
 import com.bookorbit.feature.library.filters.FilterPrefsStore
 import com.bookorbit.feature.library.filters.buildBookQuery
+import com.bookorbit.feature.library.filters.sortForQueryChange
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+private const val SEARCH_DEBOUNCE_MS = 300L
 
 @HiltViewModel
 class LibrariesViewModel @Inject constructor(
@@ -52,13 +58,24 @@ class LibrariesViewModel @Inject constructor(
     private val _sort = MutableStateFlow(LibrarySort())
     val sort = _sort.asStateFlow()
 
-    @OptIn(ExperimentalCoroutinesApi::class)
+    /** Raw text as the user types it, echoed straight back to the field. */
+    private val _query = MutableStateFlow("")
+    val query = _query.asStateFlow()
+
+    @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
     val books: Flow<PagingData<BookCard>> =
-        combine(_selectedId, _filters, _sort) { id, filters, sort -> Triple(id, filters, sort) }
-            .flatMapLatest { (id, filters, sort) ->
-                if (id == null) emptyFlow() else pagerFor(id, filters, sort)
+        combine(
+            _selectedId,
+            _filters,
+            _sort,
+            _query.debounce(SEARCH_DEBOUNCE_MS).distinctUntilChanged(),
+        ) { id, filters, sort, q -> QueryState(id, filters, sort, q) }
+            .flatMapLatest { state ->
+                if (state.libraryId == null) emptyFlow() else pagerFor(state.libraryId, state.filters, state.sort, state.query)
             }
             .cachedIn(viewModelScope)
+
+    private data class QueryState(val libraryId: Int?, val filters: LibraryFilters, val sort: LibrarySort, val query: String)
 
     init {
         loadLibraries()
@@ -98,16 +115,30 @@ class LibrariesViewModel @Inject constructor(
         }
     }
 
+    /** From the quick sort control next to the search field; keeps the same persisted prefs as the sheet. */
+    fun updateSort(sort: LibrarySort) {
+        _sort.value = sort
+        _selectedId.value?.let { id ->
+            viewModelScope.launch { prefsStore.save(id, StoredFilterPrefs(_filters.value, sort)) }
+        }
+    }
+
+    fun onQueryChange(value: String) {
+        _query.value = value
+        // Not persisted: relevance only makes sense while this query is typed.
+        _sort.value = sortForQueryChange(_sort.value, value, LibrarySort().field)
+    }
+
     suspend fun searchCatalog(kind: CatalogKind, query: String): List<String> =
         repo.searchCatalog(kind.path, query)
 
-    private fun pagerFor(libraryId: Int, filters: LibraryFilters, sort: LibrarySort): Flow<PagingData<BookCard>> =
+    private fun pagerFor(libraryId: Int, filters: LibraryFilters, sort: LibrarySort, query: String): Flow<PagingData<BookCard>> =
         Pager(
             config = PagingConfig(DEFAULT_PAGE_SIZE, initialLoadSize = DEFAULT_PAGE_SIZE, enablePlaceholders = false),
         ) {
             BookPagingSource(DEFAULT_PAGE_SIZE) { page, size ->
-                val query = buildBookQuery(filters, sort, page, size)
-                val result = repo.libraryBooks(libraryId, query)
+                val bookQuery = buildBookQuery(filters, sort, page, size, q = query)
+                val result = repo.libraryBooks(libraryId, bookQuery)
                 Triple(result.items, result.total, result.size)
             }
         }.flow
