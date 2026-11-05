@@ -28,7 +28,7 @@ class DashboardViewModelTest {
 
     private fun shelfConfigRepo(entries: List<ShelfConfigEntry>): DashboardShelfConfigRepository {
         val repo = mockk<DashboardShelfConfigRepository>()
-        every { repo.shelves() } returns entries
+        coEvery { repo.shelves() } returns entries
         return repo
     }
 

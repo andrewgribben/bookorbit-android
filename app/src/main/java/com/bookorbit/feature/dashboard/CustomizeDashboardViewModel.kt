@@ -31,7 +31,7 @@ class CustomizeDashboardViewModel @Inject constructor(
     val message = _message.asStateFlow()
 
     init {
-        _ui.value = UiState(entries = DashboardShelfConfig.ordered(repo.shelves()), loading = false)
+        viewModelScope.launch { _ui.value = UiState(entries = repo.shelves(), loading = false) }
     }
 
     fun consumeMessage() {

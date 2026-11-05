@@ -24,8 +24,16 @@ class DashboardShelfConfigRepository @Inject constructor(
     private fun rawConfig(): JsonObject? = session.currentUser?.settings?.get("dashboardShelfConfig") as? JsonObject
 
     /** Ordered, enabled-filtered-by-caller shelf entries for the signed-in user (or the defaults
-     * when signed out or the server has no config - see [DashboardShelfConfig.parse]). */
-    fun shelves(): List<ShelfConfigEntry> = DashboardShelfConfig.ordered(DashboardShelfConfig.parse(rawConfig()))
+     * when signed out or the server has no config - see [DashboardShelfConfig.parse]). Re-reads the
+     * user from the server first: the session copy is only fetched at sign-in, so shelves added or
+     * reordered on the web would otherwise never appear (and a save would overwrite them). Falls
+     * back to the cached copy offline. */
+    suspend fun shelves(): List<ShelfConfigEntry> {
+        if (session.currentUser != null) {
+            runCatching { api.getMe() }.getOrNull()?.let(session::updateCurrentUser)
+        }
+        return DashboardShelfConfig.ordered(DashboardShelfConfig.parse(rawConfig()))
+    }
 
     /**
      * Writes [entries] back to the server, preserving every field this app doesn't model (see

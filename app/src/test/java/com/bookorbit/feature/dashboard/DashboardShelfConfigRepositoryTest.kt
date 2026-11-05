@@ -17,6 +17,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class DashboardShelfConfigRepositoryTest {
@@ -27,7 +28,7 @@ class DashboardShelfConfigRepositoryTest {
     }
 
     @Test
-    fun `no signed-in user falls back to app defaults`() {
+    fun `no signed-in user falls back to app defaults`() = runTest {
         val api = mockk<ApiService>()
         val session = mockk<SessionManager>()
         every { session.currentUser } returns null
@@ -36,7 +37,7 @@ class DashboardShelfConfigRepositoryTest {
     }
 
     @Test
-    fun `reads the signed-in user's stored scrollers`() {
+    fun `reads the signed-in user's stored scrollers when the server can't be reached`() = runTest {
         val config = buildJsonObject {
             put(
                 "scrollers",
@@ -51,10 +52,27 @@ class DashboardShelfConfigRepositoryTest {
             )
         }
         val api = mockk<ApiService>()
+        coEvery { api.getMe() } throws RuntimeException("offline")
         val session = mockk<SessionManager>()
         every { session.currentUser } returns userWithConfig(config)
         val repo = DashboardShelfConfigRepository(api, session)
         assertEquals(listOf(ScrollerType.RECENTLY_ADDED), repo.shelves().map { it.type })
+    }
+
+    @Test
+    fun `picks up shelves changed on the server since sign-in`() = runTest {
+        fun config(type: String) = buildJsonObject {
+            put("scrollers", JsonArray(listOf(buildJsonObject { put("id", "1"); put("type", type); put("enabled", true); put("order", 1) })))
+        }
+        val fresh = userWithConfig(config("smart-scope"))
+        val api = mockk<ApiService>()
+        coEvery { api.getMe() } returns fresh
+        val session = mockk<SessionManager>(relaxed = true)
+        every { session.currentUser } returnsMany listOf(userWithConfig(config(ScrollerType.RECENTLY_ADDED)), fresh)
+        val repo = DashboardShelfConfigRepository(api, session)
+
+        assertEquals(listOf("smart-scope"), repo.shelves().map { it.type })
+        verify { session.updateCurrentUser(fresh) }
     }
 
     @Test
