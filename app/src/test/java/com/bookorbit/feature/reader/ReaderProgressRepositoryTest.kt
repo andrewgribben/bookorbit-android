@@ -14,6 +14,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -144,6 +145,24 @@ class ReaderProgressRepositoryTest {
 
         assertEquals("epubcfi(server)", initial.cfi)
         assertEquals(0.55, initial.fraction!!, 1e-9)
+        assertEquals("epubcfi(local)", initial.previousCfi)
+    }
+
+    @Test
+    fun `resolveInitial offers no undo when the server position is this device's own`() = runTest {
+        coEvery { dao.get(3) } returns ReaderProgressEntity(3, "epubcfi(same)", 55.0, 100L, dirty = false)
+        coEvery { api.getFileProgress(3) } returns FileProgress(cfi = "epubcfi(same)", percentage = 55.0, updatedAt = "2026-01-01T00:00:01Z")
+
+        assertNull(repo.resolveInitial(3).previousCfi)
+    }
+
+    @Test
+    fun `resolveInitial offers undo when a synced row replaced this device's synced position`() = runTest {
+        // e.g. read on the web or listened since this device last read: local is clean but older.
+        coEvery { dao.get(3) } returns ReaderProgressEntity(3, "epubcfi(local)", 10.0, 100L, dirty = false)
+        coEvery { api.getFileProgress(3) } returns FileProgress(cfi = "epubcfi(server)", percentage = 55.0, updatedAt = "2026-01-01T00:00:01Z")
+
+        assertEquals("epubcfi(local)", repo.resolveInitial(3).previousCfi)
     }
 
     @Test
@@ -155,6 +174,7 @@ class ReaderProgressRepositoryTest {
         val initial = repo.resolveInitial(3)
 
         assertEquals("epubcfi(local)", initial.cfi)
+        assertNull(initial.previousCfi)
     }
 
     @Test

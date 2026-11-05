@@ -32,6 +32,7 @@ data class OpenParams(
     val cfi: String?,
     val fraction: Double?,
     val settings: ReaderSettings,
+    val previousCfi: String? = null,
 )
 
 @Serializable
@@ -40,6 +41,7 @@ private data class OpenMeta(
     val cfi: String?,
     val fraction: Double?,
     val settings: ReaderSettings,
+    val previousCfi: String? = null,
 )
 
 // Base64 is streamed in slices so a large book never rides in a single evaluateJavascript call.
@@ -169,7 +171,7 @@ class ReaderController {
     // with embedded audio never has to push ~590MB of base64 through evaluateJavascript at all.
     private fun runOpen(params: OpenParams, context: Context) {
         openStartedAtMs = System.currentTimeMillis()
-        val meta = OpenMeta(params.format, params.cfi, params.fraction, params.settings)
+        val meta = OpenMeta(params.format, params.cfi, params.fraction, params.settings, params.previousCfi)
         val metaJson = ReaderBridge.json.encodeToString(OpenMeta.serializer(), meta)
 
         if (params.format.equals("epub", ignoreCase = true)) {
@@ -318,4 +320,4 @@ fun openParamsFor(
     format: String,
     initial: InitialProgress,
     settings: ReaderSettings,
-): OpenParams = OpenParams(ref, format, initial.cfi, initial.fraction, settings)
+): OpenParams = OpenParams(ref, format, initial.cfi, initial.fraction, settings, initial.previousCfi)

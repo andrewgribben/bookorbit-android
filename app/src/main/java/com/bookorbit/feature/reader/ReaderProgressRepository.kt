@@ -18,6 +18,9 @@ data class InitialProgress(
      * "Continue from another device?" prompt's `knownServerStamp` (null if the server wasn't
      * reachable, or had no `updatedAt`, at open). */
     val serverStampMs: Long? = null,
+    /** This device's own last position when a synced (server) position replaced it at open, so
+     * the reader can offer Undo back to it, like Readest. Null when nothing was replaced. */
+    val previousCfi: String? = null,
 )
 
 /** The server's current file position, with its write time - what the "newer position" check
@@ -114,7 +117,8 @@ class ReaderProgressRepository @Inject constructor(
         } else {
             return InitialProgress(null, null, serverStampMs = serverMillis)
         }
-        return InitialProgress(cfi, percentage?.let { it / 100.0 }, pageNumber, serverStampMs = serverMillis)
+        val previousCfi = local?.cfi?.takeIf { !useLocal && it != cfi }
+        return InitialProgress(cfi, percentage?.let { it / 100.0 }, pageNumber, serverStampMs = serverMillis, previousCfi = previousCfi)
     }
 
     /**
