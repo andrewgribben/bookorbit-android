@@ -108,6 +108,17 @@ class SessionManager @Inject constructor(
         _state.value = SessionState.SignedIn(user)
     }
 
+    /**
+     * Replaces the signed-in user in memory and in persisted storage, without touching the token.
+     * Used after a settings write (e.g. dashboard shelf customization) echoes back the merged
+     * server-side settings, so later reads (including a cold start) see the new value.
+     */
+    fun updateCurrentUser(user: AuthUser) {
+        if (_state.value !is SessionState.SignedIn) return
+        storage.putString(SecureStorage.KEY_USER, json.encodeToString(AuthUser.serializer(), user))
+        _state.value = SessionState.SignedIn(user)
+    }
+
     /** Called by [com.bookorbit.core.network.TokenRefresher] after a successful silent refresh. */
     fun updateAccessToken(token: String) {
         accessToken = token

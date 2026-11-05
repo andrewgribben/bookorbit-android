@@ -56,6 +56,7 @@ import com.bookorbit.feature.bookdetail.BookDetailScreen
 import com.bookorbit.feature.bookdrop.BookDropScreen
 import com.bookorbit.feature.dashboard.DashboardScreen
 import com.bookorbit.feature.downloads.DownloadsScreen
+import com.bookorbit.feature.dashboard.CustomizeDashboardScreen
 import com.bookorbit.feature.notes.NotesScreen
 import com.bookorbit.feature.player.MiniPlayer
 import com.bookorbit.feature.search.SearchScreen
@@ -71,6 +72,7 @@ internal object SubRoute {
     const val DOWNLOADS = "downloads"
     const val BOOK_DROP = "bookdrop"
     const val SETTINGS = "settings"
+    const val DASHBOARD_CUSTOMIZE = "dashboard-customize"
     const val BOOK_DETAIL = "book/{id}"
     const val AUTHOR = "author/{id}?name={name}"
     const val SERIES = "series/{id}?name={name}"
@@ -314,7 +316,12 @@ fun MainShell(
             composable(SubRoute.STATS) { CenteredContent { StatsScreen() } }
             composable(SubRoute.DOWNLOADS) { DownloadsScreen(onBookClick = onListBookClick) }
             composable(SubRoute.BOOK_DROP) { BookDropScreen() }
-            composable(SubRoute.SETTINGS) { CenteredContent { SettingsScreen() } }
+            composable(SubRoute.SETTINGS) {
+                CenteredContent { SettingsScreen(onCustomizeDashboard = { tabNav.navigate(SubRoute.DASHBOARD_CUSTOMIZE) }) }
+            }
+            composable(SubRoute.DASHBOARD_CUSTOMIZE) {
+                CenteredContent { CustomizeDashboardScreen(onBack = { tabNav.popBackStack() }) }
+            }
             composable(
                 route = SubRoute.BOOK_DETAIL,
                 arguments = listOf(navArgument("id") { type = NavType.IntType }),

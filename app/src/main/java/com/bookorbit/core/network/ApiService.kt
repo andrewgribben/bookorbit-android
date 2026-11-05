@@ -373,6 +373,15 @@ interface ApiService {
         @Query("smartScopeId") smartScopeId: Int? = null,
     ): JsonElement
 
+    /**
+     * `PATCH /api/v1/users/me/settings` (`user.controller.ts:92-95`): merges `body.settings` into the
+     * user's server-side settings jsonb and returns `{ id, settings }` with the merged result. Used to
+     * write back `dashboardShelfConfig` (`DashboardShelfConfig.save`) - the body is a raw object so
+     * callers can touch exactly one settings key without needing to know every other one that exists.
+     */
+    @PATCH("users/me/settings")
+    suspend fun updateMySettings(@Body body: com.bookorbit.core.model.UpdateMeSettingsRequest): com.bookorbit.core.model.MeSettingsResponse
+
     // --- Reading statistics ---
     @GET("user-statistics/summary")
     suspend fun getUserStatsSummary(): com.bookorbit.core.model.UserStatsSummary

@@ -6,6 +6,7 @@ import androidx.compose.ui.res.stringResource
 import com.bookorbit.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -64,7 +65,7 @@ import kotlin.math.pow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard: () -> Unit = {}) {
     val readerInterface by vm.readerInterface.collectAsStateWithLifecycle()
     val readingFullscreen by vm.readingFullscreen.collectAsStateWithLifecycle()
     val themeMode by vm.themeMode.collectAsStateWithLifecycle()
@@ -122,6 +123,13 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                         trailing = { Switch(checked = dynamicColor, onCheckedChange = vm::setDynamicColor) },
                     )
                 }
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.dashboard_customize_title)) },
+                    supportingContent = { Text(stringResource(R.string.dashboard_customize_desc)) },
+                    modifier = Modifier.clickable(onClick = onCustomizeDashboard),
+                )
             }
             item { HorizontalDivider() }
 

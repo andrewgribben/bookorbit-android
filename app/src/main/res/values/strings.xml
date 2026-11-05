@@ -213,6 +213,14 @@
     <string name="up_next_to_read">Up next to read</string>
     <string name="want_to_read_shelf">Want to read</string>
     <string name="up_next_in_series">Up next in series</string>
+    <string name="dashboard_shelf_random">Discover something new</string>
+    <string name="dashboard_customize_title">Customize Dashboard</string>
+    <string name="dashboard_customize_desc">Choose which shelves show on Home, and in what order.</string>
+    <string name="dashboard_customize_toggle">Show %1$s on Home</string>
+    <string name="dashboard_customize_move_up">Move %1$s up</string>
+    <string name="dashboard_customize_move_down">Move %1$s down</string>
+    <string name="dashboard_customize_reset">Reset to default</string>
+    <string name="dashboard_customize_save_failed">Couldn\'t save your dashboard shelves. Try again.</string>
     <string name="where_you_read">Where you read</string>
     <string name="year">Year</string>
     <string name="settings_material_you">Material You colours</string>
