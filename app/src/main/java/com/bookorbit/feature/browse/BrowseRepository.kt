@@ -42,12 +42,24 @@ class BrowseRepository @Inject constructor(
     suspend fun collectionBooks(id: Int, page: Int, size: Int): BooksPage =
         api.getCollectionBooks(id, page, size)
 
-    suspend fun authors(page: Int, size: Int): AuthorsPage = api.getAuthors(page = page, size = size)
+    suspend fun authors(
+        page: Int,
+        size: Int,
+        sort: String = "name",
+        order: String = "asc",
+        q: String? = null,
+    ): AuthorsPage = api.getAuthors(page = page, size = size, sort = sort, order = order, q = q?.takeIf { it.isNotBlank() })
 
     suspend fun authorBooks(id: Int, page: Int, size: Int): BooksPage =
         api.getAuthorBooks(id, page, size)
 
-    suspend fun series(page: Int, size: Int): SeriesPage = api.getSeries(page = page, size = size)
+    suspend fun series(
+        page: Int,
+        size: Int,
+        sort: String = "name",
+        order: String = "asc",
+        q: String? = null,
+    ): SeriesPage = api.getSeries(page = page, size = size, sort = sort, order = order, q = q?.takeIf { it.isNotBlank() })
 
     suspend fun seriesBooks(seriesId: Int, page: Int, size: Int): SeriesBooksPage =
         api.getSeriesBooks(seriesId, page, size)

@@ -31,4 +31,25 @@ class FilterPrefsStore @Inject constructor(
     suspend fun save(libraryId: Int, prefs: StoredFilterPrefs) {
         context.filterDataStore.edit { it[key(libraryId)] = json.encodeToString(prefs) }
     }
+
+    private val seriesSortKey = stringPreferencesKey("series_sort")
+    private val authorsSortKey = stringPreferencesKey("authors_sort")
+
+    suspend fun loadSeriesSort(default: LibrarySort): LibrarySort {
+        val raw = context.filterDataStore.data.first()[seriesSortKey] ?: return default
+        return runCatching { json.decodeFromString<LibrarySort>(raw) }.getOrDefault(default)
+    }
+
+    suspend fun saveSeriesSort(sort: LibrarySort) {
+        context.filterDataStore.edit { it[seriesSortKey] = json.encodeToString(sort) }
+    }
+
+    suspend fun loadAuthorsSort(default: LibrarySort): LibrarySort {
+        val raw = context.filterDataStore.data.first()[authorsSortKey] ?: return default
+        return runCatching { json.decodeFromString<LibrarySort>(raw) }.getOrDefault(default)
+    }
+
+    suspend fun saveAuthorsSort(sort: LibrarySort) {
+        context.filterDataStore.edit { it[authorsSortKey] = json.encodeToString(sort) }
+    }
 }

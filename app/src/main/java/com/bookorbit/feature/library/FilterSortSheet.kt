@@ -41,6 +41,7 @@ import com.bookorbit.feature.library.filters.LibrarySort
 import com.bookorbit.feature.library.filters.READ_PROGRESS_OPTIONS
 import com.bookorbit.feature.library.filters.READ_STATUS_OPTIONS
 import com.bookorbit.feature.library.filters.SORT_OPTIONS
+import com.bookorbit.feature.library.filters.defaultSortDirection
 import com.bookorbit.ui.components.TypeaheadMultiSelect
 
 private fun <T> toggle(list: List<T>, item: T): List<T> =
@@ -73,7 +74,7 @@ fun FilterSortSheet(
                 SORT_OPTIONS.forEach { (field, labelRes) ->
                     FilterChip(
                         selected = sort.field == field,
-                        onClick = { sort = sort.copy(field = field) },
+                        onClick = { if (field != sort.field) sort = LibrarySort(field, defaultSortDirection(field)) },
                         label = { Text(stringResource(labelRes)) },
                     )
                 }
