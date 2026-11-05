@@ -48,11 +48,13 @@ import coil.compose.AsyncImage
 import com.bookorbit.core.model.BookCard
 import com.bookorbit.core.model.ReadingGoalWidget
 import com.bookorbit.core.model.ReadingStreakWidget
+import com.bookorbit.core.model.ScrollerType
+import com.bookorbit.core.model.knownShelfLabelRes
 import com.bookorbit.ui.LocalImageUrls
 import com.bookorbit.ui.components.HorizontalBookScroller
 import java.time.LocalTime
 
-/** Home: greeting, streak/goal strip, one "continue" card, then the usual shelves. */
+/** Home: greeting, streak/goal strip, one "continue" card, then the user's configured shelves. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
@@ -62,12 +64,7 @@ fun DashboardScreen(
     vm: DashboardViewModel = hiltViewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    val isEmpty = !ui.loading &&
-        ui.continueReading.isEmpty() &&
-        ui.continueListening.isEmpty() &&
-        ui.recentlyAdded.isEmpty() &&
-        ui.wantToRead.isEmpty() &&
-        ui.upNextInSeries.isEmpty()
+    val isEmpty = !ui.loading && ui.shelves.all { it.books.isEmpty() }
 
     PullToRefreshBox(
         isRefreshing = ui.loading,
@@ -93,9 +90,12 @@ fun DashboardScreen(
                 else -> {
                     StatsStrip(streak = ui.streak, goal = ui.goal)
 
-                    // The hero is the book to pick up next: reading first, then listening.
-                    val heroFromReading = ui.continueReading.firstOrNull()
-                    val hero = heroFromReading ?: ui.continueListening.firstOrNull()
+                    // The hero is the book to pick up next: reading first, then listening - only
+                    // when that shelf is actually enabled (it's just absent from ui.shelves otherwise).
+                    val readingShelf = ui.shelves.firstOrNull { it.entry.type == ScrollerType.CONTINUE_READING }
+                    val listeningShelf = ui.shelves.firstOrNull { it.entry.type == ScrollerType.CONTINUE_LISTENING }
+                    val heroFromReading = readingShelf?.books?.firstOrNull()
+                    val hero = heroFromReading ?: listeningShelf?.books?.firstOrNull()
                     if (hero != null) {
                         ContinueCard(
                             book = hero,
@@ -104,13 +104,24 @@ fun DashboardScreen(
                         )
                     }
 
-                    val moreReading = if (heroFromReading != null) ui.continueReading.drop(1) else ui.continueReading
-                    val moreListening = if (heroFromReading != null) ui.continueListening else ui.continueListening.drop(1)
-                    if (moreReading.isNotEmpty()) HorizontalBookScroller(stringResource(R.string.up_next_to_read), moreReading, onBookClick)
-                    if (moreListening.isNotEmpty()) HorizontalBookScroller(stringResource(R.string.continue_listening), moreListening, onBookClick)
-                    if (ui.recentlyAdded.isNotEmpty()) HorizontalBookScroller(stringResource(R.string.recently_added), ui.recentlyAdded, onBookClick)
-                    if (ui.wantToRead.isNotEmpty()) HorizontalBookScroller(stringResource(R.string.want_to_read_shelf), ui.wantToRead, onBookClick)
-                    if (ui.upNextInSeries.isNotEmpty()) HorizontalBookScroller(stringResource(R.string.up_next_in_series), ui.upNextInSeries, onBookClick)
+                    ui.shelves.forEach { shelf ->
+                        val books = when {
+                            shelf === readingShelf && heroFromReading != null -> shelf.books.drop(1)
+                            shelf === listeningShelf && heroFromReading == null -> shelf.books.drop(1)
+                            shelf === listeningShelf && heroFromReading != null -> shelf.books
+                            else -> shelf.books
+                        }
+                        if (books.isNotEmpty()) {
+                            // The reading shelf already gave up its first book to the hero card above;
+                            // the rest reads as "up next" rather than "continue reading" again.
+                            val label = when {
+                                shelf === readingShelf && heroFromReading != null -> stringResource(R.string.up_next_to_read)
+                                else -> knownShelfLabelRes(shelf.entry.type)?.let { stringResource(it) }
+                                    ?: shelf.entry.label.ifBlank { shelf.entry.type }
+                            }
+                            HorizontalBookScroller(label, books, onBookClick)
+                        }
+                    }
                 }
             }
             Spacer(Modifier.height(24.dp))

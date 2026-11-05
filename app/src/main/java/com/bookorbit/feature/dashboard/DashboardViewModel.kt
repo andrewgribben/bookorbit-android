@@ -6,30 +6,32 @@ import androidx.lifecycle.viewModelScope
 import com.bookorbit.core.model.BookCard
 import com.bookorbit.core.model.ReadingGoalWidget
 import com.bookorbit.core.model.ReadingStreakWidget
-import com.bookorbit.core.model.ScrollerType
+import com.bookorbit.core.model.ShelfConfigEntry
 import com.bookorbit.feature.browse.BrowseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** One configured shelf with the books it resolved to (possibly empty - the caller hides it). */
+data class ShelfUi(val entry: ShelfConfigEntry, val books: List<BookCard>)
+
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val repo: BrowseRepository,
+    private val shelfConfigRepo: DashboardShelfConfigRepository,
 ) : ViewModel() {
 
     data class UiState(
-        val continueReading: List<BookCard> = emptyList(),
-        val continueListening: List<BookCard> = emptyList(),
-        val recentlyAdded: List<BookCard> = emptyList(),
-        /** Empty on servers that predate the `want-to-read` scroller type: the shelf just hides. */
-        val wantToRead: List<BookCard> = emptyList(),
-        /** Empty on servers that predate the `up-next-in-series` scroller type: the shelf just hides. */
-        val upNextInSeries: List<BookCard> = emptyList(),
+        /** The user's enabled shelves, in their configured order, each with its fetched books -
+         * including shelf types this app doesn't recognise (see [DashboardShelfConfigRepository]).
+         * A shelf with no books hides itself at render time, same as before this config existed. */
+        val shelves: List<ShelfUi> = emptyList(),
         val loading: Boolean = true,
-        /** True when every scroller request failed — distinct from a genuinely empty library. */
+        /** True when every enabled shelf failed to load - distinct from a genuinely empty library. */
         val error: Boolean = false,
         /** Null when the server predates the widget endpoints (or the call failed): the strip is simply hidden. */
         val streak: ReadingStreakWidget? = null,
@@ -41,43 +43,39 @@ class DashboardViewModel @Inject constructor(
 
     init {
         refresh()
+        viewModelScope.launch { shelfConfigRepo.saved.collect { refresh() } }
     }
 
     fun refresh() {
         _ui.value = _ui.value.copy(loading = true)
         viewModelScope.launch {
+            val enabledShelves = shelfConfigRepo.shelves().filter { it.enabled }
             var failures = 0
-            suspend fun load(type: String): List<BookCard> =
-                runCatching { repo.scroller(type) }
+
+            suspend fun load(entry: ShelfConfigEntry): ShelfUi {
+                val books = runCatching { repo.scroller(entry.type, entry.limit, entry.smartScopeId) }
                     .onFailure {
                         failures++
-                        Log.w("Dashboard", "scroller $type failed", it)
+                        Log.w("Dashboard", "scroller ${entry.type} failed", it)
                     }
                     .getOrDefault(emptyList())
+                return ShelfUi(entry, books)
+            }
 
             val streak = async { runCatching { repo.readingStreak() }.getOrNull() }
             val goal = async { runCatching { repo.readingGoal() }.getOrNull() }
-            val continueReading = async { load(ScrollerType.CONTINUE_READING) }
-            val continueListening = async { load(ScrollerType.CONTINUE_LISTENING) }
-            val recentlyAdded = async { load(ScrollerType.RECENTLY_ADDED) }
-            val wantToRead = async { load(ScrollerType.WANT_TO_READ) }
-            val upNextInSeries = async { load(ScrollerType.UP_NEXT_IN_SERIES) }
-            val reading = continueReading.await()
-            val listening = continueListening.await()
-            val recent = recentlyAdded.await()
-            val toRead = wantToRead.await()
-            val nextInSeries = upNextInSeries.await()
+            val shelves = enabledShelves.map { entry -> async { load(entry) } }.awaitAll()
+
             _ui.value = UiState(
-                reading,
-                listening,
-                recent,
-                toRead,
-                nextInSeries,
+                shelves = shelves,
                 loading = false,
-                error = failures == 5,
+                error = enabledShelves.isNotEmpty() && failures == enabledShelves.size,
                 streak = streak.await(),
                 goal = goal.await(),
             )
         }
     }
 }
+
+/** First non-empty shelf of [type] in display order, or an empty list if none/disabled. */
+fun List<ShelfUi>.booksFor(type: String): List<BookCard> = firstOrNull { it.entry.type == type }?.books.orEmpty()
