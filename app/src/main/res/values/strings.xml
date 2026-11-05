@@ -224,6 +224,10 @@
     <string name="settings_folder_inaccessible">This folder isn\'t accessible anymore (permission revoked or the storage was removed). New downloads will use app storage until you pick a new folder.</string>
     <string name="settings_progress_book">Whole book</string>
     <string name="settings_progress_chapter">Chapter</string>
+    <string name="settings_media_buttons">Car and headset next/previous</string>
+    <string name="settings_media_buttons_desc">Android Auto, steering-wheel, headset and lock-screen buttons</string>
+    <string name="settings_media_buttons_chapter">Change chapter</string>
+    <string name="settings_media_buttons_skip">Skip back/forward</string>
     <string name="settings_app_version">App version</string>
     <string name="settings_update_available">Update available</string>
     <string name="settings_up_to_date">Up to date</string>

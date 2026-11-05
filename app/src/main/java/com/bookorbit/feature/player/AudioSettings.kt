@@ -45,11 +45,26 @@ enum class ProgressBarMode {
     }
 }
 
+/** What next/previous does on system controls (Android Auto, steering-wheel/headset buttons, lock
+ * screen, notification). The in-app player's own chapter buttons are not affected. */
+enum class MediaButtonMode {
+    /** Jump to the next/previous chapter. */
+    CHAPTER,
+
+    /** Skip forward/back by [AudioSettings.skipForwardSeconds]/[AudioSettings.skipBackSeconds]. */
+    SKIP;
+
+    companion object {
+        fun parse(raw: String?): MediaButtonMode = entries.firstOrNull { it.name == raw } ?: CHAPTER
+    }
+}
+
 data class AudioSettings(
     val speed: Float = DEFAULT_SPEED,
     val skipBackSeconds: Int = DEFAULT_SKIP_BACK,
     val skipForwardSeconds: Int = DEFAULT_SKIP_FORWARD,
     val progressBarMode: ProgressBarMode = ProgressBarMode.BOOK,
+    val mediaButtonMode: MediaButtonMode = MediaButtonMode.CHAPTER,
 )
 
 private val Context.audioDataStore by preferencesDataStore("audio_settings")
@@ -62,6 +77,7 @@ class AudioSettingsStore @Inject constructor(
     private val skipBackKey = intPreferencesKey("skip_back")
     private val skipForwardKey = intPreferencesKey("skip_forward")
     private val progressBarModeKey = stringPreferencesKey("progress_bar_mode")
+    private val mediaButtonModeKey = stringPreferencesKey("media_button_mode")
 
     val settings: Flow<AudioSettings> = context.audioDataStore.data.map { prefs ->
         prefs.toAudioSettings()
@@ -73,6 +89,7 @@ class AudioSettingsStore @Inject constructor(
             skipBackSeconds = this[skipBackKey] ?: DEFAULT_SKIP_BACK,
             skipForwardSeconds = this[skipForwardKey] ?: DEFAULT_SKIP_FORWARD,
             progressBarMode = ProgressBarMode.parse(this[progressBarModeKey]),
+            mediaButtonMode = MediaButtonMode.parse(this[mediaButtonModeKey]),
         )
     }
 
@@ -107,5 +124,9 @@ class AudioSettingsStore @Inject constructor(
 
     suspend fun saveProgressBarMode(mode: ProgressBarMode) {
         context.audioDataStore.edit { it[progressBarModeKey] = mode.name }
+    }
+
+    suspend fun saveMediaButtonMode(mode: MediaButtonMode) {
+        context.audioDataStore.edit { it[mediaButtonModeKey] = mode.name }
     }
 }

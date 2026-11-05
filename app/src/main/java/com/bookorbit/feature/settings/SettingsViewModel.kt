@@ -22,6 +22,7 @@ import com.bookorbit.core.settings.ReaderInterface
 import com.bookorbit.feature.downloads.DownloadsRepository
 import com.bookorbit.feature.player.AudioSettingsStore
 import com.bookorbit.feature.player.DEFAULT_SPEED
+import com.bookorbit.feature.player.MediaButtonMode
 import com.bookorbit.feature.player.ProgressBarMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -119,6 +120,10 @@ class SettingsViewModel @Inject constructor(
         .map { it.progressBarMode }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ProgressBarMode.BOOK)
 
+    val mediaButtonMode: StateFlow<MediaButtonMode> = audioSettingsStore.settings
+        .map { it.mediaButtonMode }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MediaButtonMode.CHAPTER)
+
     val downloadTreeUri: StateFlow<Uri?> = locationStore.treeUri
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -156,6 +161,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setProgressBarMode(mode: ProgressBarMode) {
         viewModelScope.launch { audioSettingsStore.saveProgressBarMode(mode) }
+    }
+
+    fun setMediaButtonMode(mode: MediaButtonMode) {
+        viewModelScope.launch { audioSettingsStore.saveMediaButtonMode(mode) }
     }
 
     fun clearImageCache() {
