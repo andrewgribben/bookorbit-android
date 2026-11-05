@@ -12,6 +12,7 @@
  * asset served by WebViewAssetLoader.
  */
 import './foliate/view.js';
+import * as CFI from './foliate/epubcfi.js';
 
 const container = document.getElementById('reader');
 
@@ -671,6 +672,24 @@ function attachDocHandlers(doc, index) {
   });
 }
 
+/** Opening jumped to a synced position: record [this device's last position, synced position] so
+ * Undo returns to where this device was (Readest opens locally, then goTo's the synced one).
+ * Skipped when the old position is on the page now shown - Undo would go nowhere. */
+function offerUndoTo(previousCfi, openedCfi) {
+  try {
+    const page = view.lastLocation?.cfi;
+    if (page) {
+      const at = CFI.collapse(previousCfi);
+      if (CFI.compare(at, CFI.collapse(page)) >= 0 && CFI.compare(at, CFI.collapse(page, true)) <= 0) return;
+    }
+  } catch {
+    // unparseable CFI: still offer Undo; foliate ignores a target it can't resolve
+  }
+  view.history.clear();
+  view.history.pushState(previousCfi);
+  view.history.pushState(openedCfi);
+}
+
 /* ----------------------------------------------------------- create view */
 function postHistory() {
   post({ type: 'history', canGoBack: !!view?.history?.canGoBack, canGoForward: !!view?.history?.canGoForward });
@@ -815,6 +834,7 @@ async function finishOpen(meta) {
     }
   }
   if (!navigated) await view.goTo(0).catch(() => {});
+  if (navigated && meta.cfi && meta.previousCfi) offerUndoTo(meta.previousCfi, meta.cfi);
   // goTo can resolve without relocating (paginator locked, index out of range); never let the
   // flag outlive the open and swallow the user's first real page turn.
   setTimeout(() => { restoringPosition = false; }, 0);
