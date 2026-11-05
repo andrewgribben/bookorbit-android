@@ -143,4 +143,135 @@ class ReaderViewModelTest {
 
         coVerify { progress.report(5, "epubcfi(/6/8)", 90.0, null) }
     }
+
+    // --- "Continue from another device?" (newer-position prompt) ---
+
+    @Test
+    fun `onReaderResumed offers a newer position from another device`() = runTest {
+        coEvery { progress.resolveInitial(5) } returns InitialProgress("epubcfi(/6/2)", 0.1, serverStampMs = 100L)
+        coEvery { progress.fetchServerPosition(5) } returns
+            ServerPosition(cfi = "epubcfi(/6/9)", fraction = 0.8, percentage = 80.0, stampMs = 200L)
+        val model = vm()
+        model.onLoaded(emptyList(), "Title")
+        model.onRelocate("epubcfi(/6/2)", 0.1, "Ch 1", reason = "navigation", restoring = true)
+        model.flush()
+
+        model.onReaderResumed()
+
+        assertEquals("epubcfi(/6/9)", model.ui.value.newerPosition?.cfi)
+        assertEquals(80.0, model.ui.value.newerPosition?.remotePercentage)
+    }
+
+    @Test
+    fun `onReaderResumed does nothing before the book has finished its initial load`() = runTest {
+        coEvery { progress.resolveInitial(5) } returns InitialProgress("epubcfi(/6/2)", 0.1, serverStampMs = 100L)
+        coEvery { progress.fetchServerPosition(5) } returns
+            ServerPosition(cfi = "epubcfi(/6/9)", fraction = 0.8, percentage = 80.0, stampMs = 200L)
+        val model = vm() // onLoaded() never called - initial navigation still "pending"
+
+        model.onReaderResumed()
+
+        coVerify(exactly = 0) { progress.fetchServerPosition(5) }
+    }
+
+    @Test
+    fun `onReaderResumed does not offer when there is no newer server stamp`() = runTest {
+        coEvery { progress.resolveInitial(5) } returns InitialProgress("epubcfi(/6/2)", 0.1, serverStampMs = 200L)
+        coEvery { progress.fetchServerPosition(5) } returns
+            ServerPosition(cfi = "epubcfi(/6/2)", fraction = 0.1, percentage = 10.0, stampMs = 200L)
+        val model = vm()
+        model.onLoaded(emptyList(), "Title")
+
+        model.onReaderResumed()
+
+        assertEquals(null, model.ui.value.newerPosition)
+    }
+
+    @Test
+    fun `onReaderResumed does not offer while narration is playing`() = runTest {
+        coEvery { progress.resolveInitial(5) } returns InitialProgress("epubcfi(/6/2)", 0.1, serverStampMs = 100L)
+        coEvery { progress.fetchServerPosition(5) } returns
+            ServerPosition(cfi = "epubcfi(/6/9)", fraction = 0.8, percentage = 80.0, stampMs = 200L)
+        val model = vm()
+        model.onLoaded(emptyList(), "Title")
+        // narrationOn only flips on a real `NarrationReady` event, which needs media3's
+        // MediaItem.Builder (android.os.Bundle-backed - unavailable outside Robolectric/
+        // instrumentation). onReaderResumed's gate is exercised directly via reflection instead,
+        // keeping this test a plain JVM unit test like the rest of the suite.
+        val uiField = ReaderViewModel::class.java.getDeclaredField("_ui")
+        uiField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val uiFlow = uiField.get(model) as kotlinx.coroutines.flow.MutableStateFlow<ReaderViewModel.UiState>
+        uiFlow.value = uiFlow.value.copy(narrationOn = true)
+        assertEquals(true, model.ui.value.narrationOn)
+
+        model.onReaderResumed()
+
+        coVerify(exactly = 0) { progress.fetchServerPosition(5) }
+    }
+
+    @Test
+    fun `onReaderResumed is throttled to one check per 5 seconds`() = runTest {
+        coEvery { progress.resolveInitial(5) } returns InitialProgress("epubcfi(/6/2)", 0.1, serverStampMs = 100L)
+        coEvery { progress.fetchServerPosition(5) } returns
+            ServerPosition(cfi = "epubcfi(/6/9)", fraction = 0.8, percentage = 80.0, stampMs = 200L)
+        val model = vm()
+        model.onLoaded(emptyList(), "Title")
+
+        model.onReaderResumed()
+        model.onReaderResumed()
+
+        coVerify(exactly = 1) { progress.fetchServerPosition(5) }
+    }
+
+    @Test
+    fun `followNewerPosition navigates without saving back`() = runTest {
+        coEvery { progress.resolveInitial(5) } returns InitialProgress("epubcfi(/6/2)", 0.1, serverStampMs = 100L)
+        coEvery { progress.fetchServerPosition(5) } returns
+            ServerPosition(cfi = "epubcfi(/6/9)", fraction = 0.8, percentage = 80.0, stampMs = 200L)
+        val model = vm()
+        model.onLoaded(emptyList(), "Title")
+        model.onReaderResumed()
+        assertEquals("epubcfi(/6/9)", model.ui.value.newerPosition?.cfi)
+
+        model.followNewerPosition()
+        // The WebView lands back on the adopted cfi; that relocate must not be reported.
+        model.onRelocate("epubcfi(/6/9)", 0.8, "Ch 9", reason = "navigation", restoring = false)
+        model.flush()
+
+        assertEquals(null, model.ui.value.newerPosition)
+        coVerify(exactly = 0) { progress.report(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `stayAtCurrentPosition saves this reader's own position immediately`() = runTest {
+        coEvery { progress.resolveInitial(5) } returns InitialProgress("epubcfi(/6/2)", 0.1, serverStampMs = 100L)
+        coEvery { progress.fetchServerPosition(5) } returns
+            ServerPosition(cfi = "epubcfi(/6/9)", fraction = 0.8, percentage = 80.0, stampMs = 200L)
+        coEvery { progress.report(any(), any(), any(), any()) } returns Unit
+        val model = vm()
+        model.onLoaded(emptyList(), "Title")
+        model.onRelocate("epubcfi(/6/2)", 0.1, "Ch 1", reason = "navigation", restoring = true)
+        model.onReaderResumed()
+        assertEquals("epubcfi(/6/9)", model.ui.value.newerPosition?.cfi)
+
+        model.stayAtCurrentPosition()
+
+        assertEquals(null, model.ui.value.newerPosition)
+        coVerify { progress.report(5, "epubcfi(/6/2)", 10.0, null) }
+    }
+
+    @Test
+    fun `a same-cfi check adopts the server stamp without offering`() = runTest {
+        coEvery { progress.resolveInitial(5) } returns InitialProgress("epubcfi(/6/2)", 0.1, serverStampMs = 100L)
+        coEvery { progress.fetchServerPosition(5) } returns
+            ServerPosition(cfi = "epubcfi(/6/2)", fraction = 0.1, percentage = 10.0, stampMs = 200L)
+        val model = vm()
+        model.onLoaded(emptyList(), "Title")
+        model.onRelocate("epubcfi(/6/2)", 0.1, "Ch 1", reason = "navigation", restoring = true)
+
+        model.onReaderResumed()
+
+        assertEquals(null, model.ui.value.newerPosition)
+    }
 }

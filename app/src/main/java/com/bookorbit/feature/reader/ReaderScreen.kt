@@ -54,6 +54,9 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -112,6 +115,23 @@ fun ReaderScreen(
         onDispose { view.keepScreenOn = false }
     }
 
+    // "Continue from another device?" (newer-position prompt): checked on ON_RESUME, but not the
+    // very first one - that's just this screen appearing, and opening already resolved the newest
+    // position (see ReaderViewModel.load/resolveInitial). Only later resumes (backgrounding this
+    // app and coming back, e.g.) are a return worth asking about, same as web's visibilitychange/
+    // focus listeners firing after the tab was actually hidden.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, vm) {
+        var sawFirstResume = false
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (sawFirstResume) vm.onReaderResumed() else sawFirstResume = true
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // Volume keys and hardware arrows turn pages while this screen is showing (task 2): the
     // registry is consulted from MainActivity.dispatchKeyEvent, not Compose focus, so it works
     // regardless of whether the WebView currently holds focus.
@@ -166,6 +186,10 @@ fun ReaderScreen(
                 ReaderViewModel.ReaderCommand.NarrationCancelPrepare -> controller.narrationCancelPrepare()
                 is ReaderViewModel.ReaderCommand.NarrationHighlight -> controller.narrationHighlight(cmd.textHref)
                 ReaderViewModel.ReaderCommand.NarrationUnhighlight -> controller.narrationUnhighlight()
+                is ReaderViewModel.ReaderCommand.GoToNewerPosition -> {
+                    val cfi = cmd.cfi
+                    if (cfi != null) controller.goTo(cfi) else cmd.fraction?.let(controller::goToFraction)
+                }
             }
         }
     }
@@ -480,6 +504,15 @@ fun ReaderScreen(
             onSetEndOfChapter = { vm.setSleepTimerEndOfChapter() },
             onCancel = { vm.cancelSleepTimer() },
             onDismiss = { showSleepTimerSheet = false },
+        )
+    }
+
+    ui.newerPosition?.let { offer ->
+        NewerPositionDialog(
+            remotePercentage = offer.remotePercentage,
+            localPercentage = offer.localPercentage,
+            onFollow = vm::followNewerPosition,
+            onStay = vm::stayAtCurrentPosition,
         )
     }
 }
