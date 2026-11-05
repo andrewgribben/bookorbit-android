@@ -16,4 +16,7 @@ data class ReaderProgressEntity(
     val updatedAt: Long,
     val dirty: Boolean,
     val pageNumber: Int? = null,
+    /** Read-aloud EPUBs: first narrated sentence on the page, re-sent with an offline retry. */
+    val mediaOverlayFragment: String? = null,
+    val mediaOverlaySectionIndex: Int? = null,
 )
