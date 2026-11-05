@@ -26,10 +26,26 @@ class DashboardViewModelTest {
     private fun entry(type: String, order: Int, enabled: Boolean = true) =
         ShelfConfigEntry(id = type, type = type, label = "", enabled = enabled, order = order)
 
-    private fun shelfConfigRepo(entries: List<ShelfConfigEntry>): DashboardShelfConfigRepository {
+    private fun shelfConfigRepo(
+        entries: List<ShelfConfigEntry>,
+        saved: kotlinx.coroutines.flow.SharedFlow<Unit> = kotlinx.coroutines.flow.MutableSharedFlow(),
+    ): DashboardShelfConfigRepository {
         val repo = mockk<DashboardShelfConfigRepository>()
         coEvery { repo.shelves() } returns entries
+        every { repo.saved } returns saved
         return repo
+    }
+
+    @Test
+    fun `saving the shelf config reloads home`() {
+        val saved = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        val config = shelfConfigRepo(defaultEntries, saved)
+        val vm = DashboardViewModel(repo(), config)
+        coEvery { config.shelves() } returns listOf(entry(ScrollerType.WANT_TO_READ, 1))
+
+        saved.tryEmit(Unit)
+
+        assertEquals(listOf(ScrollerType.WANT_TO_READ), vm.ui.value.shelves.map { it.entry.type })
     }
 
     private fun repo(

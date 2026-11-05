@@ -43,6 +43,7 @@ class DashboardViewModel @Inject constructor(
 
     init {
         refresh()
+        viewModelScope.launch { shelfConfigRepo.saved.collect { refresh() } }
     }
 
     fun refresh() {
