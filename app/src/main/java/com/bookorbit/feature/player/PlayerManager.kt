@@ -103,6 +103,20 @@ class PlayerManager @Inject constructor(
     private var lastReport = 0L
     private val settingsLoaded = CompletableDeferred<Unit>()
 
+    /** When [applyQueue]/[adoptExternalQueue] last resolved a fresh position for the currently
+     * loaded book - the play-start refresh (see [maybeRefreshOnPlayStart]) skips itself for a
+     * while after that, since that resolve is already fresh. */
+    private var lastResolvedAtMs = 0L
+
+    /** Bumped on every user-initiated seek ([seekToAbsoluteNow]); an in-flight play-start refresh
+     * that sees it move gives way to the user's own seek instead of overwriting it. */
+    private val seekGeneration = AtomicInteger()
+
+    /** Non-null while a play-start refresh is checking the server for that book - [report] skips
+     * every send for that book meanwhile (poller and pause alike), so nothing can push the
+     * stale pre-refresh position to the server ahead of the refresh's answer. */
+    private var refreshSuppressingReportsForBookId: Int? = null
+
     /** Bumped whenever the user, the car, or [stop] changes the queue; an in-flight launch restore
      * that sees it move gives way instead of replacing what was just started. Atomic because Android
      * Auto calls [adoptExternalQueue] off the main thread. */
@@ -119,7 +133,14 @@ class PlayerManager @Inject constructor(
             _state.update { it.copy(isPlaying = isPlaying, playerError = if (isPlaying) null else it.playerError) }
             // Narration isn't a server audiobook "listening" session - it's driven by the reader's
             // own reading-session tracking instead (see ReaderViewModel).
-            if (!_state.value.narrationActive) sessions.setListeningActive(isPlaying)
+            if (!_state.value.narrationActive) {
+                sessions.setListeningActive(isPlaying)
+                // The poller only reports every 5s while playing (see startPoller); pausing used to
+                // leave whatever position was last polled unsent, so opening the EPUB right after
+                // could resolve an earlier position than where listening actually stopped. Force a
+                // report the moment playback stops.
+                if (!isPlaying) scope.launch { report(force = true) } else maybeRefreshOnPlayStart()
+            }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -256,6 +277,7 @@ class PlayerManager @Inject constructor(
         val totalDurationSec = PlaybackQueue.totalDurationSec(data.files)
         val index = resume?.let { r -> data.files.indexOfFirst { it.id == r.currentFileId }.coerceAtLeast(0) } ?: 0
         val positionMs = ((resume?.positionSeconds ?: 0.0) * 1000).toLong()
+        lastResolvedAtMs = System.currentTimeMillis()
         val loaded = c.sendCustomCommand(
             BookQueueCommand.command,
             BookQueueCommand.encode(BookQueueCommand.Load(data.mediaItems, index, positionMs, speed, autoPlay)),
@@ -289,6 +311,7 @@ class PlayerManager @Inject constructor(
      */
     fun adoptExternalQueue(book: BookDetail, files: List<BookFileRef>) {
         loadGeneration.incrementAndGet()
+        lastResolvedAtMs = System.currentTimeMillis()
         scope.launch {
             controller() // ensure the listener is attached so play/pause state tracks
             _state.update {
@@ -382,6 +405,7 @@ class PlayerManager @Inject constructor(
     fun seekToAbsolute(absoluteSec: Double) = scope.launch { seekToAbsoluteNow(absoluteSec) }
 
     private suspend fun seekToAbsoluteNow(absoluteSec: Double) {
+        seekGeneration.incrementAndGet()
         val c = controller()
         val files = _state.value.files
         if (files.isEmpty()) return
@@ -479,22 +503,78 @@ class PlayerManager @Inject constructor(
      * whenever the player screen (or mini-player) becomes visible again, since a long-lived app
      * process otherwise never re-fetches after the initial [loadAndPlay].
      */
-    fun refreshIfStale() = scope.launch {
+    fun refreshIfStale() = scope.launch { refreshIfStaleNow() }
+
+    private suspend fun refreshIfStaleNow() {
         val generation = loadGeneration.get()
-        val c = controller ?: return@launch
-        if (c.isPlaying) return@launch
-        val book = _state.value.currentBook ?: return@launch
+        val c = controller ?: return
+        if (c.isPlaying) return
+        val book = _state.value.currentBook ?: return
         val files = _state.value.files
-        if (files.isEmpty()) return@launch
-        val resume = audioProgress.resolveResume(book.id) ?: return@launch
-        if (generation != loadGeneration.get() || c.isPlaying) return@launch
+        if (files.isEmpty()) return
+        val resume = audioProgress.resolveResume(book.id) ?: return
+        if (generation != loadGeneration.get() || c.isPlaying) return
         val resumeIdx = files.indexOfFirst { it.id == resume.currentFileId }.coerceAtLeast(0)
         val resumeAbs = PlaybackQueue.toAbsoluteSec(files, resumeIdx, resume.positionSeconds)
-        val currentAbs = (bookPositionMs() ?: return@launch) / 1000.0
+        val currentAbs = (bookPositionMs() ?: return) / 1000.0
         if (kotlin.math.abs(resumeAbs - currentAbs) > STALE_THRESHOLD_SEC) {
             c.seekTo(resumeIdx, (resume.positionSeconds * 1000).toLong())
             updatePosition()
         }
+    }
+
+    /**
+     * Checks for a newer server position the moment playback starts, from any source (in-app
+     * play, notification, lock screen, Bluetooth, Android Auto) - all of them land in
+     * [listener]'s [Player.Listener.onIsPlayingChanged], unlike the old [togglePlay]-only check.
+     * Runs in the background: playback is never held up waiting on the network. If the answer
+     * lands and is still applicable (same queue, no user seek since), seeks to it; a race with the
+     * user seeking or loading something else is resolved in the user's/new load's favour.
+     */
+    private fun maybeRefreshOnPlayStart() {
+        val book = _state.value.currentBook
+        if (!PlayStartRefresh.shouldRefresh(book, _state.value.narrationActive, lastResolvedAtMs, System.currentTimeMillis())) return
+        val bookId = book!!.id
+        val loadGenAtStart = loadGeneration.get()
+        val seekGenAtStart = seekGeneration.get()
+        val fromAbsSec = (bookPositionMs() ?: return) / 1000.0
+        refreshSuppressingReportsForBookId = bookId
+        scope.launch {
+            try {
+                withTimeoutOrNull(PLAY_START_REFRESH_TIMEOUT_MS) {
+                    val resume = audioProgress.resolveResume(bookId) ?: return@withTimeoutOrNull
+                    val applicable = PlayStartRefresh.stillApplicable(
+                        loadGenAtStart, loadGeneration.get(), seekGenAtStart, seekGeneration.get(),
+                    )
+                    val files = _state.value.files
+                    if (!applicable || files.isEmpty()) return@withTimeoutOrNull
+                    val resumeIdx = files.indexOfFirst { it.id == resume.currentFileId }.coerceAtLeast(0)
+                    val toAbsSec = PlaybackQueue.toAbsoluteSec(files, resumeIdx, resume.positionSeconds)
+                    val seeked = kotlin.math.abs(toAbsSec - fromAbsSec) > STALE_THRESHOLD_SEC
+                    if (seeked) {
+                        val c = controller ?: return@withTimeoutOrNull
+                        c.seekTo(resumeIdx, (resume.positionSeconds * 1000).toLong())
+                        updatePosition()
+                    }
+                    Log.d(TAG, "play-start refresh bookId=$bookId seeked=$seeked from=$fromAbsSec to=$toAbsSec")
+                }
+            } finally {
+                if (refreshSuppressingReportsForBookId == bookId) refreshSuppressingReportsForBookId = null
+            }
+        }
+    }
+
+    /**
+     * Pushes [bookId]'s pending audio progress to the server, forcing a fresh report first if
+     * [bookId] is the one currently loaded (its in-memory position may be ahead of the last
+     * poller report - see [report]). Called before the reader resolves its initial position so a
+     * read-aloud EPUB never opens behind where listening actually left off.
+     */
+    suspend fun flushPendingIfCurrent(bookId: Int) {
+        if (_state.value.currentBook?.id == bookId && !_state.value.narrationActive) {
+            report(force = true)
+        }
+        audioProgress.flushPending()
     }
 
     fun stop() = scope.launch {
@@ -554,6 +634,10 @@ class PlayerManager @Inject constructor(
         val files = _state.value.files
         if (files.isEmpty()) return
         if (!force && !c.isPlaying) return
+        // A play-start refresh is checking the server for a newer position on this book; don't push
+        // the (possibly stale) pre-refresh position ahead of its answer - not even on pause, whose
+        // fresh timestamp would win over the server's newer position. Costs at most a few seconds.
+        if (refreshSuppressingReportsForBookId == book.id) return
         val posMs = bookPositionMs() ?: return
         // Book time comes from ActiveBookPlayer (the controller's position may be chapter-relative);
         // recompute the real file + in-file offset together rather than pairing a stale
@@ -588,5 +672,8 @@ class PlayerManager @Inject constructor(
         const val STALE_THRESHOLD_SEC = 5.0
         /** How long a launch restore waits to load a book that has to come from the server. */
         const val RESTORE_RESOLVE_TIMEOUT_MS = 8_000L
+        /** How long a play-start refresh (see [maybeRefreshOnPlayStart]) waits for a fresher
+         * server position before giving up; playback itself never waits on this. */
+        const val PLAY_START_REFRESH_TIMEOUT_MS = 5_000L
     }
 }

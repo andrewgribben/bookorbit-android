@@ -2,9 +2,11 @@ package com.bookorbit.feature.reader
 
 import com.bookorbit.R
 import com.bookorbit.ui.UiText
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bookorbit.core.di.ApplicationScope
 import com.bookorbit.core.model.BookAnnotation
 import com.bookorbit.core.model.BookBookmark
 import com.bookorbit.core.storage.LocalRef
@@ -22,6 +24,7 @@ import com.bookorbit.feature.sessions.ReadingSessionTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +36,7 @@ import javax.inject.Inject
 import kotlin.math.roundToInt
 
 private const val PROGRESS_THROTTLE_MS = 2_000L
+private const val TAG = "ReaderViewModel"
 
 @HiltViewModel
 class ReaderViewModel @Inject constructor(
@@ -50,6 +54,7 @@ class ReaderViewModel @Inject constructor(
     private val wallpaper: CoverWallpaperController,
     private val wallpaperFollow: CoverWallpaperFollowController,
     private val controlsStore: ReaderControlsStore,
+    @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
     val bookId: Int = savedStateHandle.get<Int>("id") ?: 0
@@ -197,6 +202,11 @@ class ReaderViewModel @Inject constructor(
 
             try {
                 val resolved = source.resolve(book)
+                // Listening may have moved this book's audiobook position past what's synced to
+                // the server (poller reports only every 5s while playing; see PlayerManager). Push
+                // it now so the server's syncFromAudioProgress has mapped it onto this EPUB file
+                // before we read the file's own saved progress (defect: #1136-style race).
+                playerManager.flushPendingIfCurrent(bookId)
                 val initial = progress.resolveInitial(resolved.fileId)
                 sessions.beginReading(resolved.fileId, initial.fraction?.let { it * 100 })
                 _ui.update {
@@ -365,7 +375,7 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun onRelocate(cfi: String?, fraction: Double?, chapterTitle: String?) {
+    fun onRelocate(cfi: String?, fraction: Double?, chapterTitle: String?, reason: String? = null, restoring: Boolean = false) {
         _ui.update {
             it.copy(
                 chapterTitle = chapterTitle ?: it.chapterTitle,
@@ -373,7 +383,16 @@ class ReaderViewModel @Inject constructor(
             )
         }
         if (cfi != null) currentCfi = cfi
-        if (cfi != null && fraction != null) {
+        // Reason "anchor" is a reflow (rotation/settings relayout/resize) re-landing on the same
+        // spot, not the user moving - see foliate-paginator's render()/#afterScroll. `restoring`
+        // flags the relocate that comes from opening at the saved CFI/fraction (bridge.js sets it
+        // around finishOpen's initial goTo). Neither is real navigation, so neither should push a
+        // fresh timestamp that could overwrite a newer position the server mapped onto this file
+        // from listening (see audiobook-ebook-progress-sync.service.ts upsertSyncedEpubProgressIfNewer) -
+        // same rule the web reader's useReaderProgress.ts applies for its own `detail.restoring`.
+        val isRepositionOnly = restoring || reason == "anchor"
+        Log.d(TAG, "onRelocate fileId=${_ui.value.resolved?.fileId} reason=$reason restoring=$restoring reporting=${!isRepositionOnly}")
+        if (cfi != null && fraction != null && !isRepositionOnly) {
             report(cfi, fraction * 100)
             sessions.onReadingProgress(fraction * 100)
         }
@@ -646,7 +665,16 @@ class ReaderViewModel @Inject constructor(
     }
 
     override fun onCleared() {
-        flush()
+        // viewModelScope is already cancelled by the time onCleared() runs (ViewModel.clear()
+        // cancels it, then calls onCleared() - true since before 2.8.7), so a
+        // `viewModelScope.launch` started here would never run and this last pending position
+        // would be silently dropped. Use the application-lifetime scope instead.
+        val fileId = _ui.value.resolved?.fileId
+        val p = pending
+        if (fileId != null && p != null) {
+            pending = null
+            appScope.launch { progress.report(fileId, p.first, p.second) }
+        }
         sessions.end()
         stopNarration()
         super.onCleared()

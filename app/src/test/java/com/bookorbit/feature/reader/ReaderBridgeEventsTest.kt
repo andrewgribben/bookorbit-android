@@ -3,6 +3,7 @@ package com.bookorbit.feature.reader
 import com.bookorbit.feature.reader.narration.NarrationItem
 import com.bookorbit.feature.reader.narration.NarrationTimeline
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -142,5 +143,21 @@ class ReaderBridgeEventsTest {
     fun `parses an explicit narration timeline error`() {
         val e = ReaderBridge.parseEvent("""{"type":"narrationTimelineError","message":"boom"}""") as ReaderEvent.NarrationFailed
         assertEquals("boom", e.message)
+    }
+
+    @Test
+    fun `a relocate carries its reason and restoring flag`() {
+        val e = ReaderBridge.parseEvent(
+            """{"type":"relocate","cfi":"epubcfi(/6/2)","fraction":0.1,"reason":"anchor","restoring":true}""",
+        ) as ReaderEvent.Relocate
+        assertEquals("anchor", e.reason)
+        assertTrue(e.restoring)
+    }
+
+    @Test
+    fun `a relocate without reason or restoring defaults to real navigation`() {
+        val e = ReaderBridge.parseEvent("""{"type":"relocate","cfi":"epubcfi(/6/2)","fraction":0.1}""") as ReaderEvent.Relocate
+        assertNull(e.reason)
+        assertFalse(e.restoring)
     }
 }

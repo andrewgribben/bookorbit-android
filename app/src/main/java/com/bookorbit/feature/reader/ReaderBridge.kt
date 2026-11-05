@@ -49,6 +49,12 @@ sealed interface ReaderEvent {
         val cfi: String?,
         val fraction: Double?,
         val chapterTitle: String?,
+        /** Foliate's own relocate `reason` (e.g. "navigation", "page", "selection", "anchor" -
+         * the last one is a reflow re-landing on the same spot, not the user moving). */
+        val reason: String? = null,
+        /** True for the one relocate caused by navigating to the saved CFI/fraction while
+         * opening the book (see bridge.js finishOpen) - not the user navigating either. */
+        val restoring: Boolean = false,
     ) : ReaderEvent
     data class Error(val message: String) : ReaderEvent
 
@@ -127,6 +133,8 @@ object ReaderBridge {
                 cfi = obj["cfi"]?.jsonPrimitive?.contentOrNull,
                 fraction = obj["fraction"]?.jsonPrimitive?.doubleOrNull,
                 chapterTitle = obj["chapterTitle"]?.jsonPrimitive?.contentOrNull,
+                reason = obj["reason"]?.jsonPrimitive?.contentOrNull,
+                restoring = obj["restoring"]?.jsonPrimitive?.booleanOrNull ?: false,
             )
             "history" -> ReaderEvent.History(
                 canGoBack = obj["canGoBack"]?.jsonPrimitive?.booleanOrNull ?: false,

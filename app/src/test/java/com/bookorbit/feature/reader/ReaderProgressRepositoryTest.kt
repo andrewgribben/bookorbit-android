@@ -110,6 +110,31 @@ class ReaderProgressRepositoryTest {
     }
 
     @Test
+    fun `resolveInitial prefers a newer server write over a stale dirty local row`() = runTest {
+        // e.g. listening moved past this file's locally-saved position before it synced; the
+        // server already mapped the newer position onto this EPUB file (upsertSyncedEpubProgressIfNewer).
+        coEvery { dao.get(3) } returns ReaderProgressEntity(3, "epubcfi(local)", 10.0, 100L, dirty = true)
+        coEvery { api.getFileProgress(3) } returns
+            FileProgress(cfi = "epubcfi(server)", percentage = 55.0, updatedAt = "2026-01-01T00:00:01Z")
+
+        val initial = repo.resolveInitial(3)
+
+        assertEquals("epubcfi(server)", initial.cfi)
+        assertEquals(0.55, initial.fraction!!, 1e-9)
+    }
+
+    @Test
+    fun `resolveInitial keeps a dirty local row that is actually newer than the server`() = runTest {
+        coEvery { dao.get(3) } returns ReaderProgressEntity(3, "epubcfi(local)", 10.0, 2_000_000_000_000L, dirty = true)
+        coEvery { api.getFileProgress(3) } returns
+            FileProgress(cfi = "epubcfi(server)", percentage = 55.0, updatedAt = "2000-01-01T00:00:00Z")
+
+        val initial = repo.resolveInitial(3)
+
+        assertEquals("epubcfi(local)", initial.cfi)
+    }
+
+    @Test
     fun `flushPending returns true when an entry stays dirty after a failed retry`() = runTest {
         val stillDirty = ReaderProgressEntity(1, null, 10.0, 100L, dirty = true)
         coEvery { dao.dirtyEntries() } returns listOf(stillDirty)

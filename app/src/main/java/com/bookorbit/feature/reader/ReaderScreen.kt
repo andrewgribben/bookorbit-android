@@ -141,7 +141,7 @@ fun ReaderScreen(
             when (event) {
                 is ReaderEvent.Ready -> ready = true
                 is ReaderEvent.Loaded -> vm.onLoaded(event.toc, event.title, event.hasMediaOverlay, event.isRtl)
-                is ReaderEvent.Relocate -> vm.onRelocate(event.cfi, event.fraction, event.chapterTitle)
+                is ReaderEvent.Relocate -> vm.onRelocate(event.cfi, event.fraction, event.chapterTitle, event.reason, event.restoring)
                 is ReaderEvent.History -> history = event
                 is ReaderEvent.Error -> vm.onError(event.message)
                 is ReaderEvent.Tap -> onTap.value(event.x, event.y)

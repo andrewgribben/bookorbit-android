@@ -1,10 +1,12 @@
 package com.bookorbit.feature.reader
 
+import android.util.Log
 import com.bookorbit.core.db.ReaderProgressDao
 import com.bookorbit.core.db.ReaderProgressEntity
 import com.bookorbit.core.model.SaveFileProgress
 import com.bookorbit.core.network.ApiService
 import com.bookorbit.core.sync.SyncScheduler
+import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -54,17 +56,33 @@ class ReaderProgressRepository @Inject constructor(
     }
 
     /**
-     * Where to resume: a not-yet-synced local position wins (most recent reading), otherwise the
+     * Where to resume: a not-yet-synced local position wins (most recent reading) UNLESS the
+     * server has a genuinely newer write (e.g. listening moved the audiobook position past it -
+     * see `advanceNarrationToText`/`upsertSyncedEpubProgressIfNewer` server-side); otherwise the
      * server's, otherwise the start.
      */
     suspend fun resolveInitial(fileId: Int): InitialProgress {
         val local = dao.get(fileId)
         val server = runCatching { api.getFileProgress(fileId) }.getOrNull()
+        val serverMillis = server?.updatedAt?.let(::epochMillis)
+
+        val useLocal = when {
+            local == null -> false
+            server == null -> true
+            !local.dirty -> false
+            serverMillis == null -> true
+            else -> local.updatedAt >= serverMillis
+        }
+        Log.d(
+            TAG,
+            "resolveInitial fileId=$fileId source=${if (useLocal) "local" else "server"} " +
+                "localUpdatedAt=${local?.updatedAt} localDirty=${local?.dirty} serverUpdatedAt=$serverMillis",
+        )
 
         val cfi: String?
         val percentage: Double?
         val pageNumber: Int?
-        if (local != null && (local.dirty || server == null)) {
+        if (useLocal && local != null) {
             cfi = local.cfi
             percentage = local.percentage
             pageNumber = local.pageNumber
@@ -76,5 +94,11 @@ class ReaderProgressRepository @Inject constructor(
             return InitialProgress(null, null)
         }
         return InitialProgress(cfi, percentage?.let { it / 100.0 }, pageNumber)
+    }
+
+    private fun epochMillis(iso: String): Long? = runCatching { Instant.parse(iso).toEpochMilli() }.getOrNull()
+
+    private companion object {
+        const val TAG = "ReaderProgressRepo"
     }
 }
