@@ -24,6 +24,10 @@ class DashboardViewModel @Inject constructor(
         val continueReading: List<BookCard> = emptyList(),
         val continueListening: List<BookCard> = emptyList(),
         val recentlyAdded: List<BookCard> = emptyList(),
+        /** Empty on servers that predate the `want-to-read` scroller type: the shelf just hides. */
+        val wantToRead: List<BookCard> = emptyList(),
+        /** Empty on servers that predate the `up-next-in-series` scroller type: the shelf just hides. */
+        val upNextInSeries: List<BookCard> = emptyList(),
         val loading: Boolean = true,
         /** True when every scroller request failed — distinct from a genuinely empty library. */
         val error: Boolean = false,
@@ -56,15 +60,21 @@ class DashboardViewModel @Inject constructor(
             val continueReading = async { load(ScrollerType.CONTINUE_READING) }
             val continueListening = async { load(ScrollerType.CONTINUE_LISTENING) }
             val recentlyAdded = async { load(ScrollerType.RECENTLY_ADDED) }
+            val wantToRead = async { load(ScrollerType.WANT_TO_READ) }
+            val upNextInSeries = async { load(ScrollerType.UP_NEXT_IN_SERIES) }
             val reading = continueReading.await()
             val listening = continueListening.await()
             val recent = recentlyAdded.await()
+            val toRead = wantToRead.await()
+            val nextInSeries = upNextInSeries.await()
             _ui.value = UiState(
                 reading,
                 listening,
                 recent,
+                toRead,
+                nextInSeries,
                 loading = false,
-                error = failures == 3,
+                error = failures == 5,
                 streak = streak.await(),
                 goal = goal.await(),
             )
