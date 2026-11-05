@@ -35,6 +35,7 @@ fun SeriesGrid(
     series: LazyPagingItems<SeriesSummary>,
     onSelect: (SeriesSummary) -> Unit,
     modifier: Modifier = Modifier,
+    emptyText: String? = null,
 ) {
     val refreshing = series.loadState.refresh is LoadState.Loading
     PullToRefreshBox(
@@ -76,7 +77,7 @@ fun SeriesGrid(
         if (empty) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    stringResource(R.string.no_series_found),
+                    emptyText ?: stringResource(R.string.no_series_found),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
