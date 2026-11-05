@@ -26,6 +26,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -36,6 +37,7 @@ import javax.inject.Inject
 import kotlin.math.roundToInt
 
 private const val PROGRESS_THROTTLE_MS = 2_000L
+private const val SUPPRESS_RELOCATE_TIMEOUT_MS = 3_000L
 private const val TAG = "ReaderViewModel"
 /** Mirrors web's `NEWER_POSITION_CHECK_INTERVAL_MS` (ReaderView.vue): how often the reader
  * returning to the foreground may ask the server for a newer position. */
@@ -215,6 +217,8 @@ class ReaderViewModel @Inject constructor(
      * command - that relocate is landing on a position already known (adopted, not saved back),
      * not real navigation, so it must not report/overwrite the position it just adopted. */
     private var suppressNextReport = false
+    /** Own saves still on the wire; the newer-position check must treat them like [pending]. */
+    private var savesInFlight = 0
 
     init {
         load()
@@ -479,7 +483,7 @@ class ReaderViewModel @Inject constructor(
             if (_ui.value.newerPosition != null) return@launch // asked again while this was in flight
             when (
                 val decision = decideNewerPosition(
-                    pendingSaveQueued = pending != null,
+                    pendingSaveQueued = pending != null || savesInFlight > 0,
                     knownServerStampMs = knownServerStampMs,
                     serverStampMs = server.stampMs,
                     serverCfi = server.cfi,
@@ -516,7 +520,13 @@ class ReaderViewModel @Inject constructor(
         pending = null
         suppressNextReport = true
         currentCfi = offer.cfi
-        viewModelScope.launch { _commands.emit(ReaderCommand.GoToNewerPosition(offer.cfi, offer.fraction)) }
+        viewModelScope.launch {
+            _commands.emit(ReaderCommand.GoToNewerPosition(offer.cfi, offer.fraction))
+            // shortcut: time-based safety net in case the goTo produces no relocate, so the flag
+            // can't swallow a later real page turn; upgrade to a generation token if it misfires.
+            delay(SUPPRESS_RELOCATE_TIMEOUT_MS)
+            suppressNextReport = false
+        }
     }
 
     /** "Stay at {pct}": keep this reader's own page, and save it now so other devices follow. */
@@ -797,7 +807,10 @@ class ReaderViewModel @Inject constructor(
         val p = pending ?: return
         pending = null
         lastSaved = System.currentTimeMillis()
-        viewModelScope.launch { progress.report(fileId, p.first, p.second) }
+        savesInFlight++
+        viewModelScope.launch {
+            try { progress.report(fileId, p.first, p.second) } finally { savesInFlight-- }
+        }
     }
 
     /** "Start reading" (web's `startTrackedReading()`): switches this same open reader to normal
