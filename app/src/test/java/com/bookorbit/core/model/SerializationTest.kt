@@ -62,4 +62,13 @@ class SerializationTest {
         assertEquals(9, BookFiles.readableFile(epub)?.id)
         assertFalse(BookFiles.isAudiobook(epub))
     }
+
+    @Test
+    fun `a plain epub progress save sends no narration locator, a read-aloud one sends both`() {
+        assertEquals("""{"cfi":"c","percentage":40.0}""", json.encodeToString(SaveFileProgress.serializer(), SaveFileProgress("c", 40.0)))
+        assertEquals(
+            """{"cfi":"c","percentage":40.0,"mediaOverlayFragment":"c016.xhtml#c016-s0","mediaOverlaySectionIndex":21}""",
+            json.encodeToString(SaveFileProgress.serializer(), SaveFileProgress("c", 40.0, null, "c016.xhtml#c016-s0", 21)),
+        )
+    }
 }

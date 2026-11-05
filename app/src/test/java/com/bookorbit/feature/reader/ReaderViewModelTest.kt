@@ -100,7 +100,7 @@ class ReaderViewModelTest {
         model.onRelocate("epubcfi(/6/2)", 0.5, "Ch 1", reason = "anchor", restoring = false)
         model.flush()
 
-        coVerify(exactly = 0) { progress.report(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { progress.report(any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -109,22 +109,33 @@ class ReaderViewModelTest {
         model.onRelocate("epubcfi(/6/2)", 0.5, "Ch 1", reason = "navigation", restoring = true)
         model.flush()
 
-        coVerify(exactly = 0) { progress.report(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { progress.report(any(), any(), any(), any(), any()) }
     }
 
     @Test
     fun `a real page turn still reports`() = runTest {
-        coEvery { progress.report(any(), any(), any(), any()) } returns Unit
+        coEvery { progress.report(any(), any(), any(), any(), any()) } returns Unit
         val model = vm()
         model.onRelocate("epubcfi(/6/4)", 0.6, "Ch 1", reason = "page", restoring = false)
         model.flush()
 
-        coVerify { progress.report(5, "epubcfi(/6/4)", 60.0, null) }
+        coVerify { progress.report(5, "epubcfi(/6/4)", 60.0, null, null) }
+    }
+
+    @Test
+    fun `a read-aloud page turn reports its first narrated sentence`() = runTest {
+        coEvery { progress.report(any(), any(), any(), any(), any()) } returns Unit
+        val model = vm()
+        val sentence = PageNarrationMarker("OEBPS/c016.xhtml#c016-s0", 21)
+        model.onRelocate("epubcfi(/6/44)", 0.4, "Ch 16", reason = "page", restoring = false, narration = sentence)
+        model.flush()
+
+        coVerify { progress.report(5, "epubcfi(/6/44)", 40.0, null, sentence) }
     }
 
     @Test
     fun `the final pending position is still written when the screen is left`() = runTest {
-        coEvery { progress.report(any(), any(), any(), any()) } returns Unit
+        coEvery { progress.report(any(), any(), any(), any(), any()) } returns Unit
         // A real app-lifetime scope (not the test dispatcher) proves this does not depend on
         // viewModelScope, which is already cancelled by the time onCleared() runs for real.
         val model = vm(appScope = CoroutineScope(Dispatchers.Unconfined))
@@ -141,7 +152,7 @@ class ReaderViewModelTest {
         store.put("reader", model)
         store.clear()
 
-        coVerify { progress.report(5, "epubcfi(/6/8)", 90.0, null) }
+        coVerify { progress.report(5, "epubcfi(/6/8)", 90.0, null, null) }
     }
 
     // --- "Continue from another device?" (newer-position prompt) ---
@@ -240,7 +251,7 @@ class ReaderViewModelTest {
         model.flush()
 
         assertEquals(null, model.ui.value.newerPosition)
-        coVerify(exactly = 0) { progress.report(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { progress.report(any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -248,7 +259,7 @@ class ReaderViewModelTest {
         coEvery { progress.resolveInitial(5) } returns InitialProgress("epubcfi(/6/2)", 0.1, serverStampMs = 100L)
         coEvery { progress.fetchServerPosition(5) } returns
             ServerPosition(cfi = "epubcfi(/6/9)", fraction = 0.8, percentage = 80.0, stampMs = 200L)
-        coEvery { progress.report(any(), any(), any(), any()) } returns Unit
+        coEvery { progress.report(any(), any(), any(), any(), any()) } returns Unit
         val model = vm()
         model.onLoaded(emptyList(), "Title")
         model.onRelocate("epubcfi(/6/2)", 0.1, "Ch 1", reason = "navigation", restoring = true)
@@ -258,7 +269,7 @@ class ReaderViewModelTest {
         model.stayAtCurrentPosition()
 
         assertEquals(null, model.ui.value.newerPosition)
-        coVerify { progress.report(5, "epubcfi(/6/2)", 10.0, null) }
+        coVerify { progress.report(5, "epubcfi(/6/2)", 10.0, null, null) }
     }
 
     @Test

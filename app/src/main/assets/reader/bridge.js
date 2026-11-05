@@ -325,8 +325,7 @@ async function buildNarrationTimeline() {
 }
 
 /** textHref of the first narrated element that ends at or after the top of the visible page. */
-function firstVisibleTextHref(items, sectionIndex) {
-  const range = view?.lastLocation?.range;
+function firstVisibleTextHref(items, sectionIndex, range = view?.lastLocation?.range) {
   const doc = range?.startContainer?.ownerDocument;
   if (!range || !doc) return null;
   for (const it of items) {
@@ -342,6 +341,25 @@ function firstVisibleTextHref(items, sectionIndex) {
     }
   }
   return null;
+}
+
+/** Per-section parsed SMIL items, keyed by foliate's section object so a reopened book starts clean. */
+const sectionSmilCache = new WeakMap();
+let relocateChain = Promise.resolve();
+
+/** `{ fragment, sectionIndex }` of the first narrated sentence on the page in [range], or null
+ * for a section without media overlays. `fragment` is the SMIL text href (`path#id`) and
+ * `sectionIndex` the spine index - the same shapes the server's overlay playlist uses. */
+async function narrationLocator(sectionIndex, range) {
+  const section = typeof sectionIndex === 'number' ? view?.book?.sections?.[sectionIndex] : null;
+  if (!section?.mediaOverlay?.href) return null;
+  let items = sectionSmilCache.get(section);
+  if (!items) {
+    items = (await parseSectionSmil(view.book, section)).map((par) => ({ ...par, sectionIndex }));
+    sectionSmilCache.set(section, items);
+  }
+  const fragment = firstVisibleTextHref(items, sectionIndex, range);
+  return fragment ? { fragment, sectionIndex } : null;
 }
 
 /** Parses one section's SMIL file into its `<par>` entries. Never throws - an unreadable or
@@ -707,7 +725,11 @@ function createView() {
     if (!view._narrationNav) lastManualNavAt = performance.now();
     const restoring = restoringPosition;
     restoringPosition = false;
-    post({
+    // Chained so a slow first SMIL parse can't let a later relocate post ahead of this one.
+    relocateChain = relocateChain
+      .then(() => narrationLocator(d.section?.current, d.range))
+      .catch(() => null)
+      .then((locator) => post({
       type: 'relocate',
       cfi: d.cfi ?? null,
       fraction: typeof d.fraction === 'number' ? d.fraction : null,
@@ -719,7 +741,10 @@ function createView() {
       // Neither is the user moving through the book - the host skips saving progress for both.
       reason: d.reason ?? null,
       restoring,
-    });
+      // First narrated sentence on the page, so the server maps it to audio exactly (read-aloud only).
+      narrationFragment: locator?.fragment ?? null,
+      narrationSectionIndex: locator?.sectionIndex ?? null,
+    }));
   });
 
   view.addEventListener('error', (e) => {
