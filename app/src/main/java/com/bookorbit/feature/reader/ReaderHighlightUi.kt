@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -50,6 +51,38 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bookorbit.core.model.BookAnnotation
+
+/**
+ * "Continue from another device?" (ported from the web reader's NewerPositionDialog.vue): asks
+ * before this reader's next page turn would save its old position over one another device just
+ * wrote. Not dismissable except by its own two buttons - staying is itself a write (over the
+ * other device's), so it must never be the accidental result of a stray tap-outside or Back.
+ */
+@Composable
+fun NewerPositionDialog(
+    remotePercentage: Double,
+    localPercentage: Double,
+    onFollow: () -> Unit,
+    onStay: () -> Unit,
+) {
+    val remote = remember(remotePercentage) { String.format(java.util.Locale.US, "%.1f%%", remotePercentage) }
+    val local = remember(localPercentage) { String.format(java.util.Locale.US, "%.1f%%", localPercentage) }
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text(stringResource(R.string.reader_newer_position_title)) },
+        text = { Text(stringResource(R.string.reader_newer_position_description, remote, local)) },
+        confirmButton = {
+            TextButton(onClick = onFollow, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(stringResource(R.string.reader_newer_position_follow, remote))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onStay, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(stringResource(R.string.reader_newer_position_stay, local))
+            }
+        },
+    )
+}
 
 /** Parse "#RRGGBB" or a CSS colour name from another client; unknown values fall back to yellow. */
 fun highlightColor(value: String): Color {

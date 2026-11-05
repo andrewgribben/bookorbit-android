@@ -135,6 +135,45 @@ class ReaderProgressRepositoryTest {
     }
 
     @Test
+    fun `fetchServerPosition returns the server row with its write time`() = runTest {
+        coEvery { api.getFileProgress(5) } returns
+            FileProgress(cfi = "epubcfi(x)", percentage = 42.5, updatedAt = "2026-01-01T00:00:05Z")
+
+        val result = repo.fetchServerPosition(5)
+
+        assertEquals("epubcfi(x)", result?.cfi)
+        assertEquals(42.5, result?.percentage!!, 1e-9)
+        assertEquals(0.425, result.fraction, 1e-9)
+        assertEquals(1_767_225_605_000L, result.stampMs)
+    }
+
+    @Test
+    fun `fetchServerPosition returns null when offline`() = runTest {
+        coEvery { api.getFileProgress(5) } throws RuntimeException("offline")
+
+        assertEquals(null, repo.fetchServerPosition(5))
+    }
+
+    @Test
+    fun `fetchServerPosition returns null without an updatedAt to compare against`() = runTest {
+        coEvery { api.getFileProgress(5) } returns FileProgress(cfi = "epubcfi(x)", percentage = 10.0, updatedAt = null)
+
+        assertEquals(null, repo.fetchServerPosition(5))
+    }
+
+    @Test
+    fun `resolveInitial carries the server stamp even when local wins`() = runTest {
+        coEvery { dao.get(3) } returns ReaderProgressEntity(3, "epubcfi(local)", 10.0, 2_000_000_000_000L, dirty = true)
+        coEvery { api.getFileProgress(3) } returns
+            FileProgress(cfi = "epubcfi(server)", percentage = 55.0, updatedAt = "2000-01-01T00:00:00Z")
+
+        val initial = repo.resolveInitial(3)
+
+        assertEquals("epubcfi(local)", initial.cfi)
+        assertEquals(946_684_800_000L, initial.serverStampMs)
+    }
+
+    @Test
     fun `flushPending returns true when an entry stays dirty after a failed retry`() = runTest {
         val stillDirty = ReaderProgressEntity(1, null, 10.0, 100L, dirty = true)
         coEvery { dao.dirtyEntries() } returns listOf(stillDirty)

@@ -339,6 +339,10 @@
     <string name="reader_err_highlight_save">Couldn\'t save the highlight.</string>
     <string name="reader_err_highlight_delete">Couldn\'t delete the highlight.</string>
     <string name="reader_err_generic">Reader error</string>
+    <string name="reader_newer_position_title">Continue from another device?</string>
+    <string name="reader_newer_position_description">This book was read to %1$s on another device while it was open here at %2$s.</string>
+    <string name="reader_newer_position_follow">Go to %1$s</string>
+    <string name="reader_newer_position_stay">Stay at %1$s</string>
     <string name="narration_listen">Listen (narration)</string>
     <string name="narration_stop_listening">Stop listening</string>
     <string name="narration_err_unavailable">Couldn\'t read this book\'s narration.</string>
