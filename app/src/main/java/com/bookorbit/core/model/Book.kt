@@ -170,6 +170,10 @@ data class SaveFileProgress(
     val cfi: String? = null,
     val percentage: Double,
     val pageNumber: Int? = null,
+    /** Read-aloud EPUBs: the first narrated sentence on the page, so the server maps it to audio
+     * exactly. Left null (omitted) otherwise; `source` stays unset so the server keeps both. */
+    val mediaOverlayFragment: String? = null,
+    val mediaOverlaySectionIndex: Int? = null,
 )
 
 /** `GET /cbz/files/{fileId}/pages`. */

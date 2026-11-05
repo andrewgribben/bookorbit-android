@@ -50,6 +50,18 @@ class ReaderBridgeEventsTest {
     }
 
     @Test
+    fun `parses a relocate's first narrated sentence, absent for a plain epub`() {
+        val narrated = ReaderBridge.parseEvent(
+            """{"type":"relocate","cfi":"c","fraction":0.4,"narrationFragment":"c016.xhtml#c016-s0","narrationSectionIndex":21}""",
+        ) as ReaderEvent.Relocate
+        assertEquals("c016.xhtml#c016-s0", narrated.narrationFragment)
+        assertEquals(21, narrated.narrationSectionIndex)
+        val plain = ReaderBridge.parseEvent("""{"type":"relocate","cfi":"c","fraction":0.4,"narrationFragment":null}""") as ReaderEvent.Relocate
+        assertNull(plain.narrationFragment)
+        assertNull(plain.narrationSectionIndex)
+    }
+
+    @Test
     fun `parses history availability`() {
         assertEquals(ReaderEvent.History(canGoBack = true, canGoForward = false), ReaderBridge.parseEvent("""{"type":"history","canGoBack":true,"canGoForward":false}"""))
         assertEquals(ReaderEvent.History(canGoBack = false, canGoForward = false), ReaderBridge.parseEvent("""{"type":"history"}"""))
