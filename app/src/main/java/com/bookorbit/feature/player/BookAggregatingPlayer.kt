@@ -43,7 +43,7 @@ class BookAggregatingPlayer(
     private var lastRangeIndex = Int.MIN_VALUE
     private var lastChapterMode: Boolean? = null
     private var lastMode = prefs.value.progressBarMode
-    private var lastButtonMode = prefs.value.mediaButtonMode
+    private var lastCommands: Player.Commands? = null
     private var released = false
 
     private val tick = object : Runnable {
@@ -55,12 +55,7 @@ class BookAggregatingPlayer(
             } else {
                 refresh(force = false)
             }
-            if (prefs.value.mediaButtonMode != lastButtonMode) {
-                lastButtonMode = prefs.value.mediaButtonMode
-                // Next/previous availability depends on the mode; let connected controllers (Auto) know.
-                val commands = availableCommands
-                sessionListeners.forEach { it.onAvailableCommandsChanged(commands) }
-            }
+            announceCommands(force = false)
             handler.postDelayed(this, TICK_MS)
         }
     }
@@ -87,6 +82,22 @@ class BookAggregatingPlayer(
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
             handler.post { refresh(force = false) }
         }
+
+        // The forwarded event carries ExoPlayer's own commands (no "next" within a one-file book); post
+        // our chapter/skip-aware set after it so the session (and Android Auto's buttons) keep ours.
+        override fun onAvailableCommandsChanged(availableCommands: Player.Commands) {
+            handler.post { announceCommands(force = true) }
+        }
+    }
+
+    /** Tells the session when next/previous availability changes (chapter data arriving, reaching
+     * the last chapter, the media-button setting) - it otherwise only sees ExoPlayer's events. */
+    private fun announceCommands(force: Boolean) {
+        if (released) return
+        val commands = availableCommands
+        if (!force && commands == lastCommands) return
+        lastCommands = commands
+        sessionListeners.forEach { it.onAvailableCommandsChanged(commands) }
     }
 
     init {
