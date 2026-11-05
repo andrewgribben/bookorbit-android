@@ -17,6 +17,7 @@ import com.bookorbit.feature.library.filters.LibrarySort
 import com.bookorbit.feature.library.filters.StoredFilterPrefs
 import com.bookorbit.feature.library.filters.FilterPrefsStore
 import com.bookorbit.feature.library.filters.buildBookQuery
+import com.bookorbit.feature.library.filters.sortForQueryChange
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -124,6 +125,8 @@ class LibrariesViewModel @Inject constructor(
 
     fun onQueryChange(value: String) {
         _query.value = value
+        // Not persisted: relevance only makes sense while this query is typed.
+        _sort.value = sortForQueryChange(_sort.value, value, LibrarySort().field)
     }
 
     suspend fun searchCatalog(kind: CatalogKind, query: String): List<String> =

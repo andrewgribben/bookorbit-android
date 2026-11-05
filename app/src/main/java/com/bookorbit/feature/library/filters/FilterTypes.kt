@@ -65,6 +65,7 @@ val FORMAT_OPTIONS: List<String> = listOf(
 )
 
 val SORT_OPTIONS: List<Pair<String, Int>> = listOf(
+    "relevance" to R.string.sort_relevance,
     "title" to R.string.sort_title,
     "author" to R.string.sort_author,
     "addedAt" to R.string.sort_added,

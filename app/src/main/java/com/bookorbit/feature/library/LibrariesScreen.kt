@@ -36,6 +36,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.bookorbit.feature.library.filters.SORT_OPTIONS
+import com.bookorbit.feature.library.filters.visibleSortOptions
 import com.bookorbit.feature.library.filters.countActiveFilters
 import com.bookorbit.ui.components.BookGrid
 import com.bookorbit.ui.components.LibrarySearchField
@@ -129,7 +130,11 @@ fun LibrariesScreen(
                 .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.End,
         ) {
-            SortControl(sort = sort, options = SORT_OPTIONS, onSortChange = vm::updateSort)
+            SortControl(
+                sort = sort,
+                options = visibleSortOptions(SORT_OPTIONS, hasQuery = query.isNotBlank()),
+                onSortChange = vm::updateSort,
+            )
         }
 
         when (status) {
