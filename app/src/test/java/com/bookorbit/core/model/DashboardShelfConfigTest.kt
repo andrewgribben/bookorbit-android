@@ -143,4 +143,17 @@ class DashboardShelfConfigTest {
         assertNull(rebuilt["syncAcrossSessions"])
         assertEquals(DashboardShelfConfig.DEFAULT_ENTRIES.size, (rebuilt["scrollers"] as JsonArray).size)
     }
+
+    @Test
+    fun `mergedForSave keeps shelves added elsewhere and drops ones deleted elsewhere`() {
+        fun e(id: String, order: Int, enabled: Boolean = true) = ShelfConfigEntry(id, "t$id", "", enabled, order)
+        val server = listOf(e("1", 1), e("2", 2), e("4", 3)) // 3 deleted on web, 4 added on web
+        val edited = listOf(e("2", 1), e("1", 2, enabled = false), e("3", 3))
+
+        val merged = DashboardShelfConfig.mergedForSave(server, edited)
+
+        assertEquals(listOf("2", "1", "4"), merged.map { it.id })
+        assertEquals(listOf(1, 2, 3), merged.map { it.order })
+        assertEquals(false, merged[1].enabled)
+    }
 }

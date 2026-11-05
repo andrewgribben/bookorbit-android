@@ -98,6 +98,19 @@ object DashboardShelfConfig {
     }
 
     /**
+     * The app's edits ([edited]) applied onto the server's current list ([server], re-read just
+     * before saving): shelves deleted elsewhere since the screen opened stay deleted, and shelves
+     * added elsewhere (e.g. on the web) are kept, after the app's ones, instead of being overwritten.
+     */
+    fun mergedForSave(server: List<ShelfConfigEntry>, edited: List<ShelfConfigEntry>): List<ShelfConfigEntry> {
+        val serverIds = server.map { it.id }.toSet()
+        val editedIds = edited.map { it.id }.toSet()
+        val kept = ordered(edited).filter { it.id in serverIds }
+        val added = ordered(server).filter { it.id !in editedIds }
+        return (kept + added).mapIndexed { i, entry -> entry.copy(order = i + 1) }
+    }
+
+    /**
      * Builds the `dashboardShelfConfig` JSON to send back via `PATCH /api/v1/users/me/settings`.
      * Preserves every field this app doesn't model: top-level keys of [originalConfig] other than
      * `scrollers` (e.g. `shelfLayout`, `syncAcrossSessions`) and each entry's [ShelfConfigEntry.extra].
