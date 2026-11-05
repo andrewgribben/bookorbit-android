@@ -11,6 +11,7 @@ import coil.request.ErrorResult
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.bookorbit.core.network.ImageUrls
+import com.bookorbit.core.settings.AppSettingsStore
 import com.bookorbit.feature.downloads.DownloadsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +33,7 @@ class CoverWallpaperController @Inject constructor(
     private val downloads: DownloadsRepository,
     private val imageUrls: ImageUrls,
     private val imageLoader: ImageLoader,
+    private val appSettings: AppSettingsStore,
 ) {
     enum class Outcome { SET, NO_COVER, FAILED }
 
@@ -51,7 +53,14 @@ class CoverWallpaperController @Inject constructor(
         // callers launch this unguarded, so report a failure instead of crashing.
         try {
             val result = CoverWallpaper.apply(context, bitmap, home = true, lock = true)
-            if (result.home || result.lock) Outcome.SET else Outcome.FAILED
+            if (result.home || result.lock) {
+                // Any successful set (by hand too) is what "follow current book" compares against,
+                // so reopening the previously followed book re-applies it after a manual change.
+                appSettings.setCoverWallpaperFollowedBookId(bookId)
+                Outcome.SET
+            } else {
+                Outcome.FAILED
+            }
         } catch (e: Exception) {
             Outcome.FAILED
         } catch (e: OutOfMemoryError) {
