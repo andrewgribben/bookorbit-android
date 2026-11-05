@@ -28,6 +28,17 @@ data class AuthUser(
 val AuthUser.syncReaderPreferences: Boolean
     get() = (settings?.get("syncReaderPreferences") as? JsonPrimitive)?.booleanOrNull ?: false
 
+/** Body of `PATCH /api/v1/users/me/settings` (`user.controller.ts:92-95`, `update-me-settings.dto.ts`):
+ * merges [settings] into the user's server-side settings jsonb. Only the keys present here change -
+ * every other settings key the app doesn't send is left untouched server-side. */
+@Serializable
+data class UpdateMeSettingsRequest(val settings: JsonObject)
+
+/** Response of `PATCH /api/v1/users/me/settings` (`user.service.ts:231-246`): the merged settings,
+ * not a full user - other [AuthUser] fields aren't returned, so this isn't decoded as one. */
+@Serializable
+data class MeSettingsResponse(val id: Int, val settings: JsonObject? = null)
+
 @Serializable
 data class LoginRequest(val username: String, val password: String)
 
