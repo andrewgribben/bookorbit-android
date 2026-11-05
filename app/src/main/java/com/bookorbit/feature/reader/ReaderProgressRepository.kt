@@ -10,7 +10,19 @@ import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 
-data class InitialProgress(val cfi: String?, val fraction: Double?, val pageNumber: Int? = null)
+data class InitialProgress(
+    val cfi: String?,
+    val fraction: Double?,
+    val pageNumber: Int? = null,
+    /** The server row's `updatedAt`, in ms since epoch, as read at open - the seed for the
+     * "Continue from another device?" prompt's `knownServerStamp` (null if the server wasn't
+     * reachable, or had no `updatedAt`, at open). */
+    val serverStampMs: Long? = null,
+)
+
+/** The server's current file position, with its write time - what the "newer position" check
+ * compares against this reader's own [InitialProgress.serverStampMs]/writes. */
+data class ServerPosition(val cfi: String?, val fraction: Double, val percentage: Double, val stampMs: Long)
 
 /**
  * Offline-first reading-position store keyed by server file id, backed by Room: every position is
@@ -91,9 +103,19 @@ class ReaderProgressRepository @Inject constructor(
             percentage = server.percentage
             pageNumber = server.pageNumber
         } else {
-            return InitialProgress(null, null)
+            return InitialProgress(null, null, serverStampMs = serverMillis)
         }
-        return InitialProgress(cfi, percentage?.let { it / 100.0 }, pageNumber)
+        return InitialProgress(cfi, percentage?.let { it / 100.0 }, pageNumber, serverStampMs = serverMillis)
+    }
+
+    /**
+     * The server's current position for the "Continue from another device?" prompt - null if
+     * unreachable (offline), if it has no row yet, or if it has no `updatedAt` to compare against.
+     */
+    suspend fun fetchServerPosition(fileId: Int): ServerPosition? {
+        val server = runCatching { api.getFileProgress(fileId) }.getOrNull() ?: return null
+        val stampMs = server.updatedAt?.let(::epochMillis) ?: return null
+        return ServerPosition(server.cfi, server.percentage / 100.0, server.percentage, stampMs)
     }
 
     private fun epochMillis(iso: String): Long? = runCatching { Instant.parse(iso).toEpochMilli() }.getOrNull()
