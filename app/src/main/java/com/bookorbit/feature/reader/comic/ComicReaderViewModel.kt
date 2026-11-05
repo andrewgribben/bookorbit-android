@@ -11,6 +11,7 @@ import com.bookorbit.core.model.BookRecommendation
 import com.bookorbit.core.network.ApiService
 import com.bookorbit.core.settings.AppSettingsStore
 import com.bookorbit.core.storage.LocalRef
+import com.bookorbit.core.di.ApplicationScope
 import com.bookorbit.core.wallpaper.CoverWallpaperFollowController
 import com.bookorbit.feature.bookdetail.BookDetailRepository
 import com.bookorbit.feature.downloads.DownloadsRepository
@@ -22,6 +23,7 @@ import com.bookorbit.feature.reader.trackingEnabled
 import com.bookorbit.feature.sessions.ReadingSessionTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -73,6 +75,7 @@ class ComicReaderViewModel @Inject constructor(
     private val wallpaperFollow: CoverWallpaperFollowController,
     private val controlsStore: ReaderControlsStore,
     @ApplicationContext private val context: Context,
+    @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
     val bookId: Int = savedStateHandle.get<Int>("id") ?: 0
@@ -453,7 +456,17 @@ class ComicReaderViewModel @Inject constructor(
 
     override fun onCleared() {
         autoAdvanceJob?.cancel()
-        flush()
+        // viewModelScope is already cancelled by the time onCleared() runs, so flush()'s
+        // viewModelScope.launch would never execute - use the application-lifetime scope so the
+        // last page turn before leaving isn't silently dropped.
+        val page = pendingPage
+        val s = _ui.value
+        if (s.fileId != 0 && s.pageCount > 0 && page != null) {
+            pendingPage = null
+            appScope.launch {
+                progress.report(s.fileId, cfi = null, percentage = ComicPaging.percentage(page, s.pageCount), pageNumber = ComicPaging.pageNumber(page))
+            }
+        }
         sessions.end()
         closeLocal()
         super.onCleared()

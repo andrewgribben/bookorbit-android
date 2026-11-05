@@ -219,6 +219,10 @@ let lastManualNavAt = -Infinity;
 /** How long a manual page turn pauses narration's auto-follow before it resumes. */
 const NARRATION_FOLLOW_PAUSE_MS = 10_000;
 
+/** True for the single relocate caused by navigating to the saved CFI/fraction while opening a
+ * book (see finishOpen) - cleared by the relocate listener once it has tagged that one event. */
+let restoringPosition = false;
+
 // Ported from epub.js's internal (unexported) `parseClock`/`resolveURL` - MediaOverlay#loadSMIL
 // uses the same two helpers, but they're module-private, so narration timing is parsed
 // independently here rather than depending on foliate internals that aren't part of its API.
@@ -321,8 +325,7 @@ async function buildNarrationTimeline() {
 }
 
 /** textHref of the first narrated element that ends at or after the top of the visible page. */
-function firstVisibleTextHref(items, sectionIndex) {
-  const range = view?.lastLocation?.range;
+function firstVisibleTextHref(items, sectionIndex, range = view?.lastLocation?.range) {
   const doc = range?.startContainer?.ownerDocument;
   if (!range || !doc) return null;
   for (const it of items) {
@@ -338,6 +341,25 @@ function firstVisibleTextHref(items, sectionIndex) {
     }
   }
   return null;
+}
+
+/** Per-section parsed SMIL items, keyed by foliate's section object so a reopened book starts clean. */
+const sectionSmilCache = new WeakMap();
+let relocateChain = Promise.resolve();
+
+/** `{ fragment, sectionIndex }` of the first narrated sentence on the page in [range], or null
+ * for a section without media overlays. `fragment` is the SMIL text href (`path#id`) and
+ * `sectionIndex` the spine index - the same shapes the server's overlay playlist uses. */
+async function narrationLocator(sectionIndex, range) {
+  const section = typeof sectionIndex === 'number' ? view?.book?.sections?.[sectionIndex] : null;
+  if (!section?.mediaOverlay?.href) return null;
+  let items = sectionSmilCache.get(section);
+  if (!items) {
+    items = (await parseSectionSmil(view.book, section)).map((par) => ({ ...par, sectionIndex }));
+    sectionSmilCache.set(section, items);
+  }
+  const fragment = firstVisibleTextHref(items, sectionIndex, range);
+  return fragment ? { fragment, sectionIndex } : null;
 }
 
 /** Parses one section's SMIL file into its `<par>` entries. Never throws - an unreadable or
@@ -701,13 +723,28 @@ function createView() {
     // Narration following the audio dispatches its own goTo with `_narrationNav` set (see
     // foliate/view.js); anything else reaching here is the user turning pages themselves.
     if (!view._narrationNav) lastManualNavAt = performance.now();
-    post({
+    const restoring = restoringPosition;
+    restoringPosition = false;
+    // Chained so a slow first SMIL parse can't let a later relocate post ahead of this one.
+    relocateChain = relocateChain
+      .then(() => narrationLocator(d.section?.current, d.range))
+      .catch(() => null)
+      .then((locator) => post({
       type: 'relocate',
       cfi: d.cfi ?? null,
       fraction: typeof d.fraction === 'number' ? d.fraction : null,
       chapterTitle: d.tocItem?.label ?? null,
       location: d.location ?? null,
-    });
+      // 'anchor' is a reflow (rotation/settings relayout) re-landing on the same spot - see
+      // foliate-paginator render()/#afterScroll. `restoring` flags the relocate that comes from
+      // navigating to the saved CFI/fraction when the book was opened (see finishOpen below).
+      // Neither is the user moving through the book - the host skips saving progress for both.
+      reason: d.reason ?? null,
+      restoring,
+      // First narrated sentence on the page, so the server maps it to audio exactly (read-aloud only).
+      narrationFragment: locator?.fragment ?? null,
+      narrationSectionIndex: locator?.sectionIndex ?? null,
+    }));
   });
 
   view.addEventListener('error', (e) => {
@@ -758,22 +795,29 @@ async function finishOpen(meta) {
 
   let navigated = false;
   if (meta.cfi) {
+    restoringPosition = true;
     try {
       await view.goTo(meta.cfi);
       navigated = true;
     } catch {
+      restoringPosition = false;
       navigated = false;
     }
   }
   if (!navigated && typeof meta.fraction === 'number' && meta.fraction > 0 && typeof view.goToFraction === 'function') {
+    restoringPosition = true;
     try {
       view.goToFraction(meta.fraction);
       navigated = true;
     } catch {
+      restoringPosition = false;
       navigated = false;
     }
   }
   if (!navigated) await view.goTo(0).catch(() => {});
+  // goTo can resolve without relocating (paginator locked, index out of range); never let the
+  // flag outlive the open and swallow the user's first real page turn.
+  setTimeout(() => { restoringPosition = false; }, 0);
   postHistory();
 }
 

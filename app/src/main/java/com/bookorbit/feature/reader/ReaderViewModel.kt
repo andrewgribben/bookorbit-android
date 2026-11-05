@@ -2,9 +2,11 @@ package com.bookorbit.feature.reader
 
 import com.bookorbit.R
 import com.bookorbit.ui.UiText
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bookorbit.core.di.ApplicationScope
 import com.bookorbit.core.model.BookAnnotation
 import com.bookorbit.core.model.BookBookmark
 import com.bookorbit.core.storage.LocalRef
@@ -22,7 +24,9 @@ import com.bookorbit.feature.sessions.ReadingSessionTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -43,6 +47,16 @@ private const val PROGRESS_THROTTLE_MS = 2_000L
  */
 fun trackingEnabled(savedStateHandle: SavedStateHandle): Boolean = savedStateHandle.get<Boolean>("peek") != true
 
+/** A read-aloud page's first narrated sentence: SMIL text href (`path#id`) and spine index. */
+data class PageNarrationMarker(val fragment: String, val sectionIndex: Int?)
+
+private data class PendingSave(val cfi: String?, val percentage: Double, val narration: PageNarrationMarker?)
+private const val SUPPRESS_RELOCATE_TIMEOUT_MS = 3_000L
+private const val TAG = "ReaderViewModel"
+/** Mirrors web's `NEWER_POSITION_CHECK_INTERVAL_MS` (ReaderView.vue): how often the reader
+ * returning to the foreground may ask the server for a newer position. */
+private const val NEWER_POSITION_CHECK_INTERVAL_MS = 5_000L
+
 @HiltViewModel
 class ReaderViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
@@ -59,6 +73,7 @@ class ReaderViewModel @Inject constructor(
     private val wallpaper: CoverWallpaperController,
     private val wallpaperFollow: CoverWallpaperFollowController,
     private val controlsStore: ReaderControlsStore,
+    @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
     val bookId: Int = savedStateHandle.get<Int>("id") ?: 0
@@ -85,6 +100,16 @@ class ReaderViewModel @Inject constructor(
         val rect: ViewportRect?,
         val selection: PendingSelection? = null,
         val annotationId: Int? = null,
+    )
+
+    /** What's currently backing the "Continue from another device?" prompt - a server position
+     * this reader detected was newer than what it knew, while it was open on something else. */
+    data class NewerPositionOffer(
+        val cfi: String?,
+        val fraction: Double?,
+        val remotePercentage: Double,
+        val localPercentage: Double,
+        val stampMs: Long,
     )
 
     data class UiState(
@@ -125,6 +150,8 @@ class ReaderViewModel @Inject constructor(
         /** True while in peek mode (see [ReaderViewModel.tracking]): drives the "Peeking" badge
          * and "Start reading" action in the chrome header. */
         val peek: Boolean = false,
+        /** Set while the "Continue from another device?" prompt is up; cleared by Follow/Stay. */
+        val newerPosition: NewerPositionOffer? = null,
     ) {
         /** What's actually applied to the reader: the book's own snapshot, else Global. */
         val effective: ReaderSettings get() = effectiveSettings(globalSettings, bookState)
@@ -142,6 +169,9 @@ class ReaderViewModel @Inject constructor(
         data object NarrationCancelPrepare : ReaderCommand
         data class NarrationHighlight(val textHref: String) : ReaderCommand
         data object NarrationUnhighlight : ReaderCommand
+        /** "Go to" on the newer-position prompt: navigate without saving back (adopted already -
+         * see [followNewerPosition]/`suppressNextReport`). [cfi] wins if present, else [fraction]. */
+        data class GoToNewerPosition(val cfi: String?, val fraction: Double?) : ReaderCommand
     }
 
     /** In-book search: the query, matches grouped by chapter as they stream in, and progress. */
@@ -174,10 +204,29 @@ class ReaderViewModel @Inject constructor(
     private var narrationGeneration = 0
 
     private var lastSaved = 0L
-    private var pending: Pair<String?, Double>? = null
+    private var pending: PendingSave? = null
 
     /** Where the reader is now, so a bookmark can be dropped there. */
     private var currentCfi: String? = null
+
+    /** First narrated sentence on [currentCfi]'s page (read-aloud EPUBs only; null otherwise). */
+    private var currentNarration: PageNarrationMarker? = null
+
+    /** The newest server write to this file's progress row this reader has read or made, on the
+     * server's clock - see [NewerPositionDecision]. Seeded from the server row read at open
+     * ([ReaderProgressRepository.resolveInitial]'s `serverStampMs`); a reader that only ever uses
+     * the local/offline copy starts this at whatever (possibly null -> 0) the server offered then. */
+    private var knownServerStampMs: Long = 0L
+
+    /** Throttles [onReaderResumed] to one server check per [NEWER_POSITION_CHECK_INTERVAL_MS]. */
+    private var lastNewerPositionCheckAt = 0L
+
+    /** True for exactly the next [onRelocate] after [followNewerPosition] emits its navigation
+     * command - that relocate is landing on a position already known (adopted, not saved back),
+     * not real navigation, so it must not report/overwrite the position it just adopted. */
+    private var suppressNextReport = false
+    /** Own saves still on the wire; the newer-position check must treat them like [pending]. */
+    private var savesInFlight = 0
 
     init {
         load()
@@ -217,9 +266,15 @@ class ReaderViewModel @Inject constructor(
 
             try {
                 val resolved = source.resolve(book)
+                // Listening may have moved this book's audiobook position past what's synced to
+                // the server (poller reports only every 5s while playing; see PlayerManager). Push
+                // it now so the server's syncFromAudioProgress has mapped it onto this EPUB file
+                // before we read the file's own saved progress (defect: #1136-style race).
+                playerManager.flushPendingIfCurrent(bookId)
                 // Peeking opens at the start, like web's isPeekMode: no saved-position load, no
                 // reading session.
                 val initial = if (tracking) progress.resolveInitial(resolved.fileId) else InitialProgress(null, null)
+                knownServerStampMs = initial.serverStampMs ?: 0L
                 if (tracking) sessions.beginReading(resolved.fileId, initial.fraction?.let { it * 100 })
                 _ui.update {
                     it.copy(
@@ -387,18 +442,126 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun onRelocate(cfi: String?, fraction: Double?, chapterTitle: String?) {
+    fun onRelocate(
+        cfi: String?,
+        fraction: Double?,
+        chapterTitle: String?,
+        reason: String? = null,
+        restoring: Boolean = false,
+        narration: PageNarrationMarker? = null,
+    ) {
         _ui.update {
             it.copy(
                 chapterTitle = chapterTitle ?: it.chapterTitle,
                 percentage = fraction?.let { f -> (f * 100).roundToInt() } ?: it.percentage,
             )
         }
-        if (cfi != null) currentCfi = cfi
-        if (cfi != null && fraction != null) {
-            report(cfi, fraction * 100)
+        if (cfi != null) {
+            currentCfi = cfi
+            currentNarration = narration
+        }
+        // Reason "anchor" is a reflow (rotation/settings relayout/resize) re-landing on the same
+        // spot, not the user moving - see foliate-paginator's render()/#afterScroll. `restoring`
+        // flags the relocate that comes from opening at the saved CFI/fraction (bridge.js sets it
+        // around finishOpen's initial goTo). Neither is real navigation, so neither should push a
+        // fresh timestamp that could overwrite a newer position the server mapped onto this file
+        // from listening (see audiobook-ebook-progress-sync.service.ts upsertSyncedEpubProgressIfNewer) -
+        // same rule the web reader's useReaderProgress.ts applies for its own `detail.restoring`.
+        // `suppressNextReport` is the same rule for the one relocate that follows adopting another
+        // device's newer position (see [followNewerPosition]) - already known, not a fresh move.
+        val suppressed = suppressNextReport
+        if (suppressed) suppressNextReport = false
+        val isRepositionOnly = restoring || reason == "anchor" || suppressed
+        Log.d(TAG, "onRelocate fileId=${_ui.value.resolved?.fileId} reason=$reason restoring=$restoring suppressed=$suppressed reporting=${!isRepositionOnly}")
+        if (cfi != null && fraction != null && !isRepositionOnly) {
+            report(cfi, fraction * 100, narration)
             if (tracking) sessions.onReadingProgress(fraction * 100)
         }
+    }
+
+    // --- "Continue from another device?" (newer-position prompt) ---
+
+    /** Called on the reader screen's ON_RESUME, except the very first one (opening already
+     * resolves the newest position via [ReaderProgressRepository.resolveInitial]). Mirrors web's
+     * `offerNewerPosition`/`handleReaderReturn`: skipped before the book has finished its initial
+     * load, while narration is playing, while the dialog is already up, and throttled to one
+     * server round trip per [NEWER_POSITION_CHECK_INTERVAL_MS]. Also skipped while peeking: a
+     * peek never saves a position, so there is nothing to reconcile against. */
+    fun onReaderResumed() {
+        val state = _ui.value
+        if (!tracking || !state.loaded || state.narrationOn || state.newerPosition != null) return
+        val now = System.currentTimeMillis()
+        if (now - lastNewerPositionCheckAt < NEWER_POSITION_CHECK_INTERVAL_MS) return
+        lastNewerPositionCheckAt = now
+        checkForNewerPosition()
+    }
+
+    private fun checkForNewerPosition() {
+        val fileId = _ui.value.resolved?.fileId ?: return
+        viewModelScope.launch {
+            val server = progress.fetchServerPosition(fileId) ?: return@launch // offline/unreachable
+            if (_ui.value.newerPosition != null) return@launch // asked again while this was in flight
+            when (
+                val decision = decideNewerPosition(
+                    pendingSaveQueued = pending != null || savesInFlight > 0,
+                    knownServerStampMs = knownServerStampMs,
+                    serverStampMs = server.stampMs,
+                    serverCfi = server.cfi,
+                    serverFraction = server.fraction,
+                    serverPercentage = server.percentage,
+                    currentCfi = currentCfi,
+                )
+            ) {
+                is NewerPositionDecision.NoOffer -> Unit
+                is NewerPositionDecision.AdoptStampOnly -> knownServerStampMs = decision.stampMs
+                is NewerPositionDecision.Offer -> _ui.update {
+                    it.copy(
+                        newerPosition = NewerPositionOffer(
+                            cfi = decision.cfi,
+                            fraction = decision.fraction,
+                            remotePercentage = decision.percentage,
+                            localPercentage = it.percentage.toDouble(),
+                            stampMs = decision.stampMs,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    /** "Go to {pct}": adopt the other device's position without saving this reader's old one
+     * over it, and navigate there. Stops narration first (defensive; the dialog is modal, so
+     * narration cannot normally have been started while it is up). */
+    fun followNewerPosition() {
+        val offer = _ui.value.newerPosition ?: return
+        _ui.update { it.copy(newerPosition = null) }
+        knownServerStampMs = maxOf(knownServerStampMs, offer.stampMs)
+        if (_ui.value.narrationOn) stopNarration()
+        pending = null
+        suppressNextReport = true
+        currentCfi = offer.cfi
+        currentNarration = null
+        viewModelScope.launch {
+            _commands.emit(ReaderCommand.GoToNewerPosition(offer.cfi, offer.fraction))
+            // shortcut: time-based safety net in case the goTo produces no relocate, so the flag
+            // can't swallow a later real page turn; upgrade to a generation token if it misfires.
+            delay(SUPPRESS_RELOCATE_TIMEOUT_MS)
+            suppressNextReport = false
+        }
+    }
+
+    /** "Stay at {pct}": keep this reader's own page, and save it now so other devices follow. */
+    fun stayAtCurrentPosition() {
+        val offer = _ui.value.newerPosition ?: return
+        val fileId = _ui.value.resolved?.fileId
+        val cfi = currentCfi
+        val percentage = _ui.value.percentage.toDouble()
+        _ui.update { it.copy(newerPosition = null) }
+        knownServerStampMs = maxOf(knownServerStampMs, offer.stampMs)
+        pending = null
+        lastSaved = System.currentTimeMillis()
+        val narration = currentNarration
+        if (fileId != null) viewModelScope.launch { progress.report(fileId, cfi, percentage, narration = narration) }
     }
 
     // --- in-book search ---
@@ -654,9 +817,9 @@ class ReaderViewModel @Inject constructor(
         viewModelScope.launch { settingsStore.markPagingHintSeen() }
     }
 
-    private fun report(cfi: String?, percentage: Double) {
+    private fun report(cfi: String?, percentage: Double, narration: PageNarrationMarker?) {
         if (!tracking) return
-        pending = cfi to percentage
+        pending = PendingSave(cfi, percentage, narration)
         if (System.currentTimeMillis() - lastSaved >= PROGRESS_THROTTLE_MS) flush()
     }
 
@@ -666,7 +829,10 @@ class ReaderViewModel @Inject constructor(
         val p = pending ?: return
         pending = null
         lastSaved = System.currentTimeMillis()
-        viewModelScope.launch { progress.report(fileId, p.first, p.second) }
+        savesInFlight++
+        viewModelScope.launch {
+            try { progress.report(fileId, p.cfi, p.percentage, narration = p.narration) } finally { savesInFlight-- }
+        }
     }
 
     /** "Start reading" (web's `startTrackedReading()`): switches this same open reader to normal
@@ -680,13 +846,22 @@ class ReaderViewModel @Inject constructor(
         wallpaperFollow.noteOpenBook(bookId)
         sessions.beginReading(_ui.value.resolved?.fileId ?: return, _ui.value.percentage.toDouble())
         val cfi = currentCfi ?: _ui.value.resolved?.initial?.cfi
-        pending = cfi to _ui.value.percentage.toDouble()
+        pending = PendingSave(cfi, _ui.value.percentage.toDouble(), currentNarration)
         lastSaved = 0L
         flush()
     }
 
     override fun onCleared() {
-        flush()
+        // viewModelScope is already cancelled by the time onCleared() runs (ViewModel.clear()
+        // cancels it, then calls onCleared() - true since before 2.8.7), so a
+        // `viewModelScope.launch` started here would never run and this last pending position
+        // would be silently dropped. Use the application-lifetime scope instead.
+        val fileId = _ui.value.resolved?.fileId
+        val p = pending
+        if (fileId != null && p != null) {
+            pending = null
+            appScope.launch { progress.report(fileId, p.cfi, p.percentage, narration = p.narration) }
+        }
         sessions.end()
         stopNarration()
         super.onCleared()

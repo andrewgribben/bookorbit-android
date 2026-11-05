@@ -45,6 +45,8 @@ object ScrollerType {
     const val CONTINUE_LISTENING = "continue-listening"
     const val RANDOM = "random"
     const val SMART_SCOPE = "smart-scope"
+    const val WANT_TO_READ = "want-to-read"
+    const val UP_NEXT_IN_SERIES = "up-next-in-series"
 }
 
 /**

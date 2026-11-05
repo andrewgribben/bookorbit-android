@@ -91,6 +91,29 @@ class ReaderProgressRepositoryTest {
     }
 
     @Test
+    fun `report keeps the first narrated sentence locally and sends it`() = runTest {
+        coEvery { api.saveFileProgress(any(), any()) } returns Unit
+
+        repo.report(fileId = 4, cfi = "epubcfi(/6/44)", percentage = 40.0, narration = PageNarrationMarker("c016.xhtml#c016-s0", 21))
+
+        coVerify { dao.upsert(match { it.mediaOverlayFragment == "c016.xhtml#c016-s0" && it.mediaOverlaySectionIndex == 21 && it.dirty }) }
+        coVerify { api.saveFileProgress(4, SaveFileProgress("epubcfi(/6/44)", 40.0, null, "c016.xhtml#c016-s0", 21)) }
+    }
+
+    @Test
+    fun `flushPending resends an offline-queued narrated sentence`() = runTest {
+        coEvery { dao.dirtyEntries() } returnsMany listOf(
+            listOf(ReaderProgressEntity(4, "epubcfi(/6/44)", 40.0, 100L, dirty = true, mediaOverlayFragment = "c016.xhtml#c016-s0", mediaOverlaySectionIndex = 21)),
+            emptyList(),
+        )
+        coEvery { api.saveFileProgress(any(), any()) } returns Unit
+
+        repo.flushPending()
+
+        coVerify { api.saveFileProgress(4, SaveFileProgress("epubcfi(/6/44)", 40.0, null, "c016.xhtml#c016-s0", 21)) }
+    }
+
+    @Test
     fun `resolveInitial carries the server page number`() = runTest {
         coEvery { dao.get(3) } returns null
         coEvery { api.getFileProgress(3) } returns FileProgress(cfi = null, percentage = 70.8, pageNumber = 34)
@@ -107,6 +130,70 @@ class ReaderProgressRepositoryTest {
         coEvery { api.getFileProgress(3) } returns FileProgress(cfi = null, percentage = 70.8, pageNumber = 34)
 
         assertEquals(36, repo.resolveInitial(3).pageNumber)
+    }
+
+    @Test
+    fun `resolveInitial prefers a newer server write over a stale dirty local row`() = runTest {
+        // e.g. listening moved past this file's locally-saved position before it synced; the
+        // server already mapped the newer position onto this EPUB file (upsertSyncedEpubProgressIfNewer).
+        coEvery { dao.get(3) } returns ReaderProgressEntity(3, "epubcfi(local)", 10.0, 100L, dirty = true)
+        coEvery { api.getFileProgress(3) } returns
+            FileProgress(cfi = "epubcfi(server)", percentage = 55.0, updatedAt = "2026-01-01T00:00:01Z")
+
+        val initial = repo.resolveInitial(3)
+
+        assertEquals("epubcfi(server)", initial.cfi)
+        assertEquals(0.55, initial.fraction!!, 1e-9)
+    }
+
+    @Test
+    fun `resolveInitial keeps a dirty local row that is actually newer than the server`() = runTest {
+        coEvery { dao.get(3) } returns ReaderProgressEntity(3, "epubcfi(local)", 10.0, 2_000_000_000_000L, dirty = true)
+        coEvery { api.getFileProgress(3) } returns
+            FileProgress(cfi = "epubcfi(server)", percentage = 55.0, updatedAt = "2000-01-01T00:00:00Z")
+
+        val initial = repo.resolveInitial(3)
+
+        assertEquals("epubcfi(local)", initial.cfi)
+    }
+
+    @Test
+    fun `fetchServerPosition returns the server row with its write time`() = runTest {
+        coEvery { api.getFileProgress(5) } returns
+            FileProgress(cfi = "epubcfi(x)", percentage = 42.5, updatedAt = "2026-01-01T00:00:05Z")
+
+        val result = repo.fetchServerPosition(5)
+
+        assertEquals("epubcfi(x)", result?.cfi)
+        assertEquals(42.5, result?.percentage!!, 1e-9)
+        assertEquals(0.425, result.fraction, 1e-9)
+        assertEquals(1_767_225_605_000L, result.stampMs)
+    }
+
+    @Test
+    fun `fetchServerPosition returns null when offline`() = runTest {
+        coEvery { api.getFileProgress(5) } throws RuntimeException("offline")
+
+        assertEquals(null, repo.fetchServerPosition(5))
+    }
+
+    @Test
+    fun `fetchServerPosition returns null without an updatedAt to compare against`() = runTest {
+        coEvery { api.getFileProgress(5) } returns FileProgress(cfi = "epubcfi(x)", percentage = 10.0, updatedAt = null)
+
+        assertEquals(null, repo.fetchServerPosition(5))
+    }
+
+    @Test
+    fun `resolveInitial carries the server stamp even when local wins`() = runTest {
+        coEvery { dao.get(3) } returns ReaderProgressEntity(3, "epubcfi(local)", 10.0, 2_000_000_000_000L, dirty = true)
+        coEvery { api.getFileProgress(3) } returns
+            FileProgress(cfi = "epubcfi(server)", percentage = 55.0, updatedAt = "2000-01-01T00:00:00Z")
+
+        val initial = repo.resolveInitial(3)
+
+        assertEquals("epubcfi(local)", initial.cfi)
+        assertEquals(946_684_800_000L, initial.serverStampMs)
     }
 
     @Test

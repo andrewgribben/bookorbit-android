@@ -3,6 +3,7 @@ package com.bookorbit.feature.reader
 import com.bookorbit.feature.reader.narration.NarrationItem
 import com.bookorbit.feature.reader.narration.NarrationTimeline
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -46,6 +47,18 @@ class ReaderBridgeEventsTest {
         val e = ReaderBridge.parseEvent("""{"type":"selection","text":"x","cfi":null,"rect":null}""") as ReaderEvent.Selection
         assertNull(e.cfi)
         assertNull(e.rect)
+    }
+
+    @Test
+    fun `parses a relocate's first narrated sentence, absent for a plain epub`() {
+        val narrated = ReaderBridge.parseEvent(
+            """{"type":"relocate","cfi":"c","fraction":0.4,"narrationFragment":"c016.xhtml#c016-s0","narrationSectionIndex":21}""",
+        ) as ReaderEvent.Relocate
+        assertEquals("c016.xhtml#c016-s0", narrated.narrationFragment)
+        assertEquals(21, narrated.narrationSectionIndex)
+        val plain = ReaderBridge.parseEvent("""{"type":"relocate","cfi":"c","fraction":0.4,"narrationFragment":null}""") as ReaderEvent.Relocate
+        assertNull(plain.narrationFragment)
+        assertNull(plain.narrationSectionIndex)
     }
 
     @Test
@@ -142,5 +155,21 @@ class ReaderBridgeEventsTest {
     fun `parses an explicit narration timeline error`() {
         val e = ReaderBridge.parseEvent("""{"type":"narrationTimelineError","message":"boom"}""") as ReaderEvent.NarrationFailed
         assertEquals("boom", e.message)
+    }
+
+    @Test
+    fun `a relocate carries its reason and restoring flag`() {
+        val e = ReaderBridge.parseEvent(
+            """{"type":"relocate","cfi":"epubcfi(/6/2)","fraction":0.1,"reason":"anchor","restoring":true}""",
+        ) as ReaderEvent.Relocate
+        assertEquals("anchor", e.reason)
+        assertTrue(e.restoring)
+    }
+
+    @Test
+    fun `a relocate without reason or restoring defaults to real navigation`() {
+        val e = ReaderBridge.parseEvent("""{"type":"relocate","cfi":"epubcfi(/6/2)","fraction":0.1}""") as ReaderEvent.Relocate
+        assertNull(e.reason)
+        assertFalse(e.restoring)
     }
 }

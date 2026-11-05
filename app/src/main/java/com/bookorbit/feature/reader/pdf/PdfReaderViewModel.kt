@@ -7,6 +7,7 @@ import android.os.Build
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bookorbit.core.di.ApplicationScope
 import com.bookorbit.feature.bookdetail.BookDetailRepository
 import com.bookorbit.feature.downloads.DownloadsRepository
 import com.bookorbit.core.wallpaper.CoverWallpaperFollowController
@@ -17,6 +18,7 @@ import com.bookorbit.feature.sessions.ReadingSessionTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,6 +40,7 @@ class PdfReaderViewModel @Inject constructor(
     private val sessions: ReadingSessionTracker,
     private val wallpaperFollow: CoverWallpaperFollowController,
     @ApplicationContext private val context: Context,
+    @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
     val bookId: Int = savedStateHandle.get<Int>("id") ?: 0
@@ -214,7 +217,17 @@ class PdfReaderViewModel @Inject constructor(
     }
 
     override fun onCleared() {
-        flush()
+        // viewModelScope is already cancelled by the time onCleared() runs, so flush()'s
+        // viewModelScope.launch would never execute - use the application-lifetime scope so the
+        // last page turn before leaving isn't silently dropped.
+        val page = pendingPage
+        val total = _ui.value.pageCount
+        if (fileId != 0 && total > 0 && page != null) {
+            pendingPage = null
+            val percentage = PdfProgress.pageToPercentage(page, total)
+            val pageNumber = PdfProgress.pageNumber(page)
+            appScope.launch { progress.report(fileId, cfi = null, percentage = percentage, pageNumber = pageNumber) }
+        }
         sessions.end()
         _ui.value.core?.close()
         super.onCleared()
