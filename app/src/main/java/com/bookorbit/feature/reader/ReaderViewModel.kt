@@ -37,6 +37,11 @@ import javax.inject.Inject
 import kotlin.math.roundToInt
 
 private const val PROGRESS_THROTTLE_MS = 2_000L
+
+/** A read-aloud page's first narrated sentence: SMIL text href (`path#id`) and spine index. */
+data class PageNarrationMarker(val fragment: String, val sectionIndex: Int?)
+
+private data class PendingSave(val cfi: String?, val percentage: Double, val narration: PageNarrationMarker?)
 private const val SUPPRESS_RELOCATE_TIMEOUT_MS = 3_000L
 private const val TAG = "ReaderViewModel"
 /** Mirrors web's `NEWER_POSITION_CHECK_INTERVAL_MS` (ReaderView.vue): how often the reader
@@ -180,10 +185,13 @@ class ReaderViewModel @Inject constructor(
     private var narrationGeneration = 0
 
     private var lastSaved = 0L
-    private var pending: Pair<String?, Double>? = null
+    private var pending: PendingSave? = null
 
     /** Where the reader is now, so a bookmark can be dropped there. */
     private var currentCfi: String? = null
+
+    /** First narrated sentence on [currentCfi]'s page (read-aloud EPUBs only; null otherwise). */
+    private var currentNarration: PageNarrationMarker? = null
 
     /** The newest server write to this file's progress row this reader has read or made, on the
      * server's clock - see [NewerPositionDecision]. Seeded from the server row read at open
@@ -412,14 +420,24 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun onRelocate(cfi: String?, fraction: Double?, chapterTitle: String?, reason: String? = null, restoring: Boolean = false) {
+    fun onRelocate(
+        cfi: String?,
+        fraction: Double?,
+        chapterTitle: String?,
+        reason: String? = null,
+        restoring: Boolean = false,
+        narration: PageNarrationMarker? = null,
+    ) {
         _ui.update {
             it.copy(
                 chapterTitle = chapterTitle ?: it.chapterTitle,
                 percentage = fraction?.let { f -> (f * 100).roundToInt() } ?: it.percentage,
             )
         }
-        if (cfi != null) currentCfi = cfi
+        if (cfi != null) {
+            currentCfi = cfi
+            currentNarration = narration
+        }
         // Reason "anchor" is a reflow (rotation/settings relayout/resize) re-landing on the same
         // spot, not the user moving - see foliate-paginator's render()/#afterScroll. `restoring`
         // flags the relocate that comes from opening at the saved CFI/fraction (bridge.js sets it
@@ -434,7 +452,7 @@ class ReaderViewModel @Inject constructor(
         val isRepositionOnly = restoring || reason == "anchor" || suppressed
         Log.d(TAG, "onRelocate fileId=${_ui.value.resolved?.fileId} reason=$reason restoring=$restoring suppressed=$suppressed reporting=${!isRepositionOnly}")
         if (cfi != null && fraction != null && !isRepositionOnly) {
-            report(cfi, fraction * 100)
+            report(cfi, fraction * 100, narration)
             sessions.onReadingProgress(fraction * 100)
         }
     }
@@ -500,6 +518,7 @@ class ReaderViewModel @Inject constructor(
         pending = null
         suppressNextReport = true
         currentCfi = offer.cfi
+        currentNarration = null
         viewModelScope.launch {
             _commands.emit(ReaderCommand.GoToNewerPosition(offer.cfi, offer.fraction))
             // shortcut: time-based safety net in case the goTo produces no relocate, so the flag
@@ -519,7 +538,8 @@ class ReaderViewModel @Inject constructor(
         knownServerStampMs = maxOf(knownServerStampMs, offer.stampMs)
         pending = null
         lastSaved = System.currentTimeMillis()
-        if (fileId != null) viewModelScope.launch { progress.report(fileId, cfi, percentage) }
+        val narration = currentNarration
+        if (fileId != null) viewModelScope.launch { progress.report(fileId, cfi, percentage, narration = narration) }
     }
 
     // --- in-book search ---
@@ -775,8 +795,8 @@ class ReaderViewModel @Inject constructor(
         viewModelScope.launch { settingsStore.markPagingHintSeen() }
     }
 
-    private fun report(cfi: String?, percentage: Double) {
-        pending = cfi to percentage
+    private fun report(cfi: String?, percentage: Double, narration: PageNarrationMarker?) {
+        pending = PendingSave(cfi, percentage, narration)
         if (System.currentTimeMillis() - lastSaved >= PROGRESS_THROTTLE_MS) flush()
     }
 
@@ -787,7 +807,7 @@ class ReaderViewModel @Inject constructor(
         lastSaved = System.currentTimeMillis()
         savesInFlight++
         viewModelScope.launch {
-            try { progress.report(fileId, p.first, p.second) } finally { savesInFlight-- }
+            try { progress.report(fileId, p.cfi, p.percentage, narration = p.narration) } finally { savesInFlight-- }
         }
     }
 
@@ -800,7 +820,7 @@ class ReaderViewModel @Inject constructor(
         val p = pending
         if (fileId != null && p != null) {
             pending = null
-            appScope.launch { progress.report(fileId, p.first, p.second) }
+            appScope.launch { progress.report(fileId, p.cfi, p.percentage, narration = p.narration) }
         }
         sessions.end()
         stopNarration()

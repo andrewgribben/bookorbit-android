@@ -38,13 +38,22 @@ class ReaderProgressRepository @Inject constructor(
     /**
      * Save locally, then attempt to push to the server (clearing dirty on success). [pageNumber] is
      * forwarded to the server for cross-client parity (the web comic reader resumes from it) and kept
-     * locally so a later offline retry re-sends it.
+     * locally so a later offline retry re-sends it. [narration] (read-aloud EPUBs) is kept and
+     * re-sent the same way.
      */
-    suspend fun report(fileId: Int, cfi: String?, percentage: Double, pageNumber: Int? = null) {
-        dao.upsert(ReaderProgressEntity(fileId, cfi, percentage, System.currentTimeMillis(), dirty = true, pageNumber = pageNumber))
-        val ok = runCatching {
-            api.saveFileProgress(fileId, SaveFileProgress(cfi, percentage, pageNumber))
-        }.isSuccess
+    suspend fun report(
+        fileId: Int,
+        cfi: String?,
+        percentage: Double,
+        pageNumber: Int? = null,
+        narration: PageNarrationMarker? = null,
+    ) {
+        val entry = ReaderProgressEntity(
+            fileId, cfi, percentage, System.currentTimeMillis(), dirty = true, pageNumber = pageNumber,
+            mediaOverlayFragment = narration?.fragment, mediaOverlaySectionIndex = narration?.sectionIndex,
+        )
+        dao.upsert(entry)
+        val ok = runCatching { api.saveFileProgress(fileId, entry.toRequest()) }.isSuccess
         if (ok) dao.markSynced(fileId) else syncScheduler.schedule()
     }
 
@@ -52,7 +61,7 @@ class ReaderProgressRepository @Inject constructor(
     suspend fun flushPending(): Boolean {
         for (entry in dao.dirtyEntries()) {
             val ok = runCatching {
-                api.saveFileProgress(entry.fileId, SaveFileProgress(entry.cfi, entry.percentage, entry.pageNumber))
+                api.saveFileProgress(entry.fileId, entry.toRequest())
             }.isSuccess
             if (ok) dao.markSynced(entry.fileId)
         }
@@ -63,7 +72,7 @@ class ReaderProgressRepository @Inject constructor(
     suspend fun syncBeforeWeb(fileId: Int) {
         val local = dao.get(fileId) ?: return
         if (!local.dirty) return
-        api.saveFileProgress(fileId, SaveFileProgress(local.cfi, local.percentage, local.pageNumber))
+        api.saveFileProgress(fileId, local.toRequest())
         dao.markSynced(fileId)
     }
 
@@ -117,6 +126,9 @@ class ReaderProgressRepository @Inject constructor(
         val stampMs = server.updatedAt?.let(::epochMillis) ?: return null
         return ServerPosition(server.cfi, server.percentage / 100.0, server.percentage, stampMs)
     }
+
+    private fun ReaderProgressEntity.toRequest() =
+        SaveFileProgress(cfi, percentage, pageNumber, mediaOverlayFragment, mediaOverlaySectionIndex)
 
     private fun epochMillis(iso: String): Long? = runCatching { Instant.parse(iso).toEpochMilli() }.getOrNull()
 

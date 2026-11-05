@@ -55,6 +55,9 @@ sealed interface ReaderEvent {
         /** True for the one relocate caused by navigating to the saved CFI/fraction while
          * opening the book (see bridge.js finishOpen) - not the user navigating either. */
         val restoring: Boolean = false,
+        /** First narrated sentence on the page (`path#id`) and its spine index - read-aloud EPUBs only. */
+        val narrationFragment: String? = null,
+        val narrationSectionIndex: Int? = null,
     ) : ReaderEvent
     data class Error(val message: String) : ReaderEvent
 
@@ -135,6 +138,8 @@ object ReaderBridge {
                 chapterTitle = obj["chapterTitle"]?.jsonPrimitive?.contentOrNull,
                 reason = obj["reason"]?.jsonPrimitive?.contentOrNull,
                 restoring = obj["restoring"]?.jsonPrimitive?.booleanOrNull ?: false,
+                narrationFragment = obj["narrationFragment"]?.jsonPrimitive?.contentOrNull,
+                narrationSectionIndex = obj["narrationSectionIndex"]?.jsonPrimitive?.intOrNull,
             )
             "history" -> ReaderEvent.History(
                 canGoBack = obj["canGoBack"]?.jsonPrimitive?.booleanOrNull ?: false,

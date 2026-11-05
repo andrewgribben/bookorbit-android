@@ -20,7 +20,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PendingAnnotationOpEntity::class,
         AnnotationCacheEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class BookOrbitDatabase : RoomDatabase() {
@@ -32,6 +32,14 @@ abstract class BookOrbitDatabase : RoomDatabase() {
     abstract fun pendingReadingSessionDao(): PendingReadingSessionDao
     abstract fun pendingAnnotationOpDao(): PendingAnnotationOpDao
     abstract fun annotationCacheDao(): AnnotationCacheDao
+}
+
+/** Keeps a read-aloud page's first narrated sentence so an offline save still maps to audio exactly. */
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `reader_progress` ADD COLUMN `mediaOverlayFragment` TEXT")
+        db.execSQL("ALTER TABLE `reader_progress` ADD COLUMN `mediaOverlaySectionIndex` INTEGER")
+    }
 }
 
 /** Keeps the one-based page number of a comic position so it can be re-sent to the server. */

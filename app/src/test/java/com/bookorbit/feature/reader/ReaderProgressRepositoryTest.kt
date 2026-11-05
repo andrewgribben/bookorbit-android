@@ -91,6 +91,29 @@ class ReaderProgressRepositoryTest {
     }
 
     @Test
+    fun `report keeps the first narrated sentence locally and sends it`() = runTest {
+        coEvery { api.saveFileProgress(any(), any()) } returns Unit
+
+        repo.report(fileId = 4, cfi = "epubcfi(/6/44)", percentage = 40.0, narration = PageNarrationMarker("c016.xhtml#c016-s0", 21))
+
+        coVerify { dao.upsert(match { it.mediaOverlayFragment == "c016.xhtml#c016-s0" && it.mediaOverlaySectionIndex == 21 && it.dirty }) }
+        coVerify { api.saveFileProgress(4, SaveFileProgress("epubcfi(/6/44)", 40.0, null, "c016.xhtml#c016-s0", 21)) }
+    }
+
+    @Test
+    fun `flushPending resends an offline-queued narrated sentence`() = runTest {
+        coEvery { dao.dirtyEntries() } returnsMany listOf(
+            listOf(ReaderProgressEntity(4, "epubcfi(/6/44)", 40.0, 100L, dirty = true, mediaOverlayFragment = "c016.xhtml#c016-s0", mediaOverlaySectionIndex = 21)),
+            emptyList(),
+        )
+        coEvery { api.saveFileProgress(any(), any()) } returns Unit
+
+        repo.flushPending()
+
+        coVerify { api.saveFileProgress(4, SaveFileProgress("epubcfi(/6/44)", 40.0, null, "c016.xhtml#c016-s0", 21)) }
+    }
+
+    @Test
     fun `resolveInitial carries the server page number`() = runTest {
         coEvery { dao.get(3) } returns null
         coEvery { api.getFileProgress(3) } returns FileProgress(cfi = null, percentage = 70.8, pageNumber = 34)
