@@ -3,6 +3,7 @@ package com.bookorbit.feature.reader.pdf
 import com.bookorbit.ui.asString
 import androidx.compose.ui.res.stringResource
 import com.bookorbit.R
+import com.bookorbit.feature.reader.PeekToggle
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -141,6 +142,7 @@ fun PdfReaderScreen(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+                if (ui.peek) PeekToggle(onTurnOff = vm::startReading)
                 if (ui.hasTextLayer) {
                     IconButton(onClick = { searchVisible = !searchVisible }) {
                         Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.search), tint = Color.White)

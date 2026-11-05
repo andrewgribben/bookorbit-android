@@ -284,6 +284,7 @@ fun ReaderScreen(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+                if (ui.peek) PeekToggle(onTurnOff = vm::startReading)
                 IconButton(onClick = { searchVisible = true }) {
                     Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.search_in_book), tint = Color.White)
                 }

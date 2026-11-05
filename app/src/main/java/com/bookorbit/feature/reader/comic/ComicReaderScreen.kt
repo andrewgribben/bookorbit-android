@@ -3,6 +3,7 @@ package com.bookorbit.feature.reader.comic
 import com.bookorbit.ui.asString
 import androidx.compose.ui.res.stringResource
 import com.bookorbit.R
+import com.bookorbit.feature.reader.PeekToggle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -210,6 +211,8 @@ fun ComicReaderScreen(
                 onToggleDirection = vm::toggleDirection,
                 onOpenPagesGrid = { showPagesGrid = true },
                 onOpenConfigure = vm::openConfigureSheet,
+                peek = ui.peek,
+                onStartReading = vm::startReading,
             )
 
             ComicBottomBar(
@@ -293,6 +296,8 @@ private fun ComicTopBar(
     onToggleDirection: () -> Unit,
     onOpenPagesGrid: () -> Unit,
     onOpenConfigure: () -> Unit,
+    peek: Boolean = false,
+    onStartReading: () -> Unit = {},
 ) {
     Row(
         Modifier
@@ -315,6 +320,7 @@ private fun ComicTopBar(
                 style = MaterialTheme.typography.labelSmall,
             )
         }
+        if (peek) PeekToggle(onTurnOff = onStartReading)
         IconButton(onClick = onToggleDirection, modifier = Modifier.minTapTarget()) {
             Icon(
                 if (direction == ComicDirection.RTL) Icons.AutoMirrored.Filled.FormatTextdirectionRToL else Icons.AutoMirrored.Filled.FormatTextdirectionLToR,

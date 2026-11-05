@@ -62,6 +62,9 @@ fun AuthenticatedApp(user: AuthUser, onSignOut: () -> Unit) {
                 onOpenReader = { id -> navController.navigate(AppRoutes.reader(id)) },
                 onOpenPdf = { id -> navController.navigate(AppRoutes.pdf(id)) },
                 onOpenComic = { id -> navController.navigate(AppRoutes.comic(id)) },
+                onPeekReader = { id -> navController.navigate(AppRoutes.reader(id, peek = true)) },
+                onPeekPdf = { id -> navController.navigate(AppRoutes.pdf(id, peek = true)) },
+                onPeekComic = { id -> navController.navigate(AppRoutes.comic(id, peek = true)) },
                 onListen = { id ->
                     playerVm.loadAndPlay(id)
                     navController.navigate(AppRoutes.PLAYER)
@@ -71,19 +74,28 @@ fun AuthenticatedApp(user: AuthUser, onSignOut: () -> Unit) {
         }
         composable(
             route = AppRoutes.READER,
-            arguments = listOf(navArgument("id") { type = NavType.IntType }),
+            arguments = listOf(
+                navArgument("id") { type = NavType.IntType },
+                navArgument("peek") { type = NavType.BoolType; defaultValue = false },
+            ),
         ) {
             ReaderDestination(ReaderKind.EBOOK, onBack = dropUnlessResumed { navController.popBackStack() })
         }
         composable(
             route = AppRoutes.PDF,
-            arguments = listOf(navArgument("id") { type = NavType.IntType }),
+            arguments = listOf(
+                navArgument("id") { type = NavType.IntType },
+                navArgument("peek") { type = NavType.BoolType; defaultValue = false },
+            ),
         ) {
             ReaderDestination(ReaderKind.PDF, onBack = dropUnlessResumed { navController.popBackStack() })
         }
         composable(
             route = AppRoutes.COMIC,
-            arguments = listOf(navArgument("id") { type = NavType.IntType }),
+            arguments = listOf(
+                navArgument("id") { type = NavType.IntType },
+                navArgument("peek") { type = NavType.BoolType; defaultValue = false },
+            ),
         ) {
             ReaderDestination(
                 ReaderKind.COMIC,
@@ -108,6 +120,9 @@ fun AuthenticatedApp(user: AuthUser, onSignOut: () -> Unit) {
                 onRead = { id -> navController.navigate(AppRoutes.reader(id)) },
                 onReadPdf = { id -> navController.navigate(AppRoutes.pdf(id)) },
                 onReadComic = { id -> navController.navigate(AppRoutes.comic(id)) },
+                onPeek = { id -> navController.navigate(AppRoutes.reader(id, peek = true)) },
+                onPeekPdf = { id -> navController.navigate(AppRoutes.pdf(id, peek = true)) },
+                onPeekComic = { id -> navController.navigate(AppRoutes.comic(id, peek = true)) },
                 onListen = { id ->
                     playerVm.loadAndPlay(id)
                     navController.navigate(AppRoutes.PLAYER)
@@ -122,13 +137,13 @@ fun AuthenticatedApp(user: AuthUser, onSignOut: () -> Unit) {
 
 object AppRoutes {
     const val MAIN = "main"
-    const val READER = "reader/{id}"
-    const val PDF = "pdf/{id}"
-    const val COMIC = "comic/{id}"
+    const val READER = "reader/{id}?peek={peek}"
+    const val PDF = "pdf/{id}?peek={peek}"
+    const val COMIC = "comic/{id}?peek={peek}"
     const val PLAYER = "player"
     const val BOOK_DETAIL = "book-detail/{id}"
-    fun reader(id: Int) = "reader/$id"
-    fun pdf(id: Int) = "pdf/$id"
-    fun comic(id: Int) = "comic/$id"
+    fun reader(id: Int, peek: Boolean = false) = "reader/$id?peek=$peek"
+    fun pdf(id: Int, peek: Boolean = false) = "pdf/$id?peek=$peek"
+    fun comic(id: Int, peek: Boolean = false) = "comic/$id?peek=$peek"
     fun bookDetail(id: Int) = "book-detail/$id"
 }
