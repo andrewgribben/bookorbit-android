@@ -43,6 +43,7 @@ class BookAggregatingPlayer(
     private var lastRangeIndex = Int.MIN_VALUE
     private var lastChapterMode: Boolean? = null
     private var lastMode = prefs.value.progressBarMode
+    private var lastButtonMode = prefs.value.mediaButtonMode
     private var released = false
 
     private val tick = object : Runnable {
@@ -53,6 +54,12 @@ class BookAggregatingPlayer(
                 refresh(force = true)
             } else {
                 refresh(force = false)
+            }
+            if (prefs.value.mediaButtonMode != lastButtonMode) {
+                lastButtonMode = prefs.value.mediaButtonMode
+                // Next/previous availability depends on the mode; let connected controllers (Auto) know.
+                val commands = availableCommands
+                sessionListeners.forEach { it.onAvailableCommandsChanged(commands) }
             }
             handler.postDelayed(this, TICK_MS)
         }
@@ -174,25 +181,37 @@ class BookAggregatingPlayer(
         wrappedPlayer.removeListener(realPlayerListener)
     }
 
-    override fun seekToNext() = jumpToNavPoint(forward = true)
-    override fun seekToNextMediaItem() = jumpToNavPoint(forward = true)
-    override fun seekToPrevious() = jumpToNavPoint(forward = false)
-    override fun seekToPreviousMediaItem() = jumpToNavPoint(forward = false)
+    // Only system controls (Auto, steering-wheel/headset buttons, lock screen, notification) call these;
+    // the in-app player's chapter buttons seek directly, so the user's choice doesn't touch them.
+    override fun seekToNext() = navigate(forward = true)
+    override fun seekToNextMediaItem() = navigate(forward = true)
+    override fun seekToPrevious() = navigate(forward = false)
+    override fun seekToPreviousMediaItem() = navigate(forward = false)
+
+    private fun skipsSeconds() = prefs.value.mediaButtonMode == MediaButtonMode.SKIP && mediaItemCount > 0
+
+    private fun navigate(forward: Boolean) = when {
+        skipsSeconds() && forward -> seekForward()
+        skipsSeconds() -> seekBack()
+        else -> jumpToNavPoint(forward)
+    }
 
     override fun hasNextMediaItem(): Boolean {
+        if (skipsSeconds()) return true
         val c = clock()
         if (c.navPointsSec().size <= 1) return super.hasNextMediaItem()
         return c.hasNextNav(bookPositionMs())
     }
 
     override fun hasPreviousMediaItem(): Boolean {
+        if (skipsSeconds()) return true
         if (clock().navPointsSec().size <= 1) return super.hasPreviousMediaItem()
         return true
     }
 
     override fun getAvailableCommands(): Player.Commands {
         val base = super.getAvailableCommands()
-        if (clock().navPointsSec().size <= 1) return base
+        if (!skipsSeconds() && clock().navPointsSec().size <= 1) return base
         val builder = base.buildUpon()
         if (hasNextMediaItem()) {
             builder.add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)

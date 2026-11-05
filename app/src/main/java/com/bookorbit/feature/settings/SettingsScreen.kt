@@ -56,6 +56,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bookorbit.BuildConfig
 import com.bookorbit.core.settings.ThemeMode
 import com.bookorbit.core.settings.ReaderInterface
+import com.bookorbit.feature.player.MediaButtonMode
 import com.bookorbit.feature.player.ProgressBarMode
 import com.bookorbit.feature.player.SPEED_PRESETS
 import kotlin.math.abs
@@ -75,6 +76,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
     val downloadsSummary by vm.downloadsSummary.collectAsStateWithLifecycle()
     val defaultSpeed by vm.defaultSpeed.collectAsStateWithLifecycle()
     val progressBarMode by vm.progressBarMode.collectAsStateWithLifecycle()
+    val mediaButtonMode by vm.mediaButtonMode.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
     val downloadTreeUri by vm.downloadTreeUri.collectAsStateWithLifecycle()
     val downloadLocationLabel by vm.downloadLocationLabel.collectAsStateWithLifecycle()
@@ -323,6 +325,33 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                             FilterChip(
                                 selected = progressBarMode == mode,
                                 onClick = { vm.setProgressBarMode(mode) },
+                                label = { Text(label) },
+                                modifier = Modifier.padding(horizontal = 4.dp),
+                            )
+                        }
+                    }
+                    Text(
+                        stringResource(R.string.settings_media_buttons),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 16.dp),
+                    )
+                    Text(
+                        stringResource(R.string.settings_media_buttons_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        listOf(
+                            MediaButtonMode.CHAPTER to stringResource(R.string.settings_media_buttons_chapter),
+                            MediaButtonMode.SKIP to stringResource(R.string.settings_media_buttons_skip),
+                        ).forEach { (mode, label) ->
+                            FilterChip(
+                                selected = mediaButtonMode == mode,
+                                onClick = { vm.setMediaButtonMode(mode) },
                                 label = { Text(label) },
                                 modifier = Modifier.padding(horizontal = 4.dp),
                             )
