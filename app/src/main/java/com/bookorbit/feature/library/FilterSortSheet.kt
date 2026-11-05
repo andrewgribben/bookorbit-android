@@ -41,6 +41,7 @@ import com.bookorbit.feature.library.filters.LibrarySort
 import com.bookorbit.feature.library.filters.READ_PROGRESS_OPTIONS
 import com.bookorbit.feature.library.filters.READ_STATUS_OPTIONS
 import com.bookorbit.feature.library.filters.SORT_OPTIONS
+import com.bookorbit.feature.library.filters.visibleSortOptions
 import com.bookorbit.feature.library.filters.defaultSortDirection
 import com.bookorbit.ui.components.TypeaheadMultiSelect
 
@@ -71,7 +72,7 @@ fun FilterSortSheet(
         ) {
             SectionLabel(stringResource(R.string.filter_sort_by))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SORT_OPTIONS.forEach { (field, labelRes) ->
+                visibleSortOptions(SORT_OPTIONS, hasQuery = false).forEach { (field, labelRes) ->
                     FilterChip(
                         selected = sort.field == field,
                         onClick = { if (field != sort.field) sort = LibrarySort(field, defaultSortDirection(field)) },
