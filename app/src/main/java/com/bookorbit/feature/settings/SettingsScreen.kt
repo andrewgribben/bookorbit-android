@@ -57,6 +57,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bookorbit.BuildConfig
 import com.bookorbit.core.settings.ThemeMode
 import com.bookorbit.core.settings.ReaderInterface
+import com.bookorbit.core.wallpaper.SleepImageFile
 import com.bookorbit.feature.player.MediaButtonMode
 import com.bookorbit.feature.player.ProgressBarMode
 import com.bookorbit.feature.player.SPEED_PRESETS
@@ -72,6 +73,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard
     val navItems by vm.navItems.collectAsStateWithLifecycle()
     val wifiOnly by vm.wifiOnlyDownloads.collectAsStateWithLifecycle()
     val coverWallpaperFollow by vm.coverWallpaperFollow.collectAsStateWithLifecycle()
+    val coverSleepImageFile by vm.coverSleepImageFile.collectAsStateWithLifecycle()
     val dynamicColor by vm.dynamicColor.collectAsStateWithLifecycle()
     val trustUserCas by vm.trustUserCas.collectAsStateWithLifecycle()
     val downloadsSummary by vm.downloadsSummary.collectAsStateWithLifecycle()
@@ -164,6 +166,15 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard
                     subtitle = stringResource(R.string.settings_cover_wallpaper_follow_desc),
                     trailing = { Switch(checked = coverWallpaperFollow, onCheckedChange = vm::setCoverWallpaperFollow) },
                 )
+            }
+            if (SleepImageFile.isSupported) {
+                item {
+                    SettingsRow(
+                        title = stringResource(R.string.settings_cover_sleep_image),
+                        subtitle = stringResource(R.string.settings_cover_sleep_image_desc, SleepImageFile.displayPath),
+                        trailing = { Switch(checked = coverSleepImageFile, onCheckedChange = vm::setCoverSleepImageFile) },
+                    )
+                }
             }
             item { HorizontalDivider() }
 
