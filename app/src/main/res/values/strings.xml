@@ -520,7 +520,7 @@
     <string name="settings_reading_fullscreen">Full-screen reading</string>
     <string name="settings_reading_fullscreen_desc">Hide the status and navigation bars in ebooks, PDFs, and comics. Swipe from the screen edge to reveal them.</string>
     <string name="settings_cover_wallpaper_follow">Cover as wallpaper: follow current book</string>
-    <string name="settings_cover_wallpaper_follow_desc">Set the current book\'s cover as your wallpaper whenever you leave the app</string>
+    <string name="settings_cover_wallpaper_follow_desc">Set a book\'s cover as your wallpaper when you open it (audiobooks: when you leave the app)</string>
     <string name="settings_cover_sleep_image">Save lock screen cover to a file</string>
     <string name="settings_cover_sleep_image_desc">Each time the cover wallpaper is set, also overwrite %1$s. For devices like Boox that use an image file for the lock or sleep screen: point that setting at this file once.</string>
     <string name="reader_web_unavailable">The server web reader could not be opened. Check your connection or open this book in the app.</string>

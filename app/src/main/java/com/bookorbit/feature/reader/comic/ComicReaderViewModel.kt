@@ -147,7 +147,7 @@ class ComicReaderViewModel @Inject constructor(
         load()
         loadSettings()
         loadControlsSettings()
-        if (tracking) wallpaperFollow.noteOpenBook(bookId)
+        if (tracking) wallpaperFollow.openBookForReading(bookId)
     }
 
     fun load() {
@@ -445,7 +445,7 @@ class ComicReaderViewModel @Inject constructor(
         tracking = true
         savedStateHandle["peek"] = false // survive process death
         _ui.update { it.copy(peek = false) }
-        wallpaperFollow.noteOpenBook(bookId)
+        wallpaperFollow.openBookForReading(bookId)
         val s = _ui.value
         if (s.fileId == 0 || s.pageCount <= 0) return
         sessions.beginReading(s.fileId, ComicPaging.percentage(s.currentPage, s.pageCount))

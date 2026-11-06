@@ -11,16 +11,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * "Follow current book" for the cover wallpaper: the reader and player note
- * the book they have open; when the app goes to the background and the
- * setting is on, that book's cover is applied if it differs from the one
- * last followed. Applying only on background (not live, mid-read) means the
- * system's wallpaper-driven recolour never happens while the user is looking
- * at the screen.
+ * "Follow current book" for the cover wallpaper. With the setting on, a book's
+ * cover is applied when it differs from the one last followed:
+ * - ebook, PDF and comic readers apply it as soon as the book is opened for
+ *   tracked reading ([openBookForReading]; never in peek mode);
+ * - the audiobook player only notes the book ([noteOpenBook]) and it is applied
+ *   when the app goes to the background, so a wallpaper change (and any
+ *   system recolour it triggers) can't disturb playback.
+ * Whatever was noted last is also (re-)tried on background, which retries a
+ * failed apply.
  */
 @Singleton
 class CoverWallpaperFollowController @Inject constructor(
@@ -41,23 +46,40 @@ class CoverWallpaperFollowController @Inject constructor(
         }
     }
 
-    /** Called by the reader/player when a book is opened. */
+    /** Serialises applies, so an open and a background for the same book can't both set it. */
+    private val applyLock = Mutex()
+
+    /** Called by the audiobook player when a book is loaded: applied when the app backgrounds,
+     * never mid-session, so a wallpaper/recolour change can't disturb playback. */
     fun noteOpenBook(bookId: Int) {
         notedBookId = bookId
     }
 
+    /** Called by the ebook, PDF and comic readers when a book is opened for tracked reading (never
+     * in peek mode): applies the cover straight away rather than waiting for the app to background.
+     * Still noted, so a failed apply is retried on the next background. */
+    fun openBookForReading(bookId: Int) {
+        notedBookId = bookId
+        applyIfNeeded(bookId)
+    }
+
     private fun onBackground() {
-        val noted = notedBookId ?: return
+        applyIfNeeded(notedBookId ?: return)
+    }
+
+    private fun applyIfNeeded(bookId: Int) {
         scope.launch {
-            val enabled = appSettings.coverWallpaperFollow.first()
-            val lastFollowed = appSettings.coverWallpaperFollowedBookId.first()
-            if (!CoverWallpaperFollow.shouldApply(enabled, noted, lastFollowed)) return@launch
-            val outcome = wallpaper.apply(noted)
-            // A book without a cover counts as followed too: retrying it on every
-            // background would never succeed. A transient failure does not, so it
-            // can be retried the next time the app backgrounds.
-            if (outcome != CoverWallpaperController.Outcome.FAILED) {
-                appSettings.setCoverWallpaperFollowedBookId(noted)
+            applyLock.withLock {
+                val enabled = appSettings.coverWallpaperFollow.first()
+                val lastFollowed = appSettings.coverWallpaperFollowedBookId.first()
+                if (!CoverWallpaperFollow.shouldApply(enabled, bookId, lastFollowed)) return@withLock
+                val outcome = wallpaper.apply(bookId)
+                // A book without a cover counts as followed too: retrying it on every
+                // background would never succeed. A transient failure does not, so it
+                // can be retried the next time the app backgrounds.
+                if (outcome != CoverWallpaperController.Outcome.FAILED) {
+                    appSettings.setCoverWallpaperFollowedBookId(bookId)
+                }
             }
         }
     }
