@@ -35,8 +35,11 @@ object CoverWallpaper {
 
     data class Result(val home: Boolean, val lock: Boolean, val error: String? = null)
 
+    /** The sharp lock-screen image for [source]: the cover at its own aspect, scaled into range. */
+    fun lockImage(source: Bitmap): Bitmap = scaleLongSide(source, max(source.width, source.height).coerceIn(MIN_LONG_SIDE, MAX_LONG_SIDE))
+
     fun apply(context: Context, source: Bitmap, home: Boolean, lock: Boolean): Result {
-        val cover = scaleLongSide(source, max(source.width, source.height).coerceIn(MIN_LONG_SIDE, MAX_LONG_SIDE))
+        val cover = lockImage(source)
         val manager = WallpaperManager.getInstance(context)
         if (!manager.isWallpaperSupported || !manager.isSetWallpaperAllowed) {
             return Result(false, false, "Wallpaper changes are not allowed on this device")
