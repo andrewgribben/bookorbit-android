@@ -85,7 +85,7 @@ class PdfReaderViewModel @Inject constructor(
 
     init {
         load()
-        if (tracking) wallpaperFollow.noteOpenBook(bookId)
+        if (tracking) wallpaperFollow.openBookForReading(bookId)
     }
 
     private fun load() {
@@ -206,7 +206,7 @@ class PdfReaderViewModel @Inject constructor(
         tracking = true
         savedStateHandle["peek"] = false // survive process death
         _ui.update { it.copy(peek = false) }
-        wallpaperFollow.noteOpenBook(bookId)
+        wallpaperFollow.openBookForReading(bookId)
         val total = _ui.value.pageCount
         if (fileId == 0 || total <= 0) return
         val page = _ui.value.currentPage
