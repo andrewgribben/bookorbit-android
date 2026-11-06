@@ -11,7 +11,7 @@ import android.provider.MediaStore
 import androidx.annotation.RequiresApi
 
 /**
- * Writes the lock-screen cover to one fixed, user-visible file - `Pictures/BookOrbit/sleep-image.png`.
+ * Writes the lock-screen cover to one fixed, user-visible file - `Pictures/sleep-image.png`.
  *
  * Some devices ignore [android.app.WallpaperManager.FLAG_LOCK] and show their own sleep/lock
  * screen picture instead (Boox e-readers: Settings points the lock screen at an image file). The
@@ -25,7 +25,8 @@ import androidx.annotation.RequiresApi
  */
 object SleepImageFile {
     const val DISPLAY_NAME = "sleep-image.png"
-    val RELATIVE_DIR = "${Environment.DIRECTORY_PICTURES}/BookOrbit/"
+    /** Directly in Pictures, not a subfolder: Boox's screensaver picker only lists images there. */
+    val RELATIVE_DIR = "${Environment.DIRECTORY_PICTURES}/"
 
     /** Where the file shows up for the user (shared storage, relative to its root). */
     val displayPath: String get() = RELATIVE_DIR + DISPLAY_NAME
