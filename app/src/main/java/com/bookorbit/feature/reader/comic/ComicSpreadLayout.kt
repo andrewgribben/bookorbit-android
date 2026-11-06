@@ -87,8 +87,8 @@ class ComicSpreadLayout(
 }
 
 /**
- * [isTwoPageEffective]: owner decision / PLAN.md - two-page spreads apply only in Paged mode, and
- * default on for the Fold (unfolded) or landscape, via [effectiveTwoPage] below.
+ * [isTwoPageEffective]: two-page spreads apply only in Paged mode with the Two-page view, and
+ * then only on a wide enough screen (or when forced), via [effectiveTwoPage] below.
  */
 fun buildComicSpreads(
     pageCount: Int,
@@ -176,19 +176,24 @@ fun comicSpreadLayout(
     pageCount,
 )
 
-/** The 900dp breakpoint from the web (`TWO_PAGE_BREAKPOINT`): true when the Fold is unfolded or
- * the device is in landscape at or above it. Only applies in Paged mode (PLAN.md, "Two-page
- * applies to paged mode only"); callers must additionally check [ComicReaderSettings.scrollMode]. */
+/** The 900dp breakpoint from the web (`TWO_PAGE_BREAKPOINT`): wide enough for two pages, e.g. the
+ * Fold unfolded or a phone/tablet in landscape. */
 const val TWO_PAGE_BREAKPOINT_DP = 900
 
+/**
+ * Whether Paged mode shows two-page spreads - the web's `isTwoPageEffective` (CbzReaderView.vue):
+ * only when the reader has chosen the Two-page view, and then only on a screen at least
+ * [TWO_PAGE_BREAKPOINT_DP] wide unless [ComicReaderSettings.forceTwoPage] is on. Single page view is
+ * always single page, whatever the screen width - a large portrait e-reader (e.g. Boox Note Air,
+ * ~930dp wide) must not be pushed into spreads.
+ */
 fun effectiveTwoPage(
     settings: ComicReaderSettings,
     widthDp: Int,
 ): Boolean {
     if (settings.scrollMode != ComicScrollMode.PAGINATED) return false
-    if (settings.forceTwoPage) return true
-    if (settings.viewMode == ComicViewMode.TWO_PAGE) return true
-    return widthDp >= TWO_PAGE_BREAKPOINT_DP
+    if (settings.viewMode != ComicViewMode.TWO_PAGE) return false
+    return settings.forceTwoPage || widthDp >= TWO_PAGE_BREAKPOINT_DP
 }
 
 /** A page is "wide" (likely a double-page scan) when its aspect ratio is at least

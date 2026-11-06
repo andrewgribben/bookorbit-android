@@ -461,7 +461,7 @@ private fun androidx.compose.foundation.layout.BoxScope.ComicPages(
 }
 
 /** Paged mode: a [HorizontalPager] over spread units (single or two-page), mirroring the web's
- * paginated CBZ reader. Two-page defaults on for the Fold/landscape via [effectiveTwoPage]. */
+ * paginated CBZ reader. Two-page view applies on wide screens (or when forced) via [effectiveTwoPage]. */
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.ComicPagedPages(
     ui: ComicReaderViewModel.UiState,
