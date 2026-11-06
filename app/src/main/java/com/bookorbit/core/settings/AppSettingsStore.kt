@@ -39,6 +39,7 @@ class AppSettingsStore @Inject constructor(
     private val readingFullscreenKey = booleanPreferencesKey("reading_fullscreen")
     private val coverWallpaperFollowKey = booleanPreferencesKey("cover_wallpaper_follow")
     private val coverWallpaperFollowedBookIdKey = intPreferencesKey("cover_wallpaper_followed_book_id")
+    private val coverSleepImageFileKey = booleanPreferencesKey("cover_sleep_image_file")
 
     val readerInterface = context.appSettingsDataStore.data.map { prefs ->
         prefs[readerInterfaceKey]?.let { runCatching { ReaderInterface.valueOf(it) }.getOrNull() }
@@ -110,5 +111,13 @@ class AppSettingsStore @Inject constructor(
 
     suspend fun setCoverWallpaperFollowedBookId(bookId: Int) {
         context.appSettingsDataStore.edit { it[coverWallpaperFollowedBookIdKey] = bookId }
+    }
+
+    /** Also write the lock-screen cover to a fixed file (see SleepImageFile) whenever the cover
+     * wallpaper is set - for devices like Boox that read their lock screen from a file. Off by default. */
+    val coverSleepImageFile = context.appSettingsDataStore.data.map { it[coverSleepImageFileKey] ?: false }
+
+    suspend fun setCoverSleepImageFile(enabled: Boolean) {
+        context.appSettingsDataStore.edit { it[coverSleepImageFileKey] = enabled }
     }
 }

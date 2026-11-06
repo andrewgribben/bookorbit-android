@@ -100,6 +100,13 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { appSettings.setCoverWallpaperFollow(enabled) }
     }
 
+    val coverSleepImageFile: StateFlow<Boolean> = appSettings.coverSleepImageFile
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setCoverSleepImageFile(enabled: Boolean) {
+        viewModelScope.launch { appSettings.setCoverSleepImageFile(enabled) }
+    }
+
     val certificateHost: String get() = UserCaSettings.httpsHost(session.serverUrl).orEmpty()
 
     val trustUserCas: StateFlow<Boolean> = userCaSettings.hosts.map { userCaSettings.isEnabledForUrl(session.serverUrl) }
