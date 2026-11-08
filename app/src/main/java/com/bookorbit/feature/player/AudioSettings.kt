@@ -36,6 +36,10 @@ fun speedLabel(v: Float): String {
 /** The speed a book plays at: its own saved speed if it has one, else the default for every book. */
 fun resolveSpeed(globalSpeed: Float, bookSpeed: Float?): Float = clampSpeed(bookSpeed ?: globalSpeed)
 
+/** The quick preset after [current], wrapping to the slowest - what the car/notification speed button steps through. */
+fun nextPresetSpeed(current: Float): Float =
+    SPEED_PRESETS.firstOrNull { it > snapSpeed(current) + 0.001f } ?: SPEED_PRESETS.first()
+
 /** What the progress bar (in-app and on every media-session surface) measures. */
 enum class ProgressBarMode {
     CHAPTER, BOOK;
