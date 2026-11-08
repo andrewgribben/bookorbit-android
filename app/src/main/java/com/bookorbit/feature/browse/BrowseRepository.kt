@@ -71,6 +71,8 @@ class BrowseRepository @Inject constructor(
 
     suspend fun readingGoal() = api.getReadingGoal()
 
+    suspend fun readingRecap() = api.getReadingRecap()
+
     /** Catalog typeahead for the filter sheet (authors/genres/tags/languages). */
     suspend fun searchCatalog(kind: String, q: String): List<String> =
         if (q.isBlank()) emptyList()

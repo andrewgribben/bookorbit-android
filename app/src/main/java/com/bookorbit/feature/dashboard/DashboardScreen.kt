@@ -47,10 +47,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.bookorbit.core.model.BookCard
 import com.bookorbit.core.model.ReadingGoalWidget
+import com.bookorbit.core.model.ReadingRecapWidget
 import com.bookorbit.core.model.ReadingStreakWidget
 import com.bookorbit.core.model.ScrollerType
 import com.bookorbit.core.model.knownShelfLabelRes
 import com.bookorbit.ui.LocalImageUrls
+import com.bookorbit.ui.components.ExternalBookScroller
 import com.bookorbit.ui.components.HorizontalBookScroller
 import java.time.LocalTime
 
@@ -89,6 +91,7 @@ fun DashboardScreen(
                 }
                 else -> {
                     StatsStrip(streak = ui.streak, goal = ui.goal)
+                    ReadingRecapCard(recap = ui.recap)
 
                     // The hero is the book to pick up next: reading first, then listening - only
                     // when that shelf is actually enabled (it's just absent from ui.shelves otherwise).
@@ -121,6 +124,10 @@ fun DashboardScreen(
                             }
                             HorizontalBookScroller(label, books, onBookClick)
                         }
+                    }
+
+                    ui.externalShelves.forEach { shelf ->
+                        ExternalBookScroller(shelf.shelfId, shelf.books, onBookClick)
                     }
                 }
             }
@@ -190,6 +197,60 @@ private fun StatCard(modifier: Modifier, content: @Composable () -> Unit) {
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) { content() }
+    }
+}
+
+/**
+ * A connected reading-service's recap: books finished, sessions, total time and (optionally) a
+ * yearly goal bar, below the streak/goal strip in the same column (per the approved mockup). Null
+ * on an older server or when no provider has the `recap_widget` capability - hides entirely, same
+ * degrade pattern as [StatsStrip].
+ */
+@Composable
+private fun ReadingRecapCard(recap: ReadingRecapWidget?) {
+    if (recap == null) return
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(
+                stringResource(R.string.reading_recap_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                RecapStat(stringResource(R.string.reading_recap_books_finished), recap.booksFinished.toString())
+                RecapStat(stringResource(R.string.reading_recap_sessions), recap.sessions.toString())
+                RecapStat(stringResource(R.string.reading_recap_reading_days), recap.readingDays.toString())
+            }
+            val goal = recap.goal
+            if (goal != null && goal > 0) {
+                LinearProgressIndicator(
+                    progress = { (recap.booksFinished.toFloat() / goal).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp).height(6.dp).clip(CircleShape),
+                )
+                Text(
+                    stringResource(R.string.home_goal_progress, recap.booksFinished, goal),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecapStat(label: String, value: String) {
+    Column {
+        Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

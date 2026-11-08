@@ -209,6 +209,9 @@ dependencies {
     // WebView (foliate reader host)
     implementation(libs.androidx.webkit)
 
+    // Custom Tabs (device-code sign-in verification link)
+    implementation(libs.androidx.browser)
+
     // Unit test
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

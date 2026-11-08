@@ -99,6 +99,7 @@ fun BookDetailScreen(
     val collections by vm.collections.collectAsStateWithLifecycle()
     var statusSheet by remember { mutableStateOf(false) }
     var collectionSheet by remember { mutableStateOf(false) }
+    var reviewSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
     ui.message?.let { msg ->
         androidx.compose.runtime.LaunchedEffect(msg) {
@@ -164,6 +165,7 @@ fun BookDetailScreen(
                     onStartDownload = startDownload,
                     onOpenStatusSheet = { statusSheet = true },
                     onOpenCollectionSheet = { collectionSheet = true },
+                    onOpenReviewSheet = { reviewSheet = true },
                 )
             }
         }
@@ -188,6 +190,20 @@ fun BookDetailScreen(
             onDismiss = { collectionSheet = false },
         )
     }
+    if (book != null && reviewSheet) {
+        ReviewEditorSheet(
+            rating = book.rating,
+            review = book.review,
+            canRate = vm.canRate,
+            saving = ui.reviewUpdating,
+            onRatingChange = vm::setRating,
+            onSave = {
+                vm.setReview(it)
+                reviewSheet = false
+            },
+            onDismiss = { reviewSheet = false },
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -209,6 +225,7 @@ private fun BookDetailContent(
     onStartDownload: () -> Unit,
     onOpenStatusSheet: () -> Unit,
     onOpenCollectionSheet: () -> Unit,
+    onOpenReviewSheet: () -> Unit,
 ) {
     val imageUrls = LocalImageUrls.current
     val uriHandler = LocalUriHandler.current
@@ -293,6 +310,7 @@ private fun BookDetailContent(
                 onBookClick = onBookClick,
                 onOpenStatusSheet = onOpenStatusSheet,
                 onOpenCollectionSheet = onOpenCollectionSheet,
+                onOpenReviewSheet = onOpenReviewSheet,
                 onOpenUri = { uriHandler.openUri(it) },
             )
             1 -> FilesTab(book)
@@ -449,10 +467,11 @@ private fun DetailsTab(
     onBookClick: (Int) -> Unit,
     onOpenStatusSheet: () -> Unit,
     onOpenCollectionSheet: () -> Unit,
+    onOpenReviewSheet: () -> Unit,
     onOpenUri: (String) -> Unit,
 ) {
     Column {
-        ShelfCards(book, vm, ui, onOpenStatusSheet, onOpenCollectionSheet)
+        ShelfCards(book, vm, ui, onOpenStatusSheet, onOpenCollectionSheet, onOpenReviewSheet)
 
         book.description?.let { description ->
             Section(stringResource(R.string.synopsis)) {
@@ -511,6 +530,7 @@ private fun ShelfCards(
     ui: BookDetailViewModel.UiState,
     onOpenStatusSheet: () -> Unit,
     onOpenCollectionSheet: () -> Unit,
+    onOpenReviewSheet: () -> Unit,
 ) {
     Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Surface(
@@ -552,6 +572,29 @@ private fun ShelfCards(
                         onChange = if (vm.canRate) vm::setRating else null,
                         enabled = !ui.ratingUpdating,
                     )
+                }
+            }
+        }
+
+        if (vm.canRate || book.review != null) {
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenReviewSheet),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        book.review?.ifBlank { null } ?: stringResource(if (vm.canRate) R.string.review_add else R.string.review),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (book.review.isNullOrBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

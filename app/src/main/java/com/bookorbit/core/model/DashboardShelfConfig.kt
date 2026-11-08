@@ -98,6 +98,29 @@ object DashboardShelfConfig {
     }
 
     /**
+     * Parses `dashboardShelfConfig.externalShelves` (`ExternalShelfConfig[]`,
+     * `packages/types/src/dashboard.ts`) into [ExternalShelfConfig] entries, in `order`. Returns
+     * `null`, not an empty list, when the key is missing entirely (an older server, or a user who
+     * has never opened the web picker) - that is the "unreadable" case a caller should fall back
+     * on its own default for. An explicitly empty or all-invalid array returns an empty list: the
+     * config is readable, it just says "show nothing", and that is honoured as-is.
+     */
+    fun parseExternalShelves(configJson: JsonObject?): List<ExternalShelfConfig>? {
+        val raw = configJson?.get("externalShelves") as? JsonArray ?: return null
+        return raw.mapIndexedNotNull { index, element -> parseExternalShelfEntry(element, index) }
+            .sortedBy { it.order }
+    }
+
+    private fun parseExternalShelfEntry(element: JsonElement, index: Int): ExternalShelfConfig? {
+        val obj = element as? JsonObject ?: return null
+        val provider = (obj["provider"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
+        val shelf = (obj["shelf"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
+        val enabled = (obj["enabled"] as? JsonPrimitive)?.booleanOrNull ?: true
+        val order = (obj["order"] as? JsonPrimitive)?.intOrNull ?: (index + 1)
+        return ExternalShelfConfig(provider, shelf, enabled, order)
+    }
+
+    /**
      * The app's edits ([edited]) applied onto the server's current list ([server], re-read just
      * before saving): shelves deleted elsewhere since the screen opened stay deleted, and shelves
      * added elsewhere (e.g. on the web) are kept, after the app's ones, instead of being overwritten.

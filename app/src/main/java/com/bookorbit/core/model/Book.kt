@@ -115,6 +115,10 @@ data class BookDetail(
     val collections: List<CollectionRef> = emptyList(),
     val audioMetadata: AudioMetadata? = null,
     val readAloudSync: ReadAloudProgressSync? = null,
+    /** Both absent/null on a server that predates book reviews - the review UI hides then,
+     * same pattern as [rating]. Synced two-way with a connected reading service (e.g. Readwise). */
+    val review: String? = null,
+    val reviewUpdatedAt: String? = null,
 )
 
 @Serializable
