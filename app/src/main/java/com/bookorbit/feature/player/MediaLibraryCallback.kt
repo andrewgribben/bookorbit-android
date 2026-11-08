@@ -53,11 +53,15 @@ class MediaLibraryCallback @Inject constructor(
 
     override fun onConnect(session: MediaSession, controller: ControllerInfo): MediaSession.ConnectionResult {
         val base = super<MediaLibrarySession.Callback>.onConnect(session, controller)
-        if (!base.isAccepted || controller.packageName != context.packageName) return base
-        return MediaSession.ConnectionResult.accept(
-            base.availableSessionCommands.buildUpon().add(BookQueueCommand.command).build(),
-            base.availablePlayerCommands,
-        )
+        if (!base.isAccepted) return base
+        val commands = base.availableSessionCommands.buildUpon().add(SpeedCommand.command)
+        // The queue-load command stays private to this app's own controller.
+        if (controller.packageName == context.packageName) commands.add(BookQueueCommand.command)
+        return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+            .setAvailableSessionCommands(commands.build())
+            .setAvailablePlayerCommands(base.availablePlayerCommands)
+            .setCustomLayout(ImmutableList.of(SpeedCommand.button(context, playerManager.state.value.speed)))
+            .build()
     }
 
     override fun onCustomCommand(
@@ -66,6 +70,11 @@ class MediaLibraryCallback @Inject constructor(
         command: SessionCommand,
         args: Bundle,
     ): ListenableFuture<SessionResult> {
+        if (command == SpeedCommand.command) {
+            val s = playerManager.state.value
+            playerManager.setSpeed(nextPresetSpeed(s.speed), forThisBook = s.speedIsPerBook)
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
         if (command != BookQueueCommand.command || controller.packageName != context.packageName) {
             return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
         }

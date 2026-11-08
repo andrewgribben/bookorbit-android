@@ -36,4 +36,13 @@ class PlaybackSpeedTest {
         assertEquals("0.75x", speedLabel(0.75f))
         assertEquals("2x", speedLabel(2.0f))
     }
+
+    @Test
+    fun `next preset steps up and wraps to the slowest`() {
+        assertEquals(1.25f, nextPresetSpeed(1.0f), 1e-6f)
+        assertEquals(0.75f, nextPresetSpeed(2.0f), 1e-6f)
+        assertEquals(1.25f, nextPresetSpeed(1.1f), 1e-6f) // off-preset slider value -> next one up
+        assertEquals(0.75f, nextPresetSpeed(2.5f), 1e-6f) // above every preset -> wrap
+        assertEquals(0.75f, nextPresetSpeed(0.5f), 1e-6f)
+    }
 }
