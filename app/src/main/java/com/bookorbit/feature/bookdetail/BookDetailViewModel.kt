@@ -50,6 +50,7 @@ class BookDetailViewModel @Inject constructor(
         val fileProgress: Map<Int, Double> = emptyMap(),
         val statusUpdating: Boolean = false,
         val ratingUpdating: Boolean = false,
+        val reviewUpdating: Boolean = false,
         /** One-shot message for the screen to toast, then clear via [consumeMessage]. */
         val message: UiText? = null,
     )
@@ -121,6 +122,22 @@ class BookDetailViewModel @Inject constructor(
             runCatching { repo.setRating(bookId, rating) }
             reloadBook()
             _ui.update { it.copy(ratingUpdating = false) }
+        }
+    }
+
+    /** Server-direct (no offline queue, see [BookDetailRepository.setReview]); a failure leaves
+     * the sheet open with [UiState.message] set rather than silently discarding the edit. */
+    fun setReview(review: String?) {
+        _ui.update { it.copy(reviewUpdating = true) }
+        viewModelScope.launch {
+            val ok = runCatching { repo.setReview(bookId, review) }.isSuccess
+            reloadBook()
+            _ui.update {
+                it.copy(
+                    reviewUpdating = false,
+                    message = if (ok) null else UiText.of(R.string.review_save_failed),
+                )
+            }
         }
     }
 
