@@ -232,7 +232,7 @@ class ReaderViewModel @Inject constructor(
         load()
         loadAnnotations()
         // Peeking must not register as the opened book for the cover-wallpaper "follow" feature.
-        if (tracking) wallpaperFollow.noteOpenBook(bookId)
+        if (tracking) wallpaperFollow.openBookForReading(bookId)
         viewModelScope.launch { _ui.update { it.copy(controlsSettings = controlsStore.load()) } }
     }
 
@@ -843,7 +843,7 @@ class ReaderViewModel @Inject constructor(
         tracking = true
         savedStateHandle["peek"] = false // survive process death
         _ui.update { it.copy(peek = false) }
-        wallpaperFollow.noteOpenBook(bookId)
+        wallpaperFollow.openBookForReading(bookId)
         sessions.beginReading(_ui.value.resolved?.fileId ?: return, _ui.value.percentage.toDouble())
         val cfi = currentCfi ?: _ui.value.resolved?.initial?.cfi
         pending = PendingSave(cfi, _ui.value.percentage.toDouble(), currentNarration)

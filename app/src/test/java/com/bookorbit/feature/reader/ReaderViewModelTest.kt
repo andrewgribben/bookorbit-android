@@ -17,6 +17,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -59,8 +60,8 @@ class ReaderViewModelTest {
     )
     private val resolvedFile = ReaderSource.ResolvedFile(LocalRef.PlainFile(File("book.epub")), "epub", fileId = 5)
 
-    private fun vm(appScope: CoroutineScope = CoroutineScope(Dispatchers.Unconfined)) = ReaderViewModel(
-        SavedStateHandle(mapOf("id" to 1)),
+    private fun vm(appScope: CoroutineScope = CoroutineScope(Dispatchers.Unconfined), peek: Boolean = false) = ReaderViewModel(
+        SavedStateHandle(mapOf("id" to 1, "peek" to peek)),
         bookRepo, downloads, source, progress, settingsStore, sessions, annotationRepo, bookmarkRepo,
         playerManager, narrationSource, wallpaper, wallpaperFollow, controlsStore, appScope,
     )
@@ -92,6 +93,21 @@ class ReaderViewModelTest {
         coEvery { progress.resolveInitial(5) } returns InitialProgress(null, 0.0)
         every { playerManager.state } returns MutableStateFlow(PlayerManager.UiState())
         coEvery { playerManager.flushPendingIfCurrent(any()) } returns Unit
+    }
+
+    @Test
+    fun `opening a book for tracked reading applies the cover wallpaper straight away`() = runTest {
+        vm()
+        verify(exactly = 1) { wallpaperFollow.openBookForReading(1) }
+    }
+
+    @Test
+    fun `peeking never applies or notes the cover wallpaper, until Start reading`() = runTest {
+        val model = vm(peek = true)
+        verify(exactly = 0) { wallpaperFollow.openBookForReading(any()) }
+        verify(exactly = 0) { wallpaperFollow.noteOpenBook(any()) }
+        model.startReading()
+        verify(exactly = 1) { wallpaperFollow.openBookForReading(1) }
     }
 
     @Test
