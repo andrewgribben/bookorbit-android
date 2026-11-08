@@ -28,9 +28,49 @@ data class ReadingServiceSummary(
     val capabilities: Map<String, String> = emptyMap(),
     val features: Map<String, Boolean> = emptyMap(),
     val disabledReason: String? = null,
+    val libraries: List<ReadingServiceLibrarySetting> = emptyList(),
 ) {
     /** Whether [feature] is both supported by the provider and not explicitly turned off. */
     fun featureActive(feature: String): Boolean = capabilities.containsKey(feature) && features[feature] != false
+}
+
+/**
+ * One library's per-provider sync scope from [ReadingServiceSummary.libraries] (server:
+ * `ReadingServiceLibrarySetting`, `packages/types/src/reading-services.ts`). The server lists one
+ * entry per library the user can access, so a missing/empty list here means an older server that
+ * predates per-library scope, not "every library disabled".
+ */
+@Serializable
+data class ReadingServiceLibrarySetting(
+    val libraryId: Int,
+    val enabled: Boolean = true,
+    val features: Map<String, Boolean> = emptyMap(),
+)
+
+/** Library-scope counts for one provider's Integrations row, derived from [ReadingServiceSummary.libraries]. */
+data class LibraryScopeSummary(
+    val enabledCount: Int,
+    val totalCount: Int,
+    val customisedCount: Int,
+) {
+    /** True when every library is enabled with no per-library feature narrowing. */
+    val isAllLibraries: Boolean get() = enabledCount == totalCount && customisedCount == 0
+}
+
+/**
+ * Summarises [ReadingServiceSummary.libraries] for display (e.g. "All libraries" or "2 of 3
+ * libraries, 1 customised") - null when the field is absent or empty, so an older server that
+ * never sent per-library scope renders no scope line instead of claiming "0 of 0 libraries".
+ */
+fun ReadingServiceSummary.libraryScopeSummary(): LibraryScopeSummary? {
+    if (libraries.isEmpty()) return null
+    val enabledLibraries = libraries.filter { it.enabled }
+    val customisedCount = enabledLibraries.count { entry -> entry.features.values.any { value -> !value } }
+    return LibraryScopeSummary(
+        enabledCount = enabledLibraries.size,
+        totalCount = libraries.size,
+        customisedCount = customisedCount,
+    )
 }
 
 /**

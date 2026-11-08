@@ -57,6 +57,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bookorbit.BuildConfig
 import com.bookorbit.core.settings.ThemeMode
+import com.bookorbit.core.model.libraryScopeSummary
 import com.bookorbit.core.settings.ReaderInterface
 import com.bookorbit.feature.player.MediaButtonMode
 import com.bookorbit.feature.player.ProgressBarMode
@@ -392,6 +393,34 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard
                             onClickLabel = stringResource(R.string.settings_integrations_manage),
                             onClick = { runCatching { uriHandler.openUri(vm.integrationsUrl) } },
                         ),
+                    )
+                }
+                items(integrations.filter { it.connected }) { provider ->
+                    val scope = provider.libraryScopeSummary()
+                    ListItem(
+                        headlineContent = { Text(provider.provider.replaceFirstChar(Char::uppercase)) },
+                        supportingContent = scope?.let { summary ->
+                            {
+                                Text(
+                                    when {
+                                        summary.isAllLibraries -> stringResource(R.string.settings_integrations_library_scope_all)
+                                        summary.customisedCount == 0 ->
+                                            stringResource(
+                                                R.string.settings_integrations_library_scope_n_of_m,
+                                                summary.enabledCount,
+                                                summary.totalCount,
+                                            )
+                                        else ->
+                                            stringResource(
+                                                R.string.settings_integrations_library_scope_customised,
+                                                summary.enabledCount,
+                                                summary.totalCount,
+                                                summary.customisedCount,
+                                            )
+                                    },
+                                )
+                            }
+                        },
                     )
                 }
                 item { HorizontalDivider() }
