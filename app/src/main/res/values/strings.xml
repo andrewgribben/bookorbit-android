@@ -570,6 +570,7 @@
     <string name="cr_direction_ltr">Left to right</string>
     <string name="cr_direction_rtl">Right to left</string>
     <string name="cr_force_two_page">Force two-page on small screens</string>
+    <string name="cr_force_two_page_hint">Two-page shows spreads on wide screens (landscape or unfolded); narrower screens show single pages unless forced</string>
     <string name="cr_spread_alignment">Spread alignment</string>
     <string name="cr_spread_alignment_hint">Shift pairing by one page after the cover for off-by-one scans</string>
     <string name="cr_alignment_normal">Normal</string>

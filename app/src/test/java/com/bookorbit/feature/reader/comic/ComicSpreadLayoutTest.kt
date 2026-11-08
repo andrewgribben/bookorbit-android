@@ -156,21 +156,30 @@ class ComicSpreadLayoutTest {
 
     @Test
     fun `effectiveTwoPage only applies in paged mode`() {
-        val base = ComicReaderSettings(scrollMode = ComicScrollMode.INFINITE, forceTwoPage = true)
+        val base = ComicReaderSettings(scrollMode = ComicScrollMode.INFINITE, viewMode = ComicViewMode.TWO_PAGE, forceTwoPage = true)
         assertFalse(effectiveTwoPage(base, widthDp = 1200))
     }
 
     @Test
-    fun `effectiveTwoPage is forced on regardless of width when forceTwoPage is set`() {
-        val settings = ComicReaderSettings(forceTwoPage = true)
-        assertTrue(effectiveTwoPage(settings, widthDp = 400))
+    fun `effectiveTwoPage single page view is single at any width, even when forced`() {
+        val settings = ComicReaderSettings(viewMode = ComicViewMode.SINGLE)
+        assertFalse(effectiveTwoPage(settings, widthDp = 600))
+        // A portrait Boox Note Air is ~930dp wide - must stay single page.
+        assertFalse(effectiveTwoPage(settings, widthDp = 930))
+        assertFalse(effectiveTwoPage(settings.copy(forceTwoPage = true), widthDp = 400))
     }
 
     @Test
-    fun `effectiveTwoPage defaults on at the fold-or-landscape breakpoint`() {
-        val settings = ComicReaderSettings()
+    fun `effectiveTwoPage two-page view applies at the wide-screen breakpoint`() {
+        val settings = ComicReaderSettings(viewMode = ComicViewMode.TWO_PAGE)
         assertFalse(effectiveTwoPage(settings, widthDp = 600))
         assertTrue(effectiveTwoPage(settings, widthDp = 900))
+    }
+
+    @Test
+    fun `effectiveTwoPage two-page view is forced on narrow screens when forceTwoPage is set`() {
+        val settings = ComicReaderSettings(viewMode = ComicViewMode.TWO_PAGE, forceTwoPage = true)
+        assertTrue(effectiveTwoPage(settings, widthDp = 400))
     }
 
     @Test

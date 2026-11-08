@@ -223,19 +223,21 @@ private fun ComicLayoutTab(settings: ComicReaderSettings, enabled: Boolean, onCh
 
 @Composable
 private fun ComicSpreadsTab(settings: ComicReaderSettings, enabled: Boolean, onChange: (ComicReaderSettings) -> Unit) {
-    // Spreads only apply in Paged mode (ComicSpreadLayout/effectiveTwoPage) - matches the
-    // ebook sheet's "Use book layout" lock pattern with a tinted note instead of hiding the tab.
-    val spreadsApply = settings.scrollMode == ComicScrollMode.PAGINATED
+    // Spreads only apply in Paged mode with the Two-page view (Layout tab's "Page view"; see
+    // ComicSpreadLayout/effectiveTwoPage) - matches the ebook sheet's "Use book layout" lock
+    // pattern with a tinted note instead of hiding the controls.
+    val spreadsApply = settings.scrollMode == ComicScrollMode.PAGINATED && settings.viewMode == ComicViewMode.TWO_PAGE
     val groupEnabled = enabled && spreadsApply
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.cr_force_two_page), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Switch(checked = settings.forceTwoPage, enabled = enabled, onCheckedChange = { onChange(settings.copy(forceTwoPage = it)) })
-        }
         if (!spreadsApply) {
             LockedOrHintNote(stringResource(R.string.cr_spreads_locked_note))
         }
         Column(modifier = Modifier.alpha(if (groupEnabled) 1f else LOCKED_ALPHA), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.cr_force_two_page), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Switch(checked = settings.forceTwoPage, enabled = groupEnabled, onCheckedChange = { onChange(settings.copy(forceTwoPage = it)) })
+            }
+            LockedOrHintNote(stringResource(R.string.cr_force_two_page_hint))
             SectionLabel(stringResource(R.string.cr_spread_alignment))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = settings.spreadAlignment == ComicSpreadAlignment.NORMAL, enabled = groupEnabled, onClick = { onChange(settings.copy(spreadAlignment = ComicSpreadAlignment.NORMAL)) }, label = { Text(stringResource(R.string.cr_alignment_normal)) })
