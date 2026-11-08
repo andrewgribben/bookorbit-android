@@ -56,6 +56,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bookorbit.BuildConfig
 import com.bookorbit.core.settings.ThemeMode
+import com.bookorbit.core.model.libraryScopeSummary
 import com.bookorbit.core.settings.ReaderInterface
 import com.bookorbit.core.wallpaper.SleepImageFile
 import com.bookorbit.feature.player.MediaButtonMode
@@ -66,7 +67,7 @@ import kotlin.math.pow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard: () -> Unit = {}) {
+fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard: () -> Unit = {}, onOpenIntegrations: () -> Unit = {}) {
     val readerInterface by vm.readerInterface.collectAsStateWithLifecycle()
     val readingFullscreen by vm.readingFullscreen.collectAsStateWithLifecycle()
     val themeMode by vm.themeMode.collectAsStateWithLifecycle()
@@ -86,6 +87,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard
     val appContext = androidx.compose.ui.platform.LocalContext.current
     val downloadLocationAccessible by vm.downloadLocationAccessible.collectAsStateWithLifecycle()
     val appInfo by vm.appInfo.collectAsStateWithLifecycle()
+    val integrations by vm.integrations.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     var confirmClearDownloads by remember { mutableStateOf(false) }
@@ -380,6 +382,58 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard
             }
 
             item { HorizontalDivider() }
+            if (integrations.isNotEmpty()) {
+                item { SectionHeader(stringResource(R.string.settings_integrations)) }
+                item {
+                    val connectedLabels = integrations.filter { it.connected }
+                        .map { it.resolvedDisplayName }
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.integrations_title)) },
+                        supportingContent = {
+                            Text(
+                                if (connectedLabels.isNotEmpty()) {
+                                    stringResource(R.string.settings_integrations_connected, connectedLabels.joinToString(", "))
+                                } else {
+                                    stringResource(R.string.settings_integrations_none_connected)
+                                },
+                            )
+                        },
+                        modifier = Modifier.clickable(
+                            onClickLabel = stringResource(R.string.integrations_title),
+                            onClick = onOpenIntegrations,
+                        ),
+                    )
+                }
+                items(integrations.filter { it.connected }) { provider ->
+                    val scope = provider.libraryScopeSummary()
+                    ListItem(
+                        headlineContent = { Text(provider.resolvedDisplayName) },
+                        supportingContent = scope?.let { summary ->
+                            {
+                                Text(
+                                    when {
+                                        summary.isAllLibraries -> stringResource(R.string.settings_integrations_library_scope_all)
+                                        summary.customisedCount == 0 ->
+                                            stringResource(
+                                                R.string.settings_integrations_library_scope_n_of_m,
+                                                summary.enabledCount,
+                                                summary.totalCount,
+                                            )
+                                        else ->
+                                            stringResource(
+                                                R.string.settings_integrations_library_scope_customised,
+                                                summary.enabledCount,
+                                                summary.totalCount,
+                                                summary.customisedCount,
+                                            )
+                                    },
+                                )
+                            }
+                        },
+                    )
+                }
+                item { HorizontalDivider() }
+            }
             item { SectionHeader(stringResource(R.string.about)) }
             item {
                 SettingsRow(

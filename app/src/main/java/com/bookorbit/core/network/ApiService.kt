@@ -398,6 +398,65 @@ interface ApiService {
     @GET("dashboard/widgets/reading-goal")
     suspend fun getReadingGoal(): com.bookorbit.core.model.ReadingGoalWidget
 
+    /** Server returns `ReadingRecapWidget | null`: null when no connected provider has opted
+     * into `recap_widget`. Also 404s on a server that predates the endpoint - caller degrades
+     * to null either way. */
+    @GET("dashboard/widgets/reading-recap")
+    suspend fun getReadingRecap(): com.bookorbit.core.model.ReadingRecapWidget?
+
+    // --- Reading services (Readwise / Hardcover) ---
+    @GET("reading-services")
+    suspend fun getReadingServices(): List<com.bookorbit.core.model.ReadingServiceSummary>
+
+    /** `GET /reading-services/shelves/available` - every shelf a connected-or-not provider
+     * currently exposes, for a shelf picker. 404s on a server that predates this route. */
+    @GET("reading-services/shelves/available")
+    suspend fun getAvailableReadingServiceShelves(): List<com.bookorbit.core.model.ReadingServiceAvailableShelf>
+
+    /**
+     * No `limit` query param: the server endpoint takes none (see
+     * `docs/AGENT_HANDOFF.md` "API for Android"). 404s for an unknown shelf/provider or one that
+     * doesn't declare the shelf's capability.
+     */
+    @GET("reading-services/{provider}/shelves/{shelf}")
+    suspend fun getReadingServiceShelf(
+        @Path("provider") provider: String,
+        @Path("shelf") shelf: String,
+    ): List<com.bookorbit.core.model.ReadingServiceShelfItem>
+
+    /** `token` auth method: body `{ credential }`. */
+    @POST("reading-services/{provider}/auth/token")
+    suspend fun connectReadingServiceToken(
+        @Path("provider") provider: String,
+        @Body body: com.bookorbit.core.model.ConnectReadingServiceTokenRequest,
+    ): com.bookorbit.core.model.ReadingServiceAuthResult
+
+    /** `password` auth method: body `{ username, password }`. The password is read once off this
+     * request and never stored by the caller; see [com.bookorbit.core.network.ReadingServicesRepository]. */
+    @POST("reading-services/{provider}/auth/password")
+    suspend fun connectReadingServicePassword(
+        @Path("provider") provider: String,
+        @Body body: com.bookorbit.core.model.ConnectReadingServicePasswordRequest,
+    ): com.bookorbit.core.model.ReadingServicePasswordLoginResult
+
+    /** Starts a `device_code` sign-in; the handle itself never reaches this response. */
+    @POST("reading-services/{provider}/auth/device/start")
+    suspend fun startReadingServiceDeviceAuth(@Path("provider") provider: String): com.bookorbit.core.model.ReadingServiceDeviceAuthStart
+
+    /** Polls the sign-in started by [startReadingServiceDeviceAuth]. */
+    @POST("reading-services/{provider}/auth/device/poll")
+    suspend fun pollReadingServiceDeviceAuth(@Path("provider") provider: String): com.bookorbit.core.model.ReadingServiceDeviceAuthPollResult
+
+    /** Deletes the stored credential for this provider. */
+    @DELETE("reading-services/{provider}/auth")
+    suspend fun disconnectReadingService(@Path("provider") provider: String): com.bookorbit.core.model.ReadingServiceOkResult
+
+    @PATCH("books/{id}/review")
+    suspend fun setReview(
+        @Path("id") id: Int,
+        @Body body: com.bookorbit.core.model.SetReviewRequest,
+    )
+
     // --- Book Dock (staging / ingest review) ---
     @GET("book-dock/files")
     suspend fun getBookDockFiles(

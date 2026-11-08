@@ -57,6 +57,8 @@ import com.bookorbit.feature.bookdrop.BookDropScreen
 import com.bookorbit.feature.dashboard.DashboardScreen
 import com.bookorbit.feature.downloads.DownloadsScreen
 import com.bookorbit.feature.dashboard.CustomizeDashboardScreen
+import com.bookorbit.feature.integrations.IntegrationsListScreen
+import com.bookorbit.feature.integrations.ProviderDetailScreen
 import com.bookorbit.feature.notes.NotesScreen
 import com.bookorbit.feature.player.MiniPlayer
 import com.bookorbit.feature.search.SearchScreen
@@ -73,12 +75,15 @@ internal object SubRoute {
     const val BOOK_DROP = "bookdrop"
     const val SETTINGS = "settings"
     const val DASHBOARD_CUSTOMIZE = "dashboard-customize"
+    const val INTEGRATIONS = "integrations"
+    const val INTEGRATION_DETAIL = "integrations/{provider}"
     const val BOOK_DETAIL = "book/{id}"
     const val AUTHOR = "author/{id}?name={name}"
     const val SERIES = "series/{id}?name={name}"
     fun bookDetail(id: Int) = "book/$id"
     fun author(id: Int, name: String) = "author/$id?name=${Uri.encode(name)}"
     fun series(id: Int, name: String) = "series/$id?name=${Uri.encode(name)}"
+    fun integrationDetail(provider: String) = "integrations/$provider"
 
 }
 
@@ -317,10 +322,34 @@ fun MainShell(
             composable(SubRoute.DOWNLOADS) { DownloadsScreen(onBookClick = onListBookClick) }
             composable(SubRoute.BOOK_DROP) { BookDropScreen() }
             composable(SubRoute.SETTINGS) {
-                CenteredContent { SettingsScreen(onCustomizeDashboard = { tabNav.navigate(SubRoute.DASHBOARD_CUSTOMIZE) }) }
+                CenteredContent {
+                    SettingsScreen(
+                        onCustomizeDashboard = { tabNav.navigate(SubRoute.DASHBOARD_CUSTOMIZE) },
+                        onOpenIntegrations = { tabNav.navigate(SubRoute.INTEGRATIONS) },
+                    )
+                }
             }
             composable(SubRoute.DASHBOARD_CUSTOMIZE) {
                 CenteredContent { CustomizeDashboardScreen(onBack = { tabNav.popBackStack() }) }
+            }
+            composable(SubRoute.INTEGRATIONS) {
+                CenteredContent {
+                    IntegrationsListScreen(
+                        onBack = { tabNav.popBackStack() },
+                        onProviderClick = { provider -> tabNav.navigate(SubRoute.integrationDetail(provider)) },
+                    )
+                }
+            }
+            composable(
+                route = SubRoute.INTEGRATION_DETAIL,
+                arguments = listOf(navArgument("provider") { type = NavType.StringType }),
+            ) { entry ->
+                CenteredContent {
+                    ProviderDetailScreen(
+                        provider = entry.arguments?.getString("provider").orEmpty(),
+                        onBack = { tabNav.popBackStack() },
+                    )
+                }
             }
             composable(
                 route = SubRoute.BOOK_DETAIL,

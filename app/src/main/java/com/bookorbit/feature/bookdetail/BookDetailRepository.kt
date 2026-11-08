@@ -55,6 +55,16 @@ class BookDetailRepository @Inject constructor(
     }
 
     /**
+     * Writes the review directly to the server - unlike [setRating]/[setReadStatus] this has no
+     * offline queue, since reviews are a lower-frequency edit and the server already resolves
+     * conflicts with a connected reading service via a three-way merge. A failure surfaces to the
+     * caller so the sheet can show an error instead of silently discarding the edit.
+     */
+    suspend fun setReview(id: Int, review: String?) {
+        api.setReview(id, com.bookorbit.core.model.SetReviewRequest(review))
+    }
+
+    /**
      * Overlays any not-yet-synced local rating/read-status onto [book], so a queued offline edit
      * keeps showing correctly regardless of whether [book] came from the server or the offline
      * download cache, and survives app restarts.
