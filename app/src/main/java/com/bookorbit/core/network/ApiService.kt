@@ -424,6 +424,33 @@ interface ApiService {
         @Path("shelf") shelf: String,
     ): List<com.bookorbit.core.model.ReadingServiceShelfItem>
 
+    /** `token` auth method: body `{ credential }`. */
+    @POST("reading-services/{provider}/auth/token")
+    suspend fun connectReadingServiceToken(
+        @Path("provider") provider: String,
+        @Body body: com.bookorbit.core.model.ConnectReadingServiceTokenRequest,
+    ): com.bookorbit.core.model.ReadingServiceAuthResult
+
+    /** `password` auth method: body `{ username, password }`. The password is read once off this
+     * request and never stored by the caller; see [com.bookorbit.core.network.ReadingServicesRepository]. */
+    @POST("reading-services/{provider}/auth/password")
+    suspend fun connectReadingServicePassword(
+        @Path("provider") provider: String,
+        @Body body: com.bookorbit.core.model.ConnectReadingServicePasswordRequest,
+    ): com.bookorbit.core.model.ReadingServicePasswordLoginResult
+
+    /** Starts a `device_code` sign-in; the handle itself never reaches this response. */
+    @POST("reading-services/{provider}/auth/device/start")
+    suspend fun startReadingServiceDeviceAuth(@Path("provider") provider: String): com.bookorbit.core.model.ReadingServiceDeviceAuthStart
+
+    /** Polls the sign-in started by [startReadingServiceDeviceAuth]. */
+    @POST("reading-services/{provider}/auth/device/poll")
+    suspend fun pollReadingServiceDeviceAuth(@Path("provider") provider: String): com.bookorbit.core.model.ReadingServiceDeviceAuthPollResult
+
+    /** Deletes the stored credential for this provider. */
+    @DELETE("reading-services/{provider}/auth")
+    suspend fun disconnectReadingService(@Path("provider") provider: String): com.bookorbit.core.model.ReadingServiceOkResult
+
     @PATCH("books/{id}/review")
     suspend fun setReview(
         @Path("id") id: Int,

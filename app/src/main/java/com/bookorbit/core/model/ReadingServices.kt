@@ -29,10 +29,112 @@ data class ReadingServiceSummary(
     val features: Map<String, Boolean> = emptyMap(),
     val disabledReason: String? = null,
     val libraries: List<ReadingServiceLibrarySetting> = emptyList(),
+    /** Only populated for providers that declare it (currently private adapters); the two
+     * built-in providers (Readwise, Hardcover) leave this null and render through their own
+     * existing web settings UI. */
+    val displayName: String? = null,
+    val description: String? = null,
+    val iconUrl: String? = null,
+    val authMethods: List<ReadingServiceAuthMethod> = emptyList(),
+    /** True when a stored credential exists but the provider reported it expired/invalid. */
+    val needsReconnect: Boolean = false,
 ) {
     /** Whether [feature] is both supported by the provider and not explicitly turned off. */
     fun featureActive(feature: String): Boolean = capabilities.containsKey(feature) && features[feature] != false
+
+    /** The name to show in the UI: [displayName] when the server sent one, else the provider id. */
+    val resolvedDisplayName: String get() = displayName ?: provider.replaceFirstChar(Char::uppercase)
+
+    /** True when this provider has an in-app sign-in flow (a private adapter with `authMethods`).
+     * Built-ins (readwise/hardcover) have none here and keep their "Manage on the web" link. */
+    val hasInAppSignIn: Boolean get() = authMethods.isNotEmpty()
 }
+
+/**
+ * One way a provider lets a user sign in (server: `ReadingServiceAuthMethod`,
+ * `packages/types/src/reading-services.ts`). Modelled as one flat data class instead of a sealed
+ * hierarchy: [fields] is only present for `kind == "password"`, everything else ignores it.
+ */
+@Serializable
+data class ReadingServiceAuthMethod(
+    val kind: String,
+    val label: String = "",
+    val help: String? = null,
+    val placeholder: String? = null,
+    val fields: ReadingServicePasswordFields? = null,
+) {
+    companion object {
+        const val TOKEN = "token"
+        const val DEVICE_CODE = "device_code"
+        const val PASSWORD = "password"
+    }
+}
+
+@Serializable
+data class ReadingServicePasswordFields(
+    val username: ReadingServiceAuthField,
+    val password: ReadingServiceAuthField,
+)
+
+@Serializable
+data class ReadingServiceAuthField(
+    val label: String,
+    val placeholder: String? = null,
+)
+
+/** `POST /reading-services/{provider}/auth/device/start` response. Never carries the device
+ * handle itself - just what the UI needs to show the user and poll. */
+@Serializable
+data class ReadingServiceDeviceAuthStart(
+    val verificationUrl: String,
+    val userCode: String? = null,
+    val expiresAt: String,
+    val pollIntervalSeconds: Int = 5,
+)
+
+/** `POST /reading-services/{provider}/auth/device/poll` response. */
+@Serializable
+data class ReadingServiceDeviceAuthPollResult(
+    val status: String,
+    val accountLabel: String? = null,
+    val message: String? = null,
+) {
+    companion object {
+        const val PENDING = "pending"
+        const val APPROVED = "approved"
+        const val EXPIRED = "expired"
+        const val DENIED = "denied"
+        const val ERROR = "error"
+    }
+}
+
+/** `POST /reading-services/{provider}/auth/password` response. Never carries the password back. */
+@Serializable
+data class ReadingServicePasswordLoginResult(
+    val ok: Boolean = false,
+    val accountLabel: String? = null,
+    val reason: String? = null,
+    val message: String? = null,
+)
+
+/** `POST /reading-services/{provider}/auth/token` response. */
+@Serializable
+data class ReadingServiceAuthResult(
+    val ok: Boolean = false,
+    val accountLabel: String? = null,
+)
+
+/** Body for `POST /reading-services/{provider}/auth/token`. */
+@Serializable
+data class ConnectReadingServiceTokenRequest(val credential: String)
+
+/** Body for `POST /reading-services/{provider}/auth/password`. */
+@Serializable
+data class ConnectReadingServicePasswordRequest(val username: String, val password: String)
+
+/** `DELETE /reading-services/{provider}/auth` response. */
+@Serializable
+data class ReadingServiceOkResult(val ok: Boolean = true)
 
 /**
  * One library's per-provider sync scope from [ReadingServiceSummary.libraries] (server:
