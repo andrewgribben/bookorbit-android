@@ -9,6 +9,7 @@ import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import com.bookorbit.feature.cast.CastHandoff
 import com.bookorbit.feature.cast.CastProxyServer
+import com.google.common.collect.ImmutableList
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -84,6 +85,12 @@ class PlaybackService : MediaLibraryService() {
                     }
                     session.notifyChildrenChanged(AutoBrowseTree.NOW_PLAYING_CHAPTERS_ID, Int.MAX_VALUE, null)
                 }
+        }
+
+        serviceScope.launch {
+            playerManager.state.map { it.speed }.distinctUntilChanged().collect { speed ->
+                mediaSession?.setCustomLayout(ImmutableList.of(SpeedCommand.button(this@PlaybackService, speed)))
+            }
         }
 
         castHandoff.initialize(this, onSessionAvailable = ::switchToCast, onSessionUnavailable = ::switchToLocal)

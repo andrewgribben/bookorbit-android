@@ -455,6 +455,7 @@
     <string name="sleep_pausing_in">Pausing in %1$s</string>
     <string name="speed_scope_book">Other books keep your default speed.</string>
     <string name="speed_scope_all">Applies to every book.</string>
+    <string name="player_speed_button">Playback speed %1$s</string>
     <string name="rsearch_searching">Searching… %1$d so far</string>
     <string name="rsearch_none">No matches</string>
     <string name="download_failed">Download failed</string>
