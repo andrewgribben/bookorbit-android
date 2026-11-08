@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
-import androidx.compose.ui.platform.LocalUriHandler
 import com.bookorbit.feature.main.NavConfig
 import com.bookorbit.feature.main.NavItem
 import com.bookorbit.feature.main.icon
@@ -67,7 +66,7 @@ import kotlin.math.pow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard: () -> Unit = {}) {
+fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard: () -> Unit = {}, onOpenIntegrations: () -> Unit = {}) {
     val readerInterface by vm.readerInterface.collectAsStateWithLifecycle()
     val readingFullscreen by vm.readingFullscreen.collectAsStateWithLifecycle()
     val themeMode by vm.themeMode.collectAsStateWithLifecycle()
@@ -375,11 +374,10 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard
             if (integrations.isNotEmpty()) {
                 item { SectionHeader(stringResource(R.string.settings_integrations)) }
                 item {
-                    val uriHandler = LocalUriHandler.current
                     val connectedLabels = integrations.filter { it.connected }
-                        .map { it.provider.replaceFirstChar(Char::uppercase) }
+                        .map { it.resolvedDisplayName }
                     ListItem(
-                        headlineContent = { Text(stringResource(R.string.settings_integrations_manage)) },
+                        headlineContent = { Text(stringResource(R.string.integrations_title)) },
                         supportingContent = {
                             Text(
                                 if (connectedLabels.isNotEmpty()) {
@@ -390,15 +388,15 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard
                             )
                         },
                         modifier = Modifier.clickable(
-                            onClickLabel = stringResource(R.string.settings_integrations_manage),
-                            onClick = { runCatching { uriHandler.openUri(vm.integrationsUrl) } },
+                            onClickLabel = stringResource(R.string.integrations_title),
+                            onClick = onOpenIntegrations,
                         ),
                     )
                 }
                 items(integrations.filter { it.connected }) { provider ->
                     val scope = provider.libraryScopeSummary()
                     ListItem(
-                        headlineContent = { Text(provider.provider.replaceFirstChar(Char::uppercase)) },
+                        headlineContent = { Text(provider.resolvedDisplayName) },
                         supportingContent = scope?.let { summary ->
                             {
                                 Text(
