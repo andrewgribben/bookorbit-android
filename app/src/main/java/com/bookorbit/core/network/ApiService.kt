@@ -398,21 +398,31 @@ interface ApiService {
     @GET("dashboard/widgets/reading-goal")
     suspend fun getReadingGoal(): com.bookorbit.core.model.ReadingGoalWidget
 
-    /** 404s on a server without any connected reading-service `recap_widget` capability - caller degrades to null. */
+    /** Server returns `ReadingRecapWidget | null`: null when no connected provider has opted
+     * into `recap_widget`. Also 404s on a server that predates the endpoint - caller degrades
+     * to null either way. */
     @GET("dashboard/widgets/reading-recap")
-    suspend fun getReadingRecap(): com.bookorbit.core.model.ReadingRecapWidget
+    suspend fun getReadingRecap(): com.bookorbit.core.model.ReadingRecapWidget?
 
     // --- Reading services (Readwise / Hardcover) ---
     @GET("reading-services")
     suspend fun getReadingServices(): List<com.bookorbit.core.model.ReadingServiceSummary>
 
-    /** See [com.bookorbit.core.model.ReadingServiceShelf] for the shelf-id assumption this rests on. */
+    /** `GET /reading-services/shelves/available` - every shelf a connected-or-not provider
+     * currently exposes, for a shelf picker. 404s on a server that predates this route. */
+    @GET("reading-services/shelves/available")
+    suspend fun getAvailableReadingServiceShelves(): List<com.bookorbit.core.model.ReadingServiceAvailableShelf>
+
+    /**
+     * No `limit` query param: the server endpoint takes none (see
+     * `docs/AGENT_HANDOFF.md` "API for Android"). 404s for an unknown shelf/provider or one that
+     * doesn't declare the shelf's capability.
+     */
     @GET("reading-services/{provider}/shelves/{shelf}")
     suspend fun getReadingServiceShelf(
         @Path("provider") provider: String,
         @Path("shelf") shelf: String,
-        @Query("limit") limit: Int = 20,
-    ): List<com.bookorbit.core.model.ExternalBookCard>
+    ): List<com.bookorbit.core.model.ReadingServiceShelfItem>
 
     @PATCH("books/{id}/review")
     suspend fun setReview(

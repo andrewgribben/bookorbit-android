@@ -27,20 +27,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.bookorbit.R
-import com.bookorbit.core.model.ExternalBookCard
+import com.bookorbit.core.model.ReadingServiceShelfItem
 import com.bookorbit.core.model.externalShelfLabelRes
 
 /**
  * A titled horizontal row of books that live on an external reading service (Readwise/Hardcover),
  * not necessarily the local library. Mirrors [HorizontalBookScroller]'s layout so it reads as a
  * sibling shelf, with one difference: a tap either opens the matched local book ([onBookClick])
- * when [ExternalBookCard.libraryBookId] is set, or opens [ExternalBookCard.providerUrl] in the
- * browser otherwise.
+ * when [ReadingServiceShelfItem.bookId] is set, or opens [ReadingServiceShelfItem.externalUrl] in
+ * the browser otherwise.
  */
 @Composable
 fun ExternalBookScroller(
     shelfId: String,
-    books: List<ExternalBookCard>,
+    books: List<ReadingServiceShelfItem>,
     onBookClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -53,15 +53,15 @@ fun ExternalBookScroller(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         )
         LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
-            items(books, key = { it.providerUrl ?: it.isbn13 ?: it.title.orEmpty() }) { card ->
+            items(books, key = { it.externalId ?: it.externalUrl ?: it.title.orEmpty() }) { card ->
                 ExternalBookTile(
                     card = card,
                     onClick = {
-                        val libraryBookId = card.libraryBookId
-                        if (libraryBookId != null) {
-                            onBookClick(libraryBookId)
+                        val bookId = card.bookId
+                        if (bookId != null) {
+                            onBookClick(bookId)
                         } else {
-                            card.providerUrl?.let { runCatching { uriHandler.openUri(it) } }
+                            card.externalUrl?.let { runCatching { uriHandler.openUri(it) } }
                         }
                     },
                     modifier = Modifier.width(120.dp).padding(horizontal = 4.dp),
@@ -78,7 +78,7 @@ fun ExternalBookScroller(
  */
 @Composable
 private fun ExternalBookTile(
-    card: ExternalBookCard,
+    card: ReadingServiceShelfItem,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -122,7 +122,7 @@ private fun ExternalBookTile(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            card.author?.let {
+            card.authorText?.let {
                 Text(
                     it,
                     style = MaterialTheme.typography.labelSmall,

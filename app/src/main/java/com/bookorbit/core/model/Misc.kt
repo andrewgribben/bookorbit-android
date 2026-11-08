@@ -38,6 +38,13 @@ data class ReadingGoalWidget(
     val year: Int = 0,
 )
 
+/** One calendar month's reading time (`ReadingRecapMonthData`), 1-12, January first. */
+@Serializable
+data class ReadingRecapMonth(
+    val month: Int = 0,
+    val seconds: Long = 0,
+)
+
 /**
  * `GET /dashboard/widgets/reading-recap` - a reading-service recap card (currently Readwise's
  * `recap_widget` capability). Null/404 (older server, or no provider connected with this
@@ -46,12 +53,14 @@ data class ReadingGoalWidget(
  */
 @Serializable
 data class ReadingRecapWidget(
+    val provider: String? = null,
+    val year: Int = 0,
     val booksFinished: Int = 0,
     val sessions: Int = 0,
     val totalSeconds: Long = 0,
     val readingDays: Int = 0,
     val goal: Int? = null,
-    val byMonth: List<Int> = emptyList(),
+    val byMonth: List<ReadingRecapMonth> = emptyList(),
 )
 
 /** `PATCH /books/{id}/review` body. `null` clears the review; the key is always sent. */

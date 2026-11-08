@@ -1,6 +1,7 @@
 package com.bookorbit.core.network
 
-import com.bookorbit.core.model.ExternalBookCard
+import com.bookorbit.core.model.ReadingServiceAvailableShelf
+import com.bookorbit.core.model.ReadingServiceShelfItem
 import com.bookorbit.core.model.ReadingServiceSummary
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,7 +22,11 @@ class ReadingServicesRepository @Inject constructor(
     suspend fun summaries(): List<ReadingServiceSummary> =
         runCatching { api.getReadingServices() }.getOrDefault(emptyList())
 
+    /** Every shelf a provider currently exposes (connected or not), or empty on an older server. */
+    suspend fun availableShelves(): List<ReadingServiceAvailableShelf> =
+        runCatching { api.getAvailableReadingServiceShelves() }.getOrDefault(emptyList())
+
     /** One external shelf's books, or an empty list if the endpoint/provider/shelf doesn't exist. */
-    suspend fun shelf(provider: String, shelf: String, limit: Int = 20): List<ExternalBookCard> =
-        runCatching { api.getReadingServiceShelf(provider, shelf, limit) }.getOrDefault(emptyList())
+    suspend fun shelf(provider: String, shelf: String): List<ReadingServiceShelfItem> =
+        runCatching { api.getReadingServiceShelf(provider, shelf) }.getOrDefault(emptyList())
 }

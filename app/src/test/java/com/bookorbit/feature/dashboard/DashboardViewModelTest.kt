@@ -1,8 +1,9 @@
 package com.bookorbit.feature.dashboard
 
 import com.bookorbit.core.model.BookCard
-import com.bookorbit.core.model.ExternalBookCard
+import com.bookorbit.core.model.ExternalShelfConfig
 import com.bookorbit.core.model.ReadingRecapWidget
+import com.bookorbit.core.model.ReadingServiceShelfItem
 import com.bookorbit.core.model.ReadingServiceSummary
 import com.bookorbit.core.model.ScrollerType
 import com.bookorbit.core.model.ShelfConfigEntry
@@ -33,9 +34,11 @@ class DashboardViewModelTest {
     private fun shelfConfigRepo(
         entries: List<ShelfConfigEntry>,
         saved: kotlinx.coroutines.flow.SharedFlow<Unit> = kotlinx.coroutines.flow.MutableSharedFlow(),
+        externalShelves: List<ExternalShelfConfig>? = null,
     ): DashboardShelfConfigRepository {
         val repo = mockk<DashboardShelfConfigRepository>()
         coEvery { repo.shelves() } returns entries
+        coEvery { repo.externalShelves() } returns externalShelves
         every { repo.saved } returns saved
         return repo
     }
@@ -44,9 +47,10 @@ class DashboardViewModelTest {
     private fun noReadingServices(): ReadingServicesRepository {
         val repo = mockk<ReadingServicesRepository>()
         coEvery { repo.summaries() } returns emptyList()
-        coEvery { repo.shelf(any(), any(), any()) } returns emptyList()
+        coEvery { repo.shelf(any(), any()) } returns emptyList()
         return repo
     }
+
 
     @Test
     fun `saving the shelf config reloads home`() {
@@ -182,7 +186,7 @@ class DashboardViewModelTest {
     @Test
     fun `recap populates from the widget endpoint`() {
         val browse = repo()
-        coEvery { browse.readingRecap() } returns ReadingRecapWidget(booksFinished = 12, sessions = 40, totalSeconds = 36000, readingDays = 20, goal = 50, byMonth = listOf(1, 2, 3))
+        coEvery { browse.readingRecap() } returns ReadingRecapWidget(booksFinished = 12, sessions = 40, totalSeconds = 36000, readingDays = 20, goal = 50)
         val vm = DashboardViewModel(browse, shelfConfigRepo(defaultEntries), noReadingServices())
         assertEquals(12, vm.ui.value.recap?.booksFinished)
         assertEquals(50, vm.ui.value.recap?.goal)
@@ -195,13 +199,13 @@ class DashboardViewModelTest {
     }
 
     @Test
-    fun `a connected provider's owned-elsewhere shelf shows when it has books`() {
+    fun `a connected provider defaults to owned-elsewhere when no picker config exists`() {
         val services = mockk<ReadingServicesRepository>()
         coEvery { services.summaries() } returns listOf(
             ReadingServiceSummary(provider = "readwise", connected = true, capabilities = mapOf("owned" to "read")),
         )
-        coEvery { services.shelf("readwise", any(), any()) } returns emptyList()
-        coEvery { services.shelf("readwise", "owned-elsewhere", any()) } returns listOf(ExternalBookCard(title = "A Remote Book"))
+        coEvery { services.shelf("readwise", any()) } returns emptyList()
+        coEvery { services.shelf("readwise", "owned-elsewhere") } returns listOf(ReadingServiceShelfItem(title = "A Remote Book"))
 
         val vm = DashboardViewModel(repo(), shelfConfigRepo(defaultEntries), services)
 
@@ -222,7 +226,7 @@ class DashboardViewModelTest {
                 features = mapOf("owned" to false),
             ),
         )
-        coEvery { services.shelf(any(), any(), any()) } returns listOf(ExternalBookCard(title = "Should not show"))
+        coEvery { services.shelf(any(), any()) } returns listOf(ReadingServiceShelfItem(title = "Should not show"))
 
         val vm = DashboardViewModel(repo(), shelfConfigRepo(defaultEntries), services)
 
@@ -237,6 +241,69 @@ class DashboardViewModelTest {
         )
 
         val vm = DashboardViewModel(repo(), shelfConfigRepo(defaultEntries), services)
+
+        assertTrue(vm.ui.value.externalShelves.isEmpty())
+    }
+
+    @Test
+    fun `the picker config's enabled shelves are honoured in its own order`() {
+        val services = mockk<ReadingServicesRepository>()
+        coEvery { services.summaries() } returns listOf(
+            ReadingServiceSummary(
+                provider = "hardcover",
+                connected = true,
+                capabilities = mapOf("owned" to "read", "trending_shelf" to "read"),
+            ),
+        )
+        coEvery { services.shelf("hardcover", "trending") } returns listOf(ReadingServiceShelfItem(title = "Trending Book"))
+        coEvery { services.shelf("hardcover", "owned-elsewhere") } returns listOf(ReadingServiceShelfItem(title = "Owned Book"))
+
+        val vm = DashboardViewModel(
+            repo(),
+            shelfConfigRepo(
+                defaultEntries,
+                externalShelves = listOf(
+                    ExternalShelfConfig(provider = "hardcover", shelf = "trending", enabled = true, order = 1),
+                    ExternalShelfConfig(provider = "hardcover", shelf = "owned-elsewhere", enabled = true, order = 2),
+                ),
+            ),
+            services,
+        )
+
+        assertEquals(listOf("trending", "owned-elsewhere"), vm.ui.value.externalShelves.map { it.shelfId })
+    }
+
+    @Test
+    fun `a disabled entry in the picker config is never fetched`() {
+        val services = mockk<ReadingServicesRepository>()
+        coEvery { services.summaries() } returns listOf(
+            ReadingServiceSummary(provider = "readwise", connected = true, capabilities = mapOf("owned" to "read")),
+        )
+        coEvery { services.shelf(any(), any()) } returns listOf(ReadingServiceShelfItem(title = "Should not show"))
+
+        val vm = DashboardViewModel(
+            repo(),
+            shelfConfigRepo(
+                defaultEntries,
+                externalShelves = listOf(
+                    ExternalShelfConfig(provider = "readwise", shelf = "owned-elsewhere", enabled = false, order = 1),
+                ),
+            ),
+            services,
+        )
+
+        assertTrue(vm.ui.value.externalShelves.isEmpty())
+    }
+
+    @Test
+    fun `an explicitly empty picker config shows nothing, not the owned-elsewhere default`() {
+        val services = mockk<ReadingServicesRepository>()
+        coEvery { services.summaries() } returns listOf(
+            ReadingServiceSummary(provider = "readwise", connected = true, capabilities = mapOf("owned" to "read")),
+        )
+        coEvery { services.shelf(any(), any()) } returns listOf(ReadingServiceShelfItem(title = "Should not show"))
+
+        val vm = DashboardViewModel(repo(), shelfConfigRepo(defaultEntries, externalShelves = emptyList()), services)
 
         assertTrue(vm.ui.value.externalShelves.isEmpty())
     }

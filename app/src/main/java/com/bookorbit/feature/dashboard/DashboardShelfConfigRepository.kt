@@ -37,6 +37,15 @@ class DashboardShelfConfigRepository @Inject constructor(
             .also { Log.i(TAG, "shelves from server: ${describe(it)}") }
     }
 
+    /** The user's configured external (reading-service) shelves, enabled-filtered-by-caller, in
+     * order - or `null` when the server has no `externalShelves` config at all (older server, or
+     * never opened the web picker), so the caller can fall back to its own default. Re-reads the
+     * user first, same rationale as [shelves]. */
+    suspend fun externalShelves(): List<com.bookorbit.core.model.ExternalShelfConfig>? {
+        refreshUser()
+        return DashboardShelfConfig.parseExternalShelves(rawConfig())
+    }
+
     private val _saved = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     /** Emits after each successful [save], so Home can reload its shelves. */

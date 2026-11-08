@@ -4,12 +4,13 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bookorbit.core.model.BookCard
-import com.bookorbit.core.model.ExternalBookCard
 import com.bookorbit.core.model.ReadingGoalWidget
 import com.bookorbit.core.model.ReadingRecapWidget
-import com.bookorbit.core.model.ReadingServiceShelf
+import com.bookorbit.core.model.ReadingServiceShelfItem
 import com.bookorbit.core.model.ReadingStreakWidget
 import com.bookorbit.core.model.ShelfConfigEntry
+import com.bookorbit.core.model.capabilityForShelf
+import com.bookorbit.core.model.ReadingServiceShelf
 import com.bookorbit.core.network.ReadingServicesRepository
 import com.bookorbit.feature.browse.BrowseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,7 +26,7 @@ data class ShelfUi(val entry: ShelfConfigEntry, val books: List<BookCard>)
 
 /** One reading-service external shelf (e.g. Readwise "owned elsewhere", Hardcover "friends"),
  * resolved to its books. Hidden by [DashboardViewModel] whenever [books] would be empty. */
-data class ExternalShelfUi(val shelfId: String, val provider: String, val books: List<ExternalBookCard>)
+data class ExternalShelfUi(val shelfId: String, val provider: String, val books: List<ReadingServiceShelfItem>)
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
@@ -95,25 +96,33 @@ class DashboardViewModel @Inject constructor(
     }
 
     /**
-     * One shelf per connected provider per supported external-shelf capability, each only kept
-     * when it actually has books. [ReadingServicesRepository] already degrades every call to an
-     * empty result, so an older server or a provider with none of these capabilities simply
-     * yields an empty list here - never an error.
+     * One shelf per configured-and-enabled `(provider, shelf)` pair from the user's
+     * `dashboardShelfConfig.externalShelves` (web picker, S9), in that config's order; falls
+     * back to "owned-elsewhere only" for every connected provider when the server has no such
+     * config at all (older server, or a user who has never opened the web picker). Each pair is
+     * skipped unless its provider is connected and has the shelf's capability turned on, and is
+     * dropped if it ends up with no books - [ReadingServicesRepository] already degrades every
+     * call to an empty result, so an older server or an unsupported shelf never errors here.
      */
     private suspend fun loadExternalShelves(): List<ExternalShelfUi> {
         val summaries = runCatching { readingServicesRepo.summaries() }.getOrDefault(emptyList())
+        val connected = summaries.filter { it.connected }.associateBy { it.provider }
+        if (connected.isEmpty()) return emptyList()
+
+        val configured = runCatching { shelfConfigRepo.externalShelves() }.getOrNull()
+        val candidates: List<Pair<String, String>> = if (configured != null) {
+            configured.filter { it.enabled }.sortedBy { it.order }.map { it.provider to it.shelf }
+        } else {
+            connected.keys.map { it to ReadingServiceShelf.OWNED_ELSEWHERE }
+        }
+
         val result = mutableListOf<ExternalShelfUi>()
-        for (summary in summaries) {
-            if (!summary.connected) continue
-            suspend fun addShelf(shelfId: String, capability: String) {
-                if (!summary.featureActive(capability)) return
-                val books = readingServicesRepo.shelf(summary.provider, shelfId)
-                if (books.isNotEmpty()) result += ExternalShelfUi(shelfId, summary.provider, books)
-            }
-            addShelf(ReadingServiceShelf.OWNED_ELSEWHERE, "owned")
-            addShelf(ReadingServiceShelf.FRIENDS, "friends_shelf")
-            addShelf(ReadingServiceShelf.TRENDING, "discover_shelf")
-            addShelf(ReadingServiceShelf.RECOMMENDATIONS, "discover_shelf")
+        for ((provider, shelfId) in candidates) {
+            val summary = connected[provider] ?: continue
+            val capability = capabilityForShelf(shelfId) ?: continue
+            if (!summary.featureActive(capability)) continue
+            val books = readingServicesRepo.shelf(provider, shelfId)
+            if (books.isNotEmpty()) result += ExternalShelfUi(shelfId, provider, books)
         }
         return result
     }
