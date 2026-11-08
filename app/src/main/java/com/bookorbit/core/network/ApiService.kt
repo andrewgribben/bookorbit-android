@@ -398,6 +398,28 @@ interface ApiService {
     @GET("dashboard/widgets/reading-goal")
     suspend fun getReadingGoal(): com.bookorbit.core.model.ReadingGoalWidget
 
+    /** 404s on a server without any connected reading-service `recap_widget` capability - caller degrades to null. */
+    @GET("dashboard/widgets/reading-recap")
+    suspend fun getReadingRecap(): com.bookorbit.core.model.ReadingRecapWidget
+
+    // --- Reading services (Readwise / Hardcover) ---
+    @GET("reading-services")
+    suspend fun getReadingServices(): List<com.bookorbit.core.model.ReadingServiceSummary>
+
+    /** See [com.bookorbit.core.model.ReadingServiceShelf] for the shelf-id assumption this rests on. */
+    @GET("reading-services/{provider}/shelves/{shelf}")
+    suspend fun getReadingServiceShelf(
+        @Path("provider") provider: String,
+        @Path("shelf") shelf: String,
+        @Query("limit") limit: Int = 20,
+    ): List<com.bookorbit.core.model.ExternalBookCard>
+
+    @PATCH("books/{id}/review")
+    suspend fun setReview(
+        @Path("id") id: Int,
+        @Body body: com.bookorbit.core.model.SetReviewRequest,
+    )
+
     // --- Book Dock (staging / ingest review) ---
     @GET("book-dock/files")
     suspend fun getBookDockFiles(
