@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.ui.platform.LocalUriHandler
 import com.bookorbit.feature.main.NavConfig
 import com.bookorbit.feature.main.NavItem
 import com.bookorbit.feature.main.icon
@@ -84,6 +85,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard
     val appContext = androidx.compose.ui.platform.LocalContext.current
     val downloadLocationAccessible by vm.downloadLocationAccessible.collectAsStateWithLifecycle()
     val appInfo by vm.appInfo.collectAsStateWithLifecycle()
+    val integrations by vm.integrations.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     var confirmClearDownloads by remember { mutableStateOf(false) }
@@ -369,6 +371,31 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard
             }
 
             item { HorizontalDivider() }
+            if (integrations.isNotEmpty()) {
+                item { SectionHeader(stringResource(R.string.settings_integrations)) }
+                item {
+                    val uriHandler = LocalUriHandler.current
+                    val connectedLabels = integrations.filter { it.connected }
+                        .map { it.provider.replaceFirstChar(Char::uppercase) }
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.settings_integrations_manage)) },
+                        supportingContent = {
+                            Text(
+                                if (connectedLabels.isNotEmpty()) {
+                                    stringResource(R.string.settings_integrations_connected, connectedLabels.joinToString(", "))
+                                } else {
+                                    stringResource(R.string.settings_integrations_none_connected)
+                                },
+                            )
+                        },
+                        modifier = Modifier.clickable(
+                            onClickLabel = stringResource(R.string.settings_integrations_manage),
+                            onClick = { runCatching { uriHandler.openUri(vm.integrationsUrl) } },
+                        ),
+                    )
+                }
+                item { HorizontalDivider() }
+            }
             item { SectionHeader(stringResource(R.string.about)) }
             item {
                 SettingsRow(

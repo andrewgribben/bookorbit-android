@@ -10,6 +10,8 @@ import androidx.lifecycle.viewModelScope
 import coil.ImageLoader
 import com.bookorbit.core.appinfo.AppInfoRepository
 import com.bookorbit.core.auth.SessionManager
+import com.bookorbit.core.model.ReadingServiceSummary
+import com.bookorbit.core.network.ReadingServicesRepository
 import com.bookorbit.core.network.UserCaSettings
 import com.bookorbit.feature.main.NavConfig
 import com.bookorbit.feature.main.NavItem
@@ -48,9 +50,21 @@ class SettingsViewModel @Inject constructor(
     private val appInfoRepository: AppInfoRepository,
     private val session: SessionManager,
     private val userCaSettings: UserCaSettings,
+    private val readingServicesRepo: ReadingServicesRepository,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
     val appInfo: StateFlow<AppInfo?> = appInfoRepository.appInfo
+
+    /** Empty on a server that predates reading-service integrations - the row hides then. */
+    private val _integrations = MutableStateFlow<List<ReadingServiceSummary>>(emptyList())
+    val integrations: StateFlow<List<ReadingServiceSummary>> = _integrations.asStateFlow()
+
+    /** Read-only link to the web Integrations settings page; this app has no native connect flow yet. */
+    val integrationsUrl: String get() = "${session.serverUrl.orEmpty().trimEnd('/')}/settings/integrations"
+
+    init {
+        viewModelScope.launch { _integrations.value = readingServicesRepo.summaries() }
+    }
 
     val readerInterface = appSettings.readerInterface
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReaderInterface.APP)
