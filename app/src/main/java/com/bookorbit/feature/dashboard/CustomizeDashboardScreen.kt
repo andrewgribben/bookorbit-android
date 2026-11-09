@@ -36,13 +36,17 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bookorbit.R
 import androidx.compose.ui.res.stringResource
+import com.bookorbit.core.model.DashboardShelfRow
 import com.bookorbit.core.model.ShelfConfigEntry
+import com.bookorbit.core.model.externalShelfLabelRes
 import com.bookorbit.core.model.knownShelfLabelRes
+import com.bookorbit.core.model.providerDisplayName
 
 /**
- * Settings > Appearance > Customize Dashboard: every shelf the signed-in user's server knows
- * about (built-in or server-defined, e.g. smart-scope shelves), toggle-able and reorderable.
- * Shelves aren't created or deleted here - only enabled/disabled and moved.
+ * Settings > Appearance > Customize Dashboard: one list mixing every shelf the signed-in user's
+ * server knows about - built-in/server shelves and reading-service (external) shelves - sharing
+ * one order, toggle-able and reorderable together. Shelves are not created or deleted here, only
+ * enabled/disabled and moved.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,11 +94,14 @@ fun CustomizeDashboardScreen(onBack: () -> Unit, vm: CustomizeDashboardViewModel
                     },
                 )
             }
-            itemsIndexed(ui.entries, key = { _, entry -> entry.id }) { index, entry ->
-                val label = shelfDisplayLabel(entry)
+            itemsIndexed(ui.rows, key = { _, row -> row.key }) { index, row ->
+                val label = rowHeadline(row)
+                val connected = row !is DashboardShelfRow.External || row.entry.provider in ui.connectedProviders
+                val supportingText = rowSupportingText(row, connected)
                 val toggleDescription = stringResource(R.string.dashboard_customize_toggle, label)
                 ListItem(
                     headlineContent = { Text(label) },
+                    supportingContent = supportingText?.let { text -> { Text(text) } },
                     trailingContent = {
                         Row {
                             IconButton(
@@ -106,14 +113,15 @@ fun CustomizeDashboardScreen(onBack: () -> Unit, vm: CustomizeDashboardViewModel
                             }
                             IconButton(
                                 onClick = { vm.move(index, 1) },
-                                enabled = index < ui.entries.lastIndex,
+                                enabled = index < ui.rows.lastIndex,
                                 modifier = Modifier.size(48.dp),
                             ) {
                                 Icon(Icons.Filled.ArrowDownward, contentDescription = stringResource(R.string.dashboard_customize_move_down, label))
                             }
                             Switch(
-                                checked = entry.enabled,
-                                onCheckedChange = { vm.toggle(entry.id) },
+                                checked = row.enabled,
+                                onCheckedChange = { vm.toggle(row.key) },
+                                enabled = connected,
                                 modifier = Modifier.semantics {
                                     contentDescription = toggleDescription
                                 },
@@ -130,6 +138,25 @@ fun CustomizeDashboardScreen(onBack: () -> Unit, vm: CustomizeDashboardViewModel
                 }
             }
         }
+    }
+}
+
+/** Headline for either row kind: a known scroller's localized name, an external shelf's shelf
+ * name, or the raw stored label as a last resort. */
+@Composable
+private fun rowHeadline(row: DashboardShelfRow): String = when (row) {
+    is DashboardShelfRow.Scroller -> shelfDisplayLabel(row.entry)
+    is DashboardShelfRow.External -> stringResource(externalShelfLabelRes(row.entry.shelf))
+}
+
+/** The provider name as a subtitle for an external row, swapped for a "Sign in to <provider>"
+ * hint when that provider isn't currently connected. Null (no supporting line) for a scroller. */
+@Composable
+private fun rowSupportingText(row: DashboardShelfRow, connected: Boolean): String? = when (row) {
+    is DashboardShelfRow.Scroller -> null
+    is DashboardShelfRow.External -> {
+        val provider = providerDisplayName(row.entry.provider)
+        if (connected) provider else stringResource(R.string.dashboard_customize_sign_in_hint, provider)
     }
 }
 

@@ -6,10 +6,11 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.bookorbit.core.model.DashboardShelfConfig
-import com.bookorbit.core.model.ShelfConfigEntry
+import com.bookorbit.core.model.DashboardShelfRow
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import java.security.MessageDigest
 import javax.inject.Inject
@@ -19,8 +20,9 @@ private val Context.dashboardLocalLayoutDataStore by preferencesDataStore("dashb
 
 /**
  * Per-device home shelf layout ("use this device's layout"): an on/off flag plus the locally
- * stored shelf list, both keyed by signed-in user id + server, so switching accounts or servers
- * on the same install never mixes layouts. Stored independently of
+ * stored shelf list - both scrollers and external shelves, on the same merged order as the
+ * server copy (see [DashboardShelfConfig.mergedRows]) - keyed by signed-in user id + server, so
+ * switching accounts or servers on the same install never mixes layouts. Stored independently of
  * [com.bookorbit.core.model.DashboardShelfConfig]'s server copy - this is the only app setting
  * with a genuine per-device, non-synced persistence.
  */
@@ -45,16 +47,25 @@ class DashboardLocalLayoutStore @Inject constructor(
         context.dashboardLocalLayoutDataStore.edit { it[enabledKey(scope(userId, serverUrl))] = enabled }
     }
 
-    /** The stored local layout, or null when nothing has been seeded yet for this user/server. */
-    suspend fun loadLayout(userId: Int, serverUrl: String?): List<ShelfConfigEntry>? {
+    private suspend fun storedJson(userId: Int, serverUrl: String?): JsonObject? {
         val raw = context.dashboardLocalLayoutDataStore.data.first()[layoutKey(scope(userId, serverUrl))] ?: return null
-        val obj = runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull() ?: return null
-        val scrollers = obj["scrollers"] ?: return null
-        return DashboardShelfConfig.parse(JsonObject(mapOf("scrollers" to scrollers)))
+        return runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull()
     }
 
-    suspend fun saveLayout(userId: Int, serverUrl: String?, entries: List<ShelfConfigEntry>) {
-        val configJson = DashboardShelfConfig.buildConfigJson(null, entries)
+    /** The stored local layout (scrollers and external shelves, merged order), or null when
+     * nothing has been seeded yet for this user/server. */
+    suspend fun loadRows(userId: Int, serverUrl: String?): List<DashboardShelfRow>? {
+        val obj = storedJson(userId, serverUrl) ?: return null
+        return DashboardShelfConfig.mergedRows(obj)
+    }
+
+    /** True when [loadRows] has an explicit (possibly empty) `externalShelves` array stored -
+     * distinct from "never seeded", same nullable contract as [DashboardShelfConfig.parseExternalShelves]. */
+    suspend fun hasExternalShelvesKey(userId: Int, serverUrl: String?): Boolean =
+        storedJson(userId, serverUrl)?.get("externalShelves") is JsonArray
+
+    suspend fun saveRows(userId: Int, serverUrl: String?, rows: List<DashboardShelfRow>) {
+        val configJson = DashboardShelfConfig.buildConfigJsonForRows(null, rows)
         context.dashboardLocalLayoutDataStore.edit { it[layoutKey(scope(userId, serverUrl))] = configJson.toString() }
     }
 }

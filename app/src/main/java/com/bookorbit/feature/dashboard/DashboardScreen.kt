@@ -107,27 +107,31 @@ fun DashboardScreen(
                         )
                     }
 
-                    ui.shelves.forEach { shelf ->
-                        val books = when {
-                            shelf === readingShelf && heroFromReading != null -> shelf.books.drop(1)
-                            shelf === listeningShelf && heroFromReading == null -> shelf.books.drop(1)
-                            shelf === listeningShelf && heroFromReading != null -> shelf.books
-                            else -> shelf.books
-                        }
-                        if (books.isNotEmpty()) {
-                            // The reading shelf already gave up its first book to the hero card above;
-                            // the rest reads as "up next" rather than "continue reading" again.
-                            val label = when {
-                                shelf === readingShelf && heroFromReading != null -> stringResource(R.string.up_next_to_read)
-                                else -> knownShelfLabelRes(shelf.entry.type)?.let { stringResource(it) }
-                                    ?: shelf.entry.label.ifBlank { shelf.entry.type }
+                    ui.mergedRows().forEach { row ->
+                        when (row) {
+                            is DashboardRowUi.Scroller -> {
+                                val shelf = row.shelf
+                                val books = when {
+                                    shelf === readingShelf && heroFromReading != null -> shelf.books.drop(1)
+                                    shelf === listeningShelf && heroFromReading == null -> shelf.books.drop(1)
+                                    shelf === listeningShelf && heroFromReading != null -> shelf.books
+                                    else -> shelf.books
+                                }
+                                if (books.isNotEmpty()) {
+                                    // The reading shelf already gave up its first book to the hero card above;
+                                    // the rest reads as "up next" rather than "continue reading" again.
+                                    val label = when {
+                                        shelf === readingShelf && heroFromReading != null -> stringResource(R.string.up_next_to_read)
+                                        else -> knownShelfLabelRes(shelf.entry.type)?.let { stringResource(it) }
+                                            ?: shelf.entry.label.ifBlank { shelf.entry.type }
+                                    }
+                                    HorizontalBookScroller(label, books, onBookClick)
+                                }
                             }
-                            HorizontalBookScroller(label, books, onBookClick)
+                            is DashboardRowUi.External -> {
+                                ExternalBookScroller(row.shelf.shelfId, row.shelf.books, onBookClick)
+                            }
                         }
-                    }
-
-                    ui.externalShelves.forEach { shelf ->
-                        ExternalBookScroller(shelf.shelfId, shelf.books, onBookClick)
                     }
                 }
             }
