@@ -226,6 +226,11 @@
     <string name="shelf_trending">Trending</string>
     <string name="shelf_recommended">Recommended for you</string>
     <string name="shelf_external_books">From your reading service</string>
+    <string name="external_book_view_in_provider">View in %1$s</string>
+    <string name="external_book_add_to_requests">Add to requests</string>
+    <string name="external_book_already_requested">Already requested</string>
+    <string name="added_to_requests">Added to requests</string>
+    <string name="add_to_requests_failed">Couldn\'t add to requests</string>
     <string name="title">Title</string>
     <string name="up_next_to_read">Up next to read</string>
     <string name="want_to_read_shelf">Want to read</string>
@@ -238,6 +243,8 @@
     <string name="dashboard_customize_move_down">Move %1$s down</string>
     <string name="dashboard_customize_reset">Reset to default</string>
     <string name="dashboard_customize_save_failed">Couldn\'t save your dashboard shelves. Try again.</string>
+    <string name="dashboard_customize_use_local_layout">Use this device\'s layout</string>
+    <string name="dashboard_customize_use_local_layout_desc">Keep shelf order and on/off choices on this device only, instead of syncing them to your account.</string>
     <string name="where_you_read">Where you read</string>
     <string name="year">Year</string>
     <string name="settings_material_you">Material You colours</string>
@@ -275,6 +282,7 @@
     <string name="integrations_status_not_connected">Not connected</string>
     <string name="integrations_status_needs_reconnect">Needs reconnect</string>
     <string name="integrations_empty">No reading services available on this server</string>
+    <string name="integrations_social_section">Social</string>
     <string name="integrations_sign_in_method">Sign-in method</string>
     <string name="integrations_username">Username</string>
     <string name="integrations_password">Password</string>

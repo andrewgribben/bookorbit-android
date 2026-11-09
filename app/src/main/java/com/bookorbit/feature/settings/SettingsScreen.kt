@@ -57,6 +57,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bookorbit.BuildConfig
 import com.bookorbit.core.settings.ThemeMode
 import com.bookorbit.core.model.libraryScopeSummary
+import com.bookorbit.core.model.groupReadingServiceSummaries
 import com.bookorbit.core.settings.ReaderInterface
 import com.bookorbit.core.wallpaper.SleepImageFile
 import com.bookorbit.feature.player.MediaButtonMode
@@ -382,10 +383,11 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard
             }
 
             item { HorizontalDivider() }
-            if (integrations.isNotEmpty()) {
+            val topLevelIntegrations = groupReadingServiceSummaries(integrations).first
+            if (topLevelIntegrations.isNotEmpty()) {
                 item { SectionHeader(stringResource(R.string.settings_integrations)) }
                 item {
-                    val connectedLabels = integrations.filter { it.connected }
+                    val connectedLabels = topLevelIntegrations.filter { it.connected }
                         .map { it.resolvedDisplayName }
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.integrations_title)) },
@@ -404,7 +406,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard
                         ),
                     )
                 }
-                items(integrations.filter { it.connected }) { provider ->
+                items(topLevelIntegrations.filter { it.connected }) { provider ->
                     val scope = provider.libraryScopeSummary()
                     ListItem(
                         headlineContent = { Text(provider.resolvedDisplayName) },

@@ -134,6 +134,25 @@ object DashboardShelfConfig {
     }
 
     /**
+     * Merges a per-device local layout onto the current server list (requirement for "use this
+     * device's layout"): shelves present in [local] keep their local `enabled`/`order`, but take
+     * every other field (type, label, limit, smartScopeId, extra) from the current [server] entry,
+     * so a label or smart-scope change made elsewhere still shows up. Shelves on [server] but not
+     * in [local] (added elsewhere since the local layout was seeded) are appended at the end, in
+     * server order, with the server's `enabled` value. Shelves in [local] but no longer on
+     * [server] (deleted elsewhere) are dropped. Result is renumbered 1..n.
+     */
+    fun mergedWithLocalLayout(server: List<ShelfConfigEntry>, local: List<ShelfConfigEntry>): List<ShelfConfigEntry> {
+        val serverById = server.associateBy { it.id }
+        val localIds = local.map { it.id }.toSet()
+        val kept = ordered(local).mapNotNull { localEntry ->
+            serverById[localEntry.id]?.copy(enabled = localEntry.enabled, order = localEntry.order)
+        }
+        val added = ordered(server).filter { it.id !in localIds }
+        return (kept + added).mapIndexed { i, entry -> entry.copy(order = i + 1) }
+    }
+
+    /**
      * Builds the `dashboardShelfConfig` JSON to send back via `PATCH /api/v1/users/me/settings`.
      * Preserves every field this app doesn't model: top-level keys of [originalConfig] other than
      * `scrollers` (e.g. `shelfLayout`, `syncAcrossSessions`) and each entry's [ShelfConfigEntry.extra].

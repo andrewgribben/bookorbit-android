@@ -6,6 +6,7 @@ import com.bookorbit.core.model.MeSettingsResponse
 import com.bookorbit.core.model.ScrollerType
 import com.bookorbit.core.network.ApiService
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -27,12 +28,21 @@ class DashboardShelfConfigRepositoryTest {
         return AuthUser(id = 1, username = "a", settings = settings)
     }
 
+    /** A disabled-by-default local layout store stub, so existing server-sync tests don't need
+     * to know about the new per-device layout. */
+    private fun localLayoutStoreStub(): DashboardLocalLayoutStore {
+        val store = mockk<DashboardLocalLayoutStore>()
+        coEvery { store.isEnabled(any(), any()) } returns false
+        return store
+    }
+
     @Test
     fun `no signed-in user falls back to app defaults`() = runTest {
         val api = mockk<ApiService>()
         val session = mockk<SessionManager>()
         every { session.currentUser } returns null
-        val repo = DashboardShelfConfigRepository(api, session)
+        every { session.serverUrl } returns null
+        val repo = DashboardShelfConfigRepository(api, session, localLayoutStoreStub())
         assertEquals(5, repo.shelves().size)
     }
 
@@ -55,7 +65,8 @@ class DashboardShelfConfigRepositoryTest {
         coEvery { api.getMe() } throws RuntimeException("offline")
         val session = mockk<SessionManager>()
         every { session.currentUser } returns userWithConfig(config)
-        val repo = DashboardShelfConfigRepository(api, session)
+        every { session.serverUrl } returns null
+        val repo = DashboardShelfConfigRepository(api, session, localLayoutStoreStub())
         assertEquals(listOf(ScrollerType.RECENTLY_ADDED), repo.shelves().map { it.type })
     }
 
@@ -69,7 +80,7 @@ class DashboardShelfConfigRepositoryTest {
         coEvery { api.getMe() } returns fresh
         val session = mockk<SessionManager>(relaxed = true)
         every { session.currentUser } returnsMany listOf(userWithConfig(config(ScrollerType.RECENTLY_ADDED)), fresh)
-        val repo = DashboardShelfConfigRepository(api, session)
+        val repo = DashboardShelfConfigRepository(api, session, localLayoutStoreStub())
 
         assertEquals(listOf("smart-scope"), repo.shelves().map { it.type })
         verify { session.updateCurrentUser(fresh) }
@@ -81,11 +92,12 @@ class DashboardShelfConfigRepositoryTest {
         val session = mockk<SessionManager>()
         val user = userWithConfig(null)
         every { session.currentUser } returns user
+        every { session.serverUrl } returns null
         val bodySlot = slot<com.bookorbit.core.model.UpdateMeSettingsRequest>()
         coEvery { api.updateMySettings(capture(bodySlot)) } returns MeSettingsResponse(id = 1, settings = buildJsonObject { put("dashboardShelfConfig", JsonPrimitive("merged-placeholder")) })
         every { session.updateCurrentUser(any()) } returns Unit
 
-        val repo = DashboardShelfConfigRepository(api, session)
+        val repo = DashboardShelfConfigRepository(api, session, localLayoutStoreStub())
         val result = repo.save(DashboardShelfConfigFixtures.DEFAULT)
 
         assertTrue(result.isSuccess)
@@ -98,12 +110,48 @@ class DashboardShelfConfigRepositoryTest {
         val api = mockk<ApiService>()
         val session = mockk<SessionManager>()
         every { session.currentUser } returns userWithConfig(null)
+        every { session.serverUrl } returns null
         coEvery { api.updateMySettings(any()) } throws java.io.IOException("offline")
 
-        val repo = DashboardShelfConfigRepository(api, session)
+        val repo = DashboardShelfConfigRepository(api, session, localLayoutStoreStub())
         val result = repo.save(DashboardShelfConfigFixtures.DEFAULT)
 
         assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun `save while the local layout is on only writes locally, no API call`() = runTest {
+        val api = mockk<ApiService>()
+        val session = mockk<SessionManager>()
+        every { session.currentUser } returns userWithConfig(null)
+        every { session.serverUrl } returns "https://example.com"
+        val localStore = mockk<DashboardLocalLayoutStore>()
+        coEvery { localStore.isEnabled(1, "https://example.com") } returns true
+        coEvery { localStore.saveLayout(1, "https://example.com", any()) } returns Unit
+
+        val repo = DashboardShelfConfigRepository(api, session, localStore)
+        val result = repo.save(DashboardShelfConfigFixtures.DEFAULT)
+
+        assertTrue(result.isSuccess)
+        coVerify(exactly = 0) { api.updateMySettings(any()) }
+        coVerify { localStore.saveLayout(1, "https://example.com", any()) }
+    }
+
+    @Test
+    fun `turning the local layout off falls back to reading the server list`() = runTest {
+        val config = buildJsonObject {
+            put("scrollers", JsonArray(listOf(buildJsonObject { put("id", "1"); put("type", ScrollerType.RECENTLY_ADDED); put("enabled", true); put("order", 1) })))
+        }
+        val api = mockk<ApiService>()
+        coEvery { api.getMe() } throws RuntimeException("offline")
+        val session = mockk<SessionManager>()
+        every { session.currentUser } returns userWithConfig(config)
+        every { session.serverUrl } returns "https://example.com"
+        val localStore = mockk<DashboardLocalLayoutStore>()
+        coEvery { localStore.isEnabled(1, "https://example.com") } returns false
+
+        val repo = DashboardShelfConfigRepository(api, session, localStore)
+        assertEquals(listOf(ScrollerType.RECENTLY_ADDED), repo.shelves().map { it.type })
     }
 }
 

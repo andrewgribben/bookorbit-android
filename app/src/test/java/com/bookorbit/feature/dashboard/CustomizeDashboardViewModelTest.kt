@@ -20,6 +20,7 @@ class CustomizeDashboardViewModelTest {
     private fun repo(saveResult: Result<Unit> = Result.success(Unit)): DashboardShelfConfigRepository {
         val repo = mockk<DashboardShelfConfigRepository>()
         coEvery { repo.shelves() } returns DashboardShelfConfig.ordered(DashboardShelfConfig.DEFAULT_ENTRIES)
+        coEvery { repo.useLocalLayout() } returns false
         coEvery { repo.save(any()) } returns saveResult
         return repo
     }

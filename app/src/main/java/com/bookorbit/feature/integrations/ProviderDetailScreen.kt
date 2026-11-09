@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -102,12 +104,48 @@ fun ProviderDetailScreen(
                     modifier = Modifier.padding(16.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                !summary.hasInAppSignIn -> ManageOnWebSection(
-                    onOpenWebSettings = { runCatching { uriHandler.openUri(vm.webSettingsUrl(provider)) } },
-                )
-                state.connected -> ConnectedSection(state = state, vm = vm)
-                else -> SignInSection(state = state, vm = vm)
+                else -> LazyColumn {
+                    item {
+                        when {
+                            !summary.hasInAppSignIn -> ManageOnWebSection(
+                                onOpenWebSettings = { runCatching { uriHandler.openUri(vm.webSettingsUrl(provider)) } },
+                            )
+                            state.connected -> ConnectedSection(state = state, vm = vm)
+                            else -> SignInSection(state = state, vm = vm)
+                        }
+                    }
+                    if (state.socialAdapters.isNotEmpty()) {
+                        item { HorizontalDivider() }
+                        item {
+                            Text(
+                                stringResource(R.string.integrations_social_section),
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(16.dp),
+                            )
+                        }
+                        items(state.socialAdapters, key = { it.provider }) { adapter ->
+                            SocialAdapterSection(provider = adapter.provider)
+                        }
+                    }
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun SocialAdapterSection(provider: String, vm: ProviderDetailViewModel = hiltViewModel(key = provider)) {
+    val state by vm.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(provider) { vm.load(provider) }
+    DisposableEffect(provider) { onDispose { vm.onScreenLeft() } }
+
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(state.summary?.resolvedDisplayName ?: provider, style = MaterialTheme.typography.titleSmall)
+        when {
+            state.loading -> CircularProgressIndicator(Modifier.padding(16.dp))
+            state.connected -> ConnectedSection(state = state, vm = vm)
+            else -> SignInSection(state = state, vm = vm)
         }
     }
 }

@@ -439,6 +439,18 @@ interface ApiService {
         @Body body: com.bookorbit.core.model.ConnectReadingServicePasswordRequest,
     ): com.bookorbit.core.model.ReadingServicePasswordLoginResult
 
+    // --- Book requests ---
+    /** Read-only annotation pass: whether each candidate is already owned or already requested. */
+    @POST("book-requests/availability")
+    suspend fun checkBookRequestAvailability(
+        @Body body: com.bookorbit.core.model.CheckBookRequestAvailabilityRequest,
+    ): List<com.bookorbit.core.model.BookRequestAvailability>
+
+    @POST("book-requests")
+    suspend fun createBookRequest(
+        @Body body: com.bookorbit.core.model.CreateBookRequestRequest,
+    ): com.bookorbit.core.model.BookRequestSubmitResult
+
     /** Starts a `device_code` sign-in; the handle itself never reaches this response. */
     @POST("reading-services/{provider}/auth/device/start")
     suspend fun startReadingServiceDeviceAuth(@Path("provider") provider: String): com.bookorbit.core.model.ReadingServiceDeviceAuthStart
