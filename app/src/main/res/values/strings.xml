@@ -222,7 +222,8 @@
     <string name="reading_recap_sessions">Sessions</string>
     <string name="reading_recap_reading_days">Reading days</string>
     <string name="shelf_owned_elsewhere">Owned elsewhere</string>
-    <string name="shelf_friends_activity">Friends\' activity</string>
+    <string name="shelf_friends_reading">Friends currently reading</string>
+    <string name="shelf_friends_finished">Friends recently finished</string>
     <string name="shelf_trending">Trending</string>
     <string name="shelf_recommended">Recommended for you</string>
     <string name="shelf_external_books">From your reading service</string>
