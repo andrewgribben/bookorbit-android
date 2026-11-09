@@ -40,6 +40,11 @@ class ReadingSessionTracker @Inject constructor(
     private val recorder = ReadingSessionRecorder(maxGapMs = MAX_GAP_MS)
     private var lastCheckpointMs = 0L
 
+    // Remembered independently of the recorder so a reading signal that arrives after the gap
+    // rule below has closed the session (recorder.key == null) knows which file to reopen for.
+    private var lastReadKey: String? = null
+    private var lastReadFileId: Int = 0
+
     init {
         // ProcessLifecycleOwner must be touched on the main thread.
         Handler(Looper.getMainLooper()).post {
@@ -55,16 +60,40 @@ class ReadingSessionTracker @Inject constructor(
     @Synchronized
     fun beginReading(fileId: Int, percent: Double?) {
         val key = "read:$fileId"
-        if (recorder.key == key) return
-        endLocked()
-        recorder.begin(key, fileId, SessionType.READ, percent, now())
-        lastCheckpointMs = now()
+        val now = now()
+        lastReadKey = key
+        lastReadFileId = fileId
+        if (recorder.key == key && recorder.inactiveForMs(now) <= READING_IDLE_CLOSE_MS) return
+        if (recorder.key?.startsWith("read:") == true) endReadingLocked(now) else endLocked()
+        recorder.begin(key, fileId, SessionType.READ, percent, now)
+        lastCheckpointMs = now
     }
 
     @Synchronized
     fun onReadingProgress(percent: Double) {
-        if (recorder.key?.startsWith("read:") != true) return
-        recorder.progress(percent, now())
+        val now = now()
+        if (recorder.key?.startsWith("read:") != true) {
+            // No reading session open (never started, or just closed by the gap rule below):
+            // this progress event is itself the next reading signal, so open a fresh one.
+            val key = lastReadKey ?: return
+            recorder.begin(key, lastReadFileId, SessionType.READ, percent, now)
+            lastCheckpointMs = now
+            checkpointIfDue()
+            return
+        }
+        // No page turn for READING_IDLE_PAUSE_MS while still foregrounded pauses the clock
+        // without counting the idle gap (matches the web reader's idle timeout).
+        recorder.pauseIfIdle(now, READING_IDLE_PAUSE_MS)
+        if (recorder.inactiveForMs(now) > READING_IDLE_CLOSE_MS) {
+            // Idle or backgrounded for too long: close the old session at its last activity and
+            // start a new one for this signal.
+            endReadingLocked(now)
+            val key = lastReadKey ?: return
+            recorder.begin(key, lastReadFileId, SessionType.READ, percent, now)
+            lastCheckpointMs = now
+        } else {
+            recorder.progress(percent, now)
+        }
         checkpointIfDue()
     }
 
@@ -117,12 +146,33 @@ class ReadingSessionTracker @Inject constructor(
     private fun onForeground(foreground: Boolean) {
         // Only reading follows the app's visibility; audio keeps playing in the background.
         if (recorder.key?.startsWith("read:") != true) return
-        recorder.setActive(foreground, now())
+        val now = now()
+        if (foreground && recorder.inactiveForMs(now) > READING_IDLE_CLOSE_MS) {
+            // Backgrounded too long: close it now rather than silently resuming, so the ended
+            // session's endedAt is the true last-activity timestamp, not whenever the app
+            // happens to come back. The next reading signal opens a fresh session.
+            endReadingLocked(now)
+            return
+        }
+        recorder.setActive(foreground, now)
         if (!foreground) checkpointLocked()
     }
 
     private fun endLocked() {
         val snap = recorder.end(now()) ?: return
+        persistAndSend(snap)
+    }
+
+    /**
+     * Close the open reading session, if any. If it had been idle or backgrounded past
+     * [READING_IDLE_CLOSE_MS], saves it with its true endedAt (the last real activity) instead of
+     * now, so the gap itself is never counted as reading time.
+     */
+    private fun endReadingLocked(now: Long) {
+        if (recorder.key?.startsWith("read:") != true) return
+        val gap = recorder.inactiveForMs(now)
+        val endAt = if (gap > READING_IDLE_CLOSE_MS) now - gap else now
+        val snap = recorder.end(endAt) ?: return
         persistAndSend(snap)
     }
 
@@ -197,5 +247,18 @@ class ReadingSessionTracker @Inject constructor(
 
         /** Paused for this long, and the next play starts a new session. */
         private const val LISTEN_IDLE_CLOSE_MS = 10 * 60_000L
+
+        /**
+         * No page turn for this long while still foregrounded pauses the reading clock without
+         * closing the session (matches the web reader's IDLE_TIMEOUT_MS).
+         */
+        private const val READING_IDLE_PAUSE_MS = 5 * 60_000L
+
+        /**
+         * Idle or backgrounded (screen off, app backgrounded) for this long, and the next
+         * reading signal starts a new session instead of resuming the old one. Mirrors
+         * [LISTEN_IDLE_CLOSE_MS].
+         */
+        private const val READING_IDLE_CLOSE_MS = 10 * 60_000L
     }
 }

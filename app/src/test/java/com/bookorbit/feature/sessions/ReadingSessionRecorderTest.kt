@@ -97,4 +97,84 @@ class ReadingSessionRecorderTest {
         r.setActive(true, nowMs = 60_000)
         assertEquals(0, r.inactiveForMs(70_000))
     }
+
+    // --- reading session-gap rule (readwise-session-timing plan, stage 4) ---
+
+    private val readingIdleCloseMs = 10 * 60_000L
+    private val readingIdlePauseMs = 5 * 60_000L
+
+    @Test
+    fun `a short background gap resumes the same session without counting the gap`() {
+        val r = recorder()
+        r.begin("read:1", 1, SessionType.READ, 0.0, nowMs = 0, sessionId = "s1")
+        r.progress(1.0, nowMs = 5_000) // 5s of real activity
+        r.setActive(false, nowMs = 5_000) // backgrounded
+        val resumeAt = 5_000 + 4 * 60_000L // 4 minutes later: under the 10-minute close threshold
+        assertFalse(r.inactiveForMs(resumeAt) > readingIdleCloseMs)
+        r.setActive(true, nowMs = resumeAt)
+        r.progress(2.0, nowMs = resumeAt + 1_000)
+        val snap = r.end(nowMs = resumeAt + 1_000)!!
+        assertEquals("s1", snap.sessionId)
+        assertEquals(6, snap.durationSeconds) // 5s + 1s; the 4-minute gap is not counted
+    }
+
+    @Test
+    fun `a long gap closes the session at the last activity timestamp`() {
+        val r = recorder()
+        r.begin("read:1", 1, SessionType.READ, 0.0, nowMs = 0, sessionId = "s1")
+        r.progress(1.0, nowMs = 10_000) // last real activity at 10s
+        r.setActive(false, nowMs = 10_000) // backgrounded right after
+
+        val resumeAt = 10_000 + 20 * 60_000L // 20 minutes later: over the 10-minute close threshold
+        val gap = r.inactiveForMs(resumeAt)
+        assertTrue(gap > readingIdleCloseMs)
+
+        // Mirrors ReadingSessionTracker.endReadingLocked: end at the true last-activity moment,
+        // not at the current wall clock, so the idle gap is never counted and endedAt is right.
+        val endAt = resumeAt - gap
+        assertEquals(10_000L, endAt)
+        val snap = r.end(nowMs = endAt)!!
+        assertEquals("s1", snap.sessionId)
+        assertEquals(10, snap.durationSeconds)
+        assertEquals(10_000L, snap.endedAtMs)
+
+        // The next reading signal starts a brand-new session.
+        r.begin("read:1", 1, SessionType.READ, 1.0, nowMs = resumeAt, sessionId = "s2")
+        val next = r.snapshot(nowMs = resumeAt)!!
+        assertEquals("s2", next.sessionId)
+        assertEquals(resumeAt, next.startedAtMs)
+    }
+
+    @Test
+    fun `5 minutes idle while foregrounded pauses without closing the session`() {
+        val r = recorder()
+        r.begin("read:1", 1, SessionType.READ, 0.0, nowMs = 0, sessionId = "s1")
+        r.progress(1.0, nowMs = 10_000) // last page turn at 10s, still accrued=10s
+
+        val idleCheckAt = 10_000 + 6 * 60_000L // 6 minutes with no page turn, still foregrounded
+        val justPaused = r.pauseIfIdle(idleCheckAt, idleMs = readingIdlePauseMs)
+        assertTrue(justPaused)
+        assertEquals(6 * 60_000L, r.inactiveForMs(idleCheckAt))
+        // Under the 10-minute close threshold, so the session stays open (not ended).
+        assertFalse(r.inactiveForMs(idleCheckAt) > readingIdleCloseMs)
+
+        // The next page turn resumes the same session without counting the idle gap, and
+        // further activity after that accrues normally.
+        r.progress(2.0, nowMs = idleCheckAt + 5_000)
+        r.progress(3.0, nowMs = idleCheckAt + 10_000)
+        val snap = r.end(nowMs = idleCheckAt + 10_000)!!
+        assertEquals("s1", snap.sessionId)
+        assertEquals(15, snap.durationSeconds) // 10s + 5s; the 6-minute idle gap is not counted
+    }
+
+    @Test
+    fun `pauseIfIdle is a no-op when not idle long enough or already paused`() {
+        val r = recorder()
+        r.begin("read:1", 1, SessionType.READ, 0.0, nowMs = 0)
+        r.progress(1.0, nowMs = 10_000)
+        assertFalse(r.pauseIfIdle(nowMs = 10_000 + 60_000L, idleMs = readingIdlePauseMs))
+
+        r.setActive(false, nowMs = 10_000)
+        assertFalse(r.pauseIfIdle(nowMs = 10_000 + 60_000L, idleMs = readingIdlePauseMs))
+    }
 }

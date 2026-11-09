@@ -461,7 +461,7 @@ class ComicReaderViewModel @Inject constructor(
         // last page turn before leaving isn't silently dropped.
         val page = pendingPage
         val s = _ui.value
-        if (s.fileId != 0 && s.pageCount > 0 && page != null) {
+        if (tracking && s.fileId != 0 && s.pageCount > 0 && page != null) {
             pendingPage = null
             appScope.launch {
                 progress.report(s.fileId, cfi = null, percentage = ComicPaging.percentage(page, s.pageCount), pageNumber = ComicPaging.pageNumber(page))
