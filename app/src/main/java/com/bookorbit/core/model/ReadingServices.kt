@@ -286,7 +286,8 @@ data class ExternalShelfConfig(
  * with a generic label - mirrors [knownShelfLabelRes]'s fallback for an unknown scroller type. */
 fun externalShelfLabelRes(shelfId: String): Int = when (shelfId) {
     ReadingServiceShelf.OWNED_ELSEWHERE -> com.bookorbit.R.string.shelf_owned_elsewhere
-    ReadingServiceShelf.FRIENDS_READING, ReadingServiceShelf.FRIENDS_FINISHED -> com.bookorbit.R.string.shelf_friends_activity
+    ReadingServiceShelf.FRIENDS_READING -> com.bookorbit.R.string.shelf_friends_reading
+    ReadingServiceShelf.FRIENDS_FINISHED -> com.bookorbit.R.string.shelf_friends_finished
     ReadingServiceShelf.TRENDING -> com.bookorbit.R.string.shelf_trending
     ReadingServiceShelf.RECOMMENDATIONS -> com.bookorbit.R.string.shelf_recommended
     else -> com.bookorbit.R.string.shelf_external_books
