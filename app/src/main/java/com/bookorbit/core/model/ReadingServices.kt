@@ -50,6 +50,34 @@ data class ReadingServiceSummary(
     val hasInAppSignIn: Boolean get() = authMethods.isNotEmpty()
 }
 
+/** True for a sub-adapter grouped under another provider's Integrations detail instead of
+ * getting its own row (e.g. `readwise-social` under `readwise`) - any provider id prefixed with
+ * `"$parentProvider-"`. */
+fun ReadingServiceSummary.isSubAdapterOf(parentProvider: String): Boolean =
+    provider.startsWith("$parentProvider-")
+
+/**
+ * Splits `GET /reading-services` summaries into top-level providers (each gets its own
+ * Integrations row) and the sub-adapters grouped under them, keyed by parent provider id. A
+ * sub-adapter is any provider whose id is `"$parent-..."` for some other provider [parent] in the
+ * same list (so a currently-unknown `"readwise-"`-prefixed id with no matching `"readwise"` entry
+ * still gets its own row instead of silently disappearing).
+ */
+fun groupReadingServiceSummaries(
+    summaries: List<ReadingServiceSummary>,
+): Pair<List<ReadingServiceSummary>, Map<String, List<ReadingServiceSummary>>> {
+    val parentIds = summaries.map { it.provider }.toSet()
+    val subAdapters = summaries.filter { summary ->
+        parentIds.any { parent -> parent != summary.provider && summary.isSubAdapterOf(parent) }
+    }
+    val subAdapterProviders = subAdapters.map { it.provider }.toSet()
+    val topLevel = summaries.filterNot { it.provider in subAdapterProviders }
+    val bySubParent = subAdapters.groupBy { summary ->
+        parentIds.first { parent -> parent != summary.provider && summary.isSubAdapterOf(parent) }
+    }
+    return topLevel to bySubParent
+}
+
 /**
  * One way a provider lets a user sign in (server: `ReadingServiceAuthMethod`,
  * `packages/types/src/reading-services.ts`). Modelled as one flat data class instead of a sealed
