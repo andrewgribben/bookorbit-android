@@ -36,6 +36,7 @@ class ReadingSessionRecorder(private val maxGapMs: Long) {
     private var accruedMs = 0L
     private var activeSince: Long? = null
     private var inactiveSince: Long? = null
+    private var lastActivityMs: Long? = null
 
     val isOpen: Boolean get() = key != null
 
@@ -57,13 +58,23 @@ class ReadingSessionRecorder(private val maxGapMs: Long) {
         accruedMs = 0
         activeSince = nowMs
         inactiveSince = null
+        lastActivityMs = nowMs
     }
 
-    /** Record the latest position (0-100) and count the time since the previous activity. */
+    /**
+     * Record the latest position (0-100) and count the time since the previous activity. If the
+     * clock had been paused (by [setActive] or [pauseIfIdle]), resumes it from now, so the pause
+     * itself is never counted.
+     */
     fun progress(percent: Double, nowMs: Long) {
         if (!isOpen) return
+        if (activeSince == null) {
+            activeSince = nowMs
+            inactiveSince = null
+        }
         accrue(nowMs)
         endProgress = percent.coerceIn(0.0, 100.0)
+        lastActivityMs = nowMs
     }
 
     /** Flip between counting and not counting time (foreground/background, playing/paused). */
@@ -72,11 +83,30 @@ class ReadingSessionRecorder(private val maxGapMs: Long) {
         if (active) {
             if (activeSince == null) activeSince = nowMs
             inactiveSince = null
+            lastActivityMs = nowMs
         } else {
             accrue(nowMs)
             activeSince = null
             if (inactiveSince == null) inactiveSince = nowMs
         }
+    }
+
+    /**
+     * If currently active but no activity has been recorded for at least [idleMs], pause the
+     * clock as if [setActive] had been called false right when the activity last happened, so
+     * the idle gap itself is never counted. Used for reading's idle-while-visible rule (no
+     * explicit pause/resume signal exists like there is for listening). Returns true if this
+     * call just paused it; false if already paused or not idle long enough.
+     */
+    fun pauseIfIdle(nowMs: Long, idleMs: Long): Boolean {
+        if (!isOpen) return false
+        val since = activeSince ?: return false
+        val last = lastActivityMs ?: since
+        if (nowMs - last < idleMs) return false
+        accrue(last)
+        activeSince = null
+        inactiveSince = last
+        return true
     }
 
     /** How long the session has been inactive, or 0 while active. */
