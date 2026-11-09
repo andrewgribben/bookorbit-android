@@ -156,4 +156,40 @@ class DashboardShelfConfigTest {
         assertEquals(listOf(1, 2, 3), merged.map { it.order })
         assertEquals(false, merged[1].enabled)
     }
+
+    @Test
+    fun `mergedWithLocalLayout keeps local order and enabled for known shelves`() {
+        fun e(id: String, order: Int, enabled: Boolean = true) = ShelfConfigEntry(id, "t$id", "", enabled, order)
+        val server = listOf(e("1", 1), e("2", 2))
+        val local = listOf(e("2", 1), e("1", 2, enabled = false))
+
+        val merged = DashboardShelfConfig.mergedWithLocalLayout(server, local)
+
+        assertEquals(listOf("2", "1"), merged.map { it.id })
+        assertEquals(listOf(1, 2), merged.map { it.order })
+        assertEquals(false, merged.single { it.id == "1" }.enabled)
+    }
+
+    @Test
+    fun `mergedWithLocalLayout appends a new server shelf at the end with the server's enabled value`() {
+        fun e(id: String, order: Int, enabled: Boolean = true) = ShelfConfigEntry(id, "t$id", "", enabled, order)
+        val server = listOf(e("1", 1), e("2", 2, enabled = false))
+        val local = listOf(e("1", 1))
+
+        val merged = DashboardShelfConfig.mergedWithLocalLayout(server, local)
+
+        assertEquals(listOf("1", "2"), merged.map { it.id })
+        assertEquals(false, merged.single { it.id == "2" }.enabled)
+    }
+
+    @Test
+    fun `mergedWithLocalLayout drops a shelf deleted on the server`() {
+        fun e(id: String, order: Int, enabled: Boolean = true) = ShelfConfigEntry(id, "t$id", "", enabled, order)
+        val server = listOf(e("1", 1))
+        val local = listOf(e("1", 1), e("2", 2))
+
+        val merged = DashboardShelfConfig.mergedWithLocalLayout(server, local)
+
+        assertEquals(listOf("1"), merged.map { it.id })
+    }
 }

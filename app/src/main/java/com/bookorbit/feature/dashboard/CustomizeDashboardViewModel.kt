@@ -20,6 +20,7 @@ class CustomizeDashboardViewModel @Inject constructor(
 
     data class UiState(
         val entries: List<ShelfConfigEntry> = emptyList(),
+        val useLocalLayout: Boolean = false,
         val loading: Boolean = true,
         val saving: Boolean = false,
     )
@@ -31,7 +32,9 @@ class CustomizeDashboardViewModel @Inject constructor(
     val message = _message.asStateFlow()
 
     init {
-        viewModelScope.launch { _ui.value = UiState(entries = repo.shelves(), loading = false) }
+        viewModelScope.launch {
+            _ui.value = UiState(entries = repo.shelves(), useLocalLayout = repo.useLocalLayout(), loading = false)
+        }
     }
 
     fun consumeMessage() {
@@ -43,6 +46,17 @@ class CustomizeDashboardViewModel @Inject constructor(
     fun move(index: Int, delta: Int) = persist(DashboardShelfConfig.moved(_ui.value.entries, index, delta))
 
     fun resetToDefault() = persist(DashboardShelfConfig.DEFAULT_ENTRIES)
+
+    /** Flips "use this device's layout". Reloads the shelf list afterwards since switching
+     * between the server list and the local one can change what's shown (new server shelves
+     * appended, or the seeded/local copy swapped in). */
+    fun setUseLocalLayout(enabled: Boolean) {
+        _ui.value = _ui.value.copy(useLocalLayout = enabled, saving = true)
+        viewModelScope.launch {
+            repo.setUseLocalLayout(enabled)
+            _ui.value = _ui.value.copy(entries = repo.shelves(), saving = false)
+        }
+    }
 
     /** Updates the list immediately (so the row reacts without waiting on the network), then saves. */
     private fun persist(next: List<ShelfConfigEntry>) {

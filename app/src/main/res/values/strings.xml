@@ -243,6 +243,8 @@
     <string name="dashboard_customize_move_down">Move %1$s down</string>
     <string name="dashboard_customize_reset">Reset to default</string>
     <string name="dashboard_customize_save_failed">Couldn\'t save your dashboard shelves. Try again.</string>
+    <string name="dashboard_customize_use_local_layout">Use this device\'s layout</string>
+    <string name="dashboard_customize_use_local_layout_desc">Keep shelf order and on/off choices on this device only, instead of syncing them to your account.</string>
     <string name="where_you_read">Where you read</string>
     <string name="year">Year</string>
     <string name="settings_material_you">Material You colours</string>

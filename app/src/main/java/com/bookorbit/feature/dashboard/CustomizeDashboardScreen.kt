@@ -81,6 +81,15 @@ fun CustomizeDashboardScreen(onBack: () -> Unit, vm: CustomizeDashboardViewModel
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.dashboard_customize_use_local_layout)) },
+                    supportingContent = { Text(stringResource(R.string.dashboard_customize_use_local_layout_desc)) },
+                    trailingContent = {
+                        Switch(checked = ui.useLocalLayout, onCheckedChange = vm::setUseLocalLayout)
+                    },
+                )
+            }
             itemsIndexed(ui.entries, key = { _, entry -> entry.id }) { index, entry ->
                 val label = shelfDisplayLabel(entry)
                 val toggleDescription = stringResource(R.string.dashboard_customize_toggle, label)
