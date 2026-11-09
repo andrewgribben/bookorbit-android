@@ -275,6 +275,7 @@
     <string name="integrations_status_not_connected">Not connected</string>
     <string name="integrations_status_needs_reconnect">Needs reconnect</string>
     <string name="integrations_empty">No reading services available on this server</string>
+    <string name="integrations_social_section">Social</string>
     <string name="integrations_sign_in_method">Sign-in method</string>
     <string name="integrations_username">Username</string>
     <string name="integrations_password">Password</string>

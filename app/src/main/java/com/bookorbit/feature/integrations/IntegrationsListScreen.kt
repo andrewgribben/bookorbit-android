@@ -38,6 +38,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.bookorbit.R
 import com.bookorbit.core.model.ReadingServiceSummary
+import com.bookorbit.core.model.groupReadingServiceSummaries
 import com.bookorbit.core.network.ReadingServicesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -65,7 +66,8 @@ class IntegrationsListViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             _loading.value = true
-            _summaries.value = repository.summaries()
+            val (topLevel, _) = groupReadingServiceSummaries(repository.summaries())
+            _summaries.value = topLevel
             _loading.value = false
         }
     }

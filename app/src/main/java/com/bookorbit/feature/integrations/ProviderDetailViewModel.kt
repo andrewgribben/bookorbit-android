@@ -7,6 +7,7 @@ import com.bookorbit.core.model.ReadingServiceAuthMethod
 import com.bookorbit.core.model.ReadingServiceDeviceAuthPollResult
 import com.bookorbit.core.model.ReadingServiceDeviceAuthStart
 import com.bookorbit.core.model.ReadingServiceSummary
+import com.bookorbit.core.model.isSubAdapterOf
 import com.bookorbit.core.network.ReadingServicesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -39,6 +40,9 @@ data class ProviderDetailUiState(
     /** Set only for the lifetime of this app session - see the design note's "Assumptions". */
     val connectedAccountLabel: String? = null,
     val confirmDisconnect: Boolean = false,
+    /** Sub-adapters grouped under this provider (e.g. `readwise-social` under `readwise`), shown
+     * as a "Social" section below the main provider UI. Empty for a provider with none. */
+    val socialAdapters: List<ReadingServiceSummary> = emptyList(),
 ) {
     val connected: Boolean get() = summary?.connected == true
 }
@@ -70,12 +74,15 @@ class ProviderDetailViewModel @Inject constructor(
         this.provider = provider
         viewModelScope.launch {
             _uiState.update { it.copy(loading = true) }
-            val summary = repository.summaries().firstOrNull { it.provider == provider }
+            val summaries = repository.summaries()
+            val summary = summaries.firstOrNull { it.provider == provider }
+            val socialAdapters = summaries.filter { it.isSubAdapterOf(provider) }
             _uiState.update {
                 it.copy(
                     loading = false,
                     summary = summary,
                     selectedMethod = summary?.authMethods?.firstOrNull(),
+                    socialAdapters = socialAdapters,
                 )
             }
         }
