@@ -226,6 +226,11 @@
     <string name="shelf_trending">Trending</string>
     <string name="shelf_recommended">Recommended for you</string>
     <string name="shelf_external_books">From your reading service</string>
+    <string name="external_book_view_in_provider">View in %1$s</string>
+    <string name="external_book_add_to_requests">Add to requests</string>
+    <string name="external_book_already_requested">Already requested</string>
+    <string name="added_to_requests">Added to requests</string>
+    <string name="add_to_requests_failed">Couldn\'t add to requests</string>
     <string name="title">Title</string>
     <string name="up_next_to_read">Up next to read</string>
     <string name="want_to_read_shelf">Want to read</string>
