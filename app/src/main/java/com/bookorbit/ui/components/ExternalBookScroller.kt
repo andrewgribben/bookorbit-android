@@ -186,7 +186,8 @@ private fun ExternalBookTile(
                                 Text(
                                     stringResource(
                                         R.string.external_book_view_in_provider,
-                                        card.provider.orEmpty().replaceFirstChar(Char::uppercase),
+                                        // "readwise-social" (a private Readwise adapter) still links to Readwise.
+                                        card.provider.orEmpty().substringBefore('-').replaceFirstChar(Char::uppercase),
                                     ),
                                 )
                             },
