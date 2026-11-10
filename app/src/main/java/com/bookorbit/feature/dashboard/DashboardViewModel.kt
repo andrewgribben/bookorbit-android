@@ -25,8 +25,23 @@ import javax.inject.Inject
 data class ShelfUi(val entry: ShelfConfigEntry, val books: List<BookCard>)
 
 /** One reading-service external shelf (e.g. Readwise "owned elsewhere", Hardcover "friends"),
- * resolved to its books. Hidden by [DashboardViewModel] whenever [books] would be empty. */
-data class ExternalShelfUi(val shelfId: String, val provider: String, val books: List<ReadingServiceShelfItem>)
+ * resolved to its books. Hidden by [DashboardViewModel] whenever [books] would be empty. [order]
+ * shares one sequence with [ShelfUi.entry]'s `order` - see [DashboardRowUi]. */
+data class ExternalShelfUi(val shelfId: String, val provider: String, val books: List<ReadingServiceShelfItem>, val order: Int)
+
+/** A home-screen shelf row of either kind, carried only so [com.bookorbit.feature.dashboard.DashboardScreen]
+ * can render [ShelfUi] and [ExternalShelfUi] rows together in their one shared order. */
+sealed class DashboardRowUi {
+    abstract val order: Int
+
+    data class Scroller(val shelf: ShelfUi) : DashboardRowUi() {
+        override val order get() = shelf.entry.order
+    }
+
+    data class External(val shelf: ExternalShelfUi) : DashboardRowUi() {
+        override val order get() = shelf.order
+    }
+}
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
@@ -99,10 +114,12 @@ class DashboardViewModel @Inject constructor(
      * One shelf per configured-and-enabled `(provider, shelf)` pair from the user's
      * `dashboardShelfConfig.externalShelves` (web picker, S9), in that config's order; falls
      * back to "owned-elsewhere only" for every connected provider when the server has no such
-     * config at all (older server, or a user who has never opened the web picker). Each pair is
-     * skipped unless its provider is connected and has the shelf's capability turned on, and is
-     * dropped if it ends up with no books - [ReadingServicesRepository] already degrades every
-     * call to an empty result, so an older server or an unsupported shelf never errors here.
+     * config at all (older server, or a user who has never opened the web picker) - those
+     * fallback rows get no real order, so they sort after every configured/default scroller.
+     * Each pair is skipped unless its provider is connected and has the shelf's capability
+     * turned on, and is dropped if it ends up with no books - [ReadingServicesRepository]
+     * already degrades every call to an empty result, so an older server or an unsupported
+     * shelf never errors here.
      */
     private suspend fun loadExternalShelves(): List<ExternalShelfUi> {
         val summaries = runCatching { readingServicesRepo.summaries() }.getOrDefault(emptyList())
@@ -110,19 +127,19 @@ class DashboardViewModel @Inject constructor(
         if (connected.isEmpty()) return emptyList()
 
         val configured = runCatching { shelfConfigRepo.externalShelves() }.getOrNull()
-        val candidates: List<Pair<String, String>> = if (configured != null) {
-            configured.filter { it.enabled }.sortedBy { it.order }.map { it.provider to it.shelf }
+        val candidates: List<Triple<String, String, Int>> = if (configured != null) {
+            configured.filter { it.enabled }.sortedBy { it.order }.map { Triple(it.provider, it.shelf, it.order) }
         } else {
-            connected.keys.map { it to ReadingServiceShelf.OWNED_ELSEWHERE }
+            connected.keys.mapIndexed { index, provider -> Triple(provider, ReadingServiceShelf.OWNED_ELSEWHERE, Int.MAX_VALUE - connected.size + index) }
         }
 
         val result = mutableListOf<ExternalShelfUi>()
-        for ((provider, shelfId) in candidates) {
+        for ((provider, shelfId, order) in candidates) {
             val summary = connected[provider] ?: continue
             val capability = capabilityForShelf(shelfId) ?: continue
             if (!summary.featureActive(capability)) continue
             val books = readingServicesRepo.shelf(provider, shelfId)
-            if (books.isNotEmpty()) result += ExternalShelfUi(shelfId, provider, books)
+            if (books.isNotEmpty()) result += ExternalShelfUi(shelfId, provider, books, order)
         }
         return result
     }
@@ -130,3 +147,10 @@ class DashboardViewModel @Inject constructor(
 
 /** First non-empty shelf of [type] in display order, or an empty list if none/disabled. */
 fun List<ShelfUi>.booksFor(type: String): List<BookCard> = firstOrNull { it.entry.type == type }?.books.orEmpty()
+
+/** [ShelfUi] and [ExternalShelfUi] rows merged into their one shared display order - see
+ * [DashboardRowUi]. Ties broken by scrollers before external shelves, matching the legacy
+ * (pre-`shelfOrderVersion`) rule. */
+fun DashboardViewModel.UiState.mergedRows(): List<DashboardRowUi> =
+    (shelves.map { DashboardRowUi.Scroller(it) } + externalShelves.map { DashboardRowUi.External(it) })
+        .sortedBy { it.order }

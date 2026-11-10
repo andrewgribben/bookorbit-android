@@ -271,9 +271,9 @@ data class ReadingServiceAvailableShelf(
 /**
  * One provider shelf the user chose to show on the dashboard, from the web's "Customize
  * Dashboard" picker (`ExternalShelfConfig`, `packages/types/src/dashboard.ts`). Stored in
- * `user.settings.dashboardShelfConfig.externalShelves`, alongside `scrollers` - see
- * [DashboardShelfConfig.parseExternalShelves]. This app has no picker UI to write this list yet;
- * it only reads and honours whatever the web (or a future app picker) persisted.
+ * `user.settings.dashboardShelfConfig.externalShelves`, sharing one order sequence with
+ * `scrollers` once `shelfOrderVersion` is 2 - see [DashboardShelfConfig.mergedRows]. Both this
+ * app's Customize Dashboard and the web picker read and write this list.
  */
 data class ExternalShelfConfig(
     val provider: String,
@@ -281,6 +281,13 @@ data class ExternalShelfConfig(
     val enabled: Boolean,
     val order: Int,
 )
+
+/** Display name for a provider id in UI contexts with no [ReadingServiceSummary] at hand (the
+ * external-shelves picker row's provider subtitle): the id's first letter capitalised, with any
+ * sub-adapter suffix dropped (`readwise-social` -> `Readwise`) - mirrors
+ * [ReadingServiceSummary.resolvedDisplayName]'s fallback and [com.bookorbit.ui.components.ExternalBookScroller]'s
+ * "View in <Provider>" label. */
+fun providerDisplayName(provider: String): String = provider.substringBefore('-').replaceFirstChar(Char::uppercase)
 
 /** Known-shelf display name; an unrecognised shelf id (a future server addition) still renders,
  * with a generic label - mirrors [knownShelfLabelRes]'s fallback for an unknown scroller type. */
