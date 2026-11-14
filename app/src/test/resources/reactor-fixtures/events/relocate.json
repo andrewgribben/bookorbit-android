@@ -1,0 +1,11 @@
+{
+  "type": "relocate",
+  "cfi": "epubcfi(/6/4!/4/2/1:0)",
+  "fraction": 0.42,
+  "chapterTitle": "Chapter 1",
+  "location": { "current": 3, "next": 4, "total": 120 },
+  "reason": "page",
+  "restoring": false,
+  "narrationFragment": "OPS/chapter_001.xhtml#f1",
+  "narrationSectionIndex": 3
+}

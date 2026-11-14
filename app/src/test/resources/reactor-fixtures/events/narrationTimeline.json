@@ -1,0 +1,12 @@
+{
+  "type": "narrationTimeline",
+  "generation": 1,
+  "audioSrcs": ["OPS/audio/ch1.mp3"],
+  "items": [
+    { "sectionIndex": 3, "textHref": "OPS/chapter_001.xhtml#f1", "beginSec": 0, "endSec": 4.2, "audioIndex": 0 },
+    { "sectionIndex": 3, "textHref": "OPS/chapter_001.xhtml#f2", "beginSec": 4.2, "endSec": null, "audioIndex": 0 }
+  ],
+  "activeClass": "-epub-media-overlay-active",
+  "playbackActiveClass": null,
+  "startTextHref": "OPS/chapter_001.xhtml#f1"
+}

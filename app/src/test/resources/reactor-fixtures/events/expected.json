@@ -1,0 +1,131 @@
+{
+  "_comment": "Maps each events/ fixture to what Kotlin's ReaderBridge.parseEvent should produce. ktType null means Kotlin's parseEvent legitimately drops the event (a known gap between what bridge.js posts and what ReaderEvent currently models - see docs/SPEC.md section 2 note on relocate.location and annotationTap/selection requiring non-null fields that bridge.js can send as null). fields use ReaderEvent's Kotlin property names; a field absent from a given ktType's data class is omitted.",
+  "ready.json": { "ktType": "Ready", "fields": {} },
+  "loaded.json": {
+    "ktType": "Loaded",
+    "fields": {
+      "toc": [
+        { "label": "Chapter 1", "href": "OPS/chapter_001.xhtml", "subitems": [] },
+        {
+          "label": "Chapter 2",
+          "href": "OPS/chapter_002.xhtml",
+          "subitems": [{ "label": "Chapter 2, part 1", "href": "OPS/chapter_002.xhtml#p1", "subitems": [] }]
+        }
+      ],
+      "title": "Moby-Dick",
+      "hasMediaOverlay": true,
+      "isRtl": false
+    },
+    "note": "Kotlin's Loaded has no `language` field today; metadata.language is dropped by parseEvent, not by the wire protocol."
+  },
+  "loaded-minimal.json": {
+    "ktType": "Loaded",
+    "fields": { "toc": [], "title": null, "hasMediaOverlay": false, "isRtl": false }
+  },
+  "loaded-multilingual-title.json": {
+    "ktType": null,
+    "fields": {},
+    "note": "A real recorded trace (test/traces/regime-anticancer-arabic-*.json) shows foliate can give metadata.title as a { [lang]: string } map, not a plain string, when the EPUB has multiple dc:title elements. Kotlin's parseEvent does `metadata.title.jsonPrimitive.contentOrNull`, which throws on a JSON object and is caught by the outer runCatching, dropping the whole 'loaded' event. Flagged for A1: Loaded.title should accept this shape instead of crashing."
+  },
+  "loaded-language-array.json": {
+    "ktType": "Loaded",
+    "fields": {
+      "toc": [{ "label": "The Yellow Wallpaper", "href": "filepos:0000001644", "subitems": [] }],
+      "title": "The Yellow Wallpaper",
+      "hasMediaOverlay": false,
+      "isRtl": false
+    },
+    "note": "A real recorded trace (test/traces/yellow-wallpaper-mobi/azw3-*.json) shows metadata.language can be a string array, not a plain string, for mobi/azw3 source metadata with more than one language. Kotlin's parseEvent never reads metadata.language at all (Loaded has no language field), so this does not change parseEvent's output, but the wire shape differs from SPEC.md's plain description."
+  },
+  "relocate.json": {
+    "ktType": "Relocate",
+    "fields": {
+      "cfi": "epubcfi(/6/4!/4/2/1:0)",
+      "fraction": 0.42,
+      "chapterTitle": "Chapter 1",
+      "reason": "page",
+      "restoring": false,
+      "narrationFragment": "OPS/chapter_001.xhtml#f1",
+      "narrationSectionIndex": 3
+    },
+    "note": "Kotlin's Relocate has no `location` field; it is ignored by parseEvent, not by the wire protocol (PLAN.md correction #2)."
+  },
+  "relocate-nulls.json": {
+    "ktType": "Relocate",
+    "fields": {
+      "cfi": null,
+      "fraction": null,
+      "chapterTitle": null,
+      "reason": null,
+      "restoring": true,
+      "narrationFragment": null,
+      "narrationSectionIndex": null
+    }
+  },
+  "history.json": { "ktType": "History", "fields": { "canGoBack": true, "canGoForward": false } },
+  "error.json": { "ktType": "Error", "fields": { "message": "Failed to open book" } },
+  "tap.json": { "ktType": "Tap", "fields": { "x": 0.82, "y": 0.5 } },
+  "selection.json": {
+    "ktType": "Selection",
+    "fields": {
+      "text": "the yellow wallpaper",
+      "cfi": "epubcfi(/6/4!/4/2/1:0,/4/2/1:21)",
+      "rect": { "left": 12.5, "top": 100, "right": 200, "bottom": 120 }
+    }
+  },
+  "selection-null-cfi.json": {
+    "ktType": "Selection",
+    "fields": {
+      "text": "an unresolvable range",
+      "cfi": null,
+      "rect": { "left": 0, "top": 0, "right": 50, "bottom": 20 }
+    }
+  },
+  "selectionCleared.json": { "ktType": "SelectionCleared", "fields": {} },
+  "searchResults.json": {
+    "ktType": "SearchResults",
+    "fields": {
+      "label": "Chapter 1",
+      "hits": [
+        { "cfi": "epubcfi(/6/4!/4/2/1:0)", "pre": "the ", "match": "yellow", "post": " wallpaper" },
+        { "cfi": "epubcfi(/6/4!/4/4/1:0)", "pre": "a dull ", "match": "yellow", "post": " room" }
+      ]
+    }
+  },
+  "searchResults-empty.json": { "ktType": "SearchResults", "fields": { "label": "Chapter 2", "hits": [] } },
+  "searchProgress.json": { "ktType": "SearchProgress", "fields": { "progress": 0.33 } },
+  "searchDone.json": { "ktType": "SearchDone", "fields": { "total": 7, "capped": false } },
+  "searchDone-capped.json": { "ktType": "SearchDone", "fields": { "total": 200, "capped": true } },
+  "annotationTap.json": {
+    "ktType": "AnnotationTap",
+    "fields": {
+      "cfi": "epubcfi(/6/4!/4/2/1:0)",
+      "rect": { "left": 12.5, "top": 100, "right": 200, "bottom": 120 }
+    }
+  },
+  "annotationTap-null.json": {
+    "ktType": null,
+    "fields": {},
+    "note": "Kotlin's AnnotationTap requires a non-null cfi; parseEvent returns null (the event is silently dropped) when bridge.js posts cfi: null. This is a real gap worth flagging to A1/R3, not a fixture bug - bridge.js can and does post this shape (view.js show-annotation with no e.detail.value)."
+  },
+  "narrationTimeline.json": {
+    "ktType": "NarrationReady",
+    "fields": {
+      "generation": 1,
+      "timeline": {
+        "audioSrcs": ["OPS/audio/ch1.mp3"],
+        "items": [
+          { "sectionIndex": 3, "textHref": "OPS/chapter_001.xhtml#f1", "beginSec": 0, "endSec": 4.2, "audioIndex": 0 },
+          { "sectionIndex": 3, "textHref": "OPS/chapter_001.xhtml#f2", "beginSec": 4.2, "endSec": null, "audioIndex": 0 }
+        ],
+        "activeClass": "-epub-media-overlay-active",
+        "playbackActiveClass": null,
+        "startTextHref": "OPS/chapter_001.xhtml#f1"
+      }
+    }
+  },
+  "narrationTimelineError.json": {
+    "ktType": "NarrationFailed",
+    "fields": { "message": "Couldn't read this book's narration", "generation": 1 }
+  }
+}

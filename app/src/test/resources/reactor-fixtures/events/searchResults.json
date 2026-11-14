@@ -1,0 +1,8 @@
+{
+  "type": "searchResults",
+  "label": "Chapter 1",
+  "items": [
+    { "cfi": "epubcfi(/6/4!/4/2/1:0)", "pre": "the ", "match": "yellow", "post": " wallpaper" },
+    { "cfi": "epubcfi(/6/4!/4/4/1:0)", "pre": "a dull ", "match": "yellow", "post": " room" }
+  ]
+}
