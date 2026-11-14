@@ -60,6 +60,12 @@ android {
         // Must match the server's whitelisted mobile redirect URI (bookorbit://oauth2-callback,
         // OIDC_MOBILE_REDIRECT_URIS default) and the value used by OidcManager.
         manifestPlaceholders["appAuthRedirectScheme"] = "bookorbit"
+
+        // Reactor engine swap (A1): -Preactor=true loads the Reactor WebView bundle
+        // (assets/reactor/) instead of the legacy one (assets/reader/). Default off until A2
+        // signs off the parity pass. See ReaderWebView.kt readerIndexUrl().
+        val useReactor = (project.findProperty("reactor") as String?)?.toBoolean() ?: false
+        buildConfigField("boolean", "READER_REACTOR", useReactor.toString())
     }
 
     // "full" (default) links Google's proprietary Cast SDK for Chromecast support; "fdroid"
