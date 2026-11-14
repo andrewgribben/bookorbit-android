@@ -283,18 +283,31 @@ fun ReaderScreen(
     val eink = false
     val locale = remember { Locale.getDefault().toLanguageTag() }
 
-    LaunchedEffect(ready, useReactorChrome, topInsetCss, bottomInsetCss, eink, locale, ui.hasMediaOverlay) {
-        if (ready && useReactorChrome) {
-            controller.sendReactorCommand(
-                ReactorV2Command.Configure(
-                    chrome = "reactor",
-                    eink = eink,
-                    insets = ReactorV2Command.Configure.Insets(top = topInsetCss, right = 0.0, bottom = bottomInsetCss, left = 0.0),
-                    capabilities = ReactorCapabilities.select(hasNarration = ui.hasMediaOverlay),
-                    locale = locale,
-                ),
-            )
+    // Per the v2 README, `configure.capabilities` is decided ONCE from the first `configure` a
+    // host sends - a later `configure` can update eink/insets but Reactor keeps whatever
+    // capabilities it saw the first time, however this one disagrees. So the first send must
+    // wait until every capability is actually known (in particular `playback`, which depends on
+    // ui.hasMediaOverlay - only set once the WebView's `loaded` event fires, after `ready`), and
+    // every later send (inset rotation, eink change) must re-send that same locked snapshot
+    // rather than recomputing it from whatever the UI state happens to be then.
+    var lockedCapabilities by remember { mutableStateOf<ReactorV2Command.Configure.Capabilities?>(null) }
+    LaunchedEffect(ready, ui.loaded, ui.hasMediaOverlay, useReactorChrome) {
+        if (useReactorChrome && ready && ui.loaded && lockedCapabilities == null) {
+            lockedCapabilities = ReactorCapabilities.select(hasNarration = ui.hasMediaOverlay)
         }
+    }
+
+    LaunchedEffect(lockedCapabilities, topInsetCss, bottomInsetCss, eink, locale) {
+        val capabilities = lockedCapabilities ?: return@LaunchedEffect
+        controller.sendReactorCommand(
+            ReactorV2Command.Configure(
+                chrome = "reactor",
+                eink = eink,
+                insets = ReactorV2Command.Configure.Insets(top = topInsetCss, right = 0.0, bottom = bottomInsetCss, left = 0.0),
+                capabilities = capabilities,
+                locale = locale,
+            ),
+        )
     }
 
     Box(
