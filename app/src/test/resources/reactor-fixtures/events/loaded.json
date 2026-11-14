@@ -1,0 +1,14 @@
+{
+  "type": "loaded",
+  "toc": [
+    { "label": "Chapter 1", "href": "OPS/chapter_001.xhtml", "subitems": [] },
+    {
+      "label": "Chapter 2",
+      "href": "OPS/chapter_002.xhtml",
+      "subitems": [{ "label": "Chapter 2, part 1", "href": "OPS/chapter_002.xhtml#p1", "subitems": [] }]
+    }
+  ],
+  "metadata": { "title": "Moby-Dick", "language": "en" },
+  "hasMediaOverlay": true,
+  "isRtl": false
+}

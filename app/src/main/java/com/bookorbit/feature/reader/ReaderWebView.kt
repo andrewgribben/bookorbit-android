@@ -240,6 +240,16 @@ private class EmptyActionModeCallback(private val delegate: android.view.ActionM
     }
 }
 
+/** Picks the reader bundle's index page: Reactor's (`assets/reactor/`) when the `-Preactor=true`
+ * Gradle flag is on ([BuildConfig.READER_REACTOR]), otherwise the legacy bundle (`assets/reader/`).
+ * Pure so it is unit-testable without a WebView. */
+internal fun readerIndexUrl(useReactor: Boolean): String =
+    if (useReactor) {
+        "https://appassets.androidplatform.net/assets/reactor/index.html"
+    } else {
+        "https://appassets.androidplatform.net/assets/reader/index.html"
+    }
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun ReaderWebView(
@@ -301,7 +311,7 @@ fun ReaderWebView(
                 )
 
                 controller.attach(this)
-                loadUrl("https://appassets.androidplatform.net/assets/reader/index.html")
+                loadUrl(readerIndexUrl(BuildConfig.READER_REACTOR))
             }
         },
         onRelease = { view ->

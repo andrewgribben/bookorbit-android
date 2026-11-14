@@ -172,4 +172,30 @@ class ReaderBridgeEventsTest {
         assertNull(e.reason)
         assertFalse(e.restoring)
     }
+
+    @Test
+    fun `loaded title as a language map picks the first value instead of dropping the event`() {
+        // Real EPUBs with multiple dc:title elements give metadata.title as { [lang]: string }.
+        // This used to throw inside parseEvent (contentOrNull on a JsonObject), caught by the
+        // outer runCatching, dropping the whole 'loaded' event (see docs/SPEC.md section 2, A1 note
+        // and src/protocol/fixtures/events/expected.json in the reactor repo). Fixed for A1: the
+        // legacy bundle sends the same shape for some real books, so this is a real parser gap, not
+        // just a Reactor-only fixture.
+        val e = ReaderBridge.parseEvent(
+            """{"type":"loaded","toc":[],"metadata":{"title":{"fr":"Le Vrai Régime anti-cancer","ar":"x"}},"isRtl":true}""",
+        ) as ReaderEvent.Loaded
+        assertEquals("Le Vrai Régime anti-cancer", e.title)
+    }
+
+    @Test
+    fun `loaded title as a plain string still parses as before`() {
+        val e = ReaderBridge.parseEvent("""{"type":"loaded","toc":[],"metadata":{"title":"Moby-Dick"}}""") as ReaderEvent.Loaded
+        assertEquals("Moby-Dick", e.title)
+    }
+
+    @Test
+    fun `loaded title explicitly null still parses as null, not the language-map path`() {
+        val e = ReaderBridge.parseEvent("""{"type":"loaded","toc":[],"metadata":{"title":null}}""") as ReaderEvent.Loaded
+        assertNull(e.title)
+    }
 }
