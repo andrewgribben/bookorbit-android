@@ -122,6 +122,9 @@ sealed interface ReactorV2Command {
     data class SetPlaybackState(val playing: Boolean, val positionSec: Double, val rate: Double) : ReactorV2Command
 
     data class SetSettingsScope(val scope: String, val settings: ReactorSettings) : ReactorV2Command
+
+    /** Closes Reactor's top-most open layer; when nothing is open Reactor answers with `back`. */
+    data object Dismiss : ReactorV2Command
 }
 
 object ReactorV2 {
@@ -253,6 +256,7 @@ object ReactorV2 {
             put("positionSec", command.positionSec)
             put("rate", command.rate)
         }
+        ReactorV2Command.Dismiss -> buildJsonObject { put("type", "dismiss") }
         is ReactorV2Command.SetSettingsScope -> buildJsonObject {
             put("type", "setSettingsScope")
             put("scope", command.scope)

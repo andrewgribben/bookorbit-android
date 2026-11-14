@@ -120,13 +120,12 @@ fun ReaderScreen(
         onDispose { controller.reactorIntentListener = null }
     }
 
-    // Lets the hardware/gesture back button hold off closing this screen while Reactor reports a
-    // sidebar open, instead of leaving the library behind it. Protocol v2 has no command/intent to
-    // ask Reactor to close its own sidebar (see the v2 README's command table and
-    // ReactorChromeController's own "chromeState -> ignored" note) - that is a real gap, not
-    // something invented here, so this only swallows the gesture rather than sending any message;
-    // it un-swallows itself the moment Reactor's own UI closes the sidebar and reports it back.
-    BackHandler(enabled = useReactorChrome && reactorChromeState.sidebar != "none") {}
+    // While Reactor shows a sidebar or its bars, system back closes that layer first (v2 dismiss).
+    BackHandler(
+        enabled = useReactorChrome && (reactorChromeState.sidebar != "none" || reactorChromeState.barsVisible),
+    ) {
+        controller.sendReactorCommand(ReactorV2Command.Dismiss)
+    }
 
     // Taps arrive from the page (so text selection keeps working): a plain tap that isn't on a
     // link or selection is resolved through the shared Controls zone model (preset, zone size,
