@@ -1,0 +1,27 @@
+{
+  "type": "setNotes",
+  "total": 5000,
+  "offset": 40,
+  "items": [
+    {
+      "id": "note-41",
+      "cfi": "epubcfi(/6/4!/4/2/1:0)",
+      "kind": "highlight",
+      "color": "#ffeb3b",
+      "style": "highlight",
+      "text": "the quick brown fox",
+      "note": null,
+      "createdAt": "2026-11-03T10:00:00.000Z"
+    },
+    {
+      "id": "note-42",
+      "cfi": "epubcfi(/6/4!/4/4/1:0)",
+      "kind": "note",
+      "color": null,
+      "style": null,
+      "text": "jumps over the lazy dog",
+      "note": "check this reference",
+      "createdAt": "2026-11-03T10:05:00.000Z"
+    }
+  ]
+}

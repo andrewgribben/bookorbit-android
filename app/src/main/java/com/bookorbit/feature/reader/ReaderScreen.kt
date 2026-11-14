@@ -58,7 +58,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalDensity
+import com.bookorbit.BuildConfig
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -88,6 +93,26 @@ fun ReaderScreen(
     var showSleepTimerSheet by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val useReactorChrome = BuildConfig.READER_REACTOR_CHROME
+    val density = LocalDensity.current
+    val coroutineScope = rememberCoroutineScope()
+
+    // Reactor protocol v2 chrome (A3): when the flag is on, the WebView shell drives the reader
+    // chrome instead of the Compose bars/sheets below. Built once per screen instance; onBack and
+    // "close" both pop this reader screen (the app has one nav callback here - see A3 report).
+    val reactorChromeController = remember(vm) {
+        vm.buildReactorChromeController(
+            onBack = onBack,
+            onClose = onBack,
+            sendCommand = { controller.sendReactorCommand(it) },
+        )
+    }
+    DisposableEffect(controller, reactorChromeController) {
+        controller.reactorIntentListener = { intent ->
+            coroutineScope.launch { reactorChromeController.handleIntent(intent) }
+        }
+        onDispose { controller.reactorIntentListener = null }
+    }
 
     // Taps arrive from the page (so text selection keeps working): a plain tap that isn't on a
     // link or selection is resolved through the shared Controls zone model (preset, zone size,
@@ -235,7 +260,7 @@ fun ReaderScreen(
 
     val surface = themeBackgroundColor(ui.effective.themeName, ui.effective.isDark)
     val paginated = ui.effective.flow == "paginated"
-    val showChrome = chromeVisible
+    val showChrome = chromeVisible && !useReactorChrome
     val onSurface = if (effectiveIsDark(ui.effective.themeName, ui.effective.isDark)) Color.White else Color.Black
     // Bars must clear both the status bar AND the display-cutout (camera punch-hole) — on a
     // Galaxy Z Fold's inner/outer screens in particular, statusBarsPadding() alone leaves the top
@@ -246,6 +271,31 @@ fun ReaderScreen(
     // any orientation/fold state.
     val topBarInsets = WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout)
     val bottomBarInsets = WindowInsets.navigationBarsIgnoringVisibility.union(WindowInsets.displayCutout)
+
+    // Reactor chrome's own `configure.insets` (CSS px, same unit as ViewportRect - see its doc):
+    // the same top/bottom bars Compose would otherwise draw, so Reactor's own chrome clears the
+    // status bar/display cutout and navigation bar/cutout exactly like the Compose bars above.
+    // No left/right inset source exists here (phones/tablets don't reserve side bars in portrait
+    // or landscape the way a foldable's hinge might - left/right stay 0 until that's needed).
+    val topInsetCss = insetPxToCssPx(topBarInsets.getTop(density), density.density)
+    val bottomInsetCss = insetPxToCssPx(bottomBarInsets.getBottom(density), density.density)
+    // No e-ink detection exists in this app yet; always reports false until one is added.
+    val eink = false
+    val locale = remember { Locale.getDefault().toLanguageTag() }
+
+    LaunchedEffect(ready, useReactorChrome, topInsetCss, bottomInsetCss, eink, locale, ui.hasMediaOverlay) {
+        if (ready && useReactorChrome) {
+            controller.sendReactorCommand(
+                ReactorV2Command.Configure(
+                    chrome = "reactor",
+                    eink = eink,
+                    insets = ReactorV2Command.Configure.Insets(top = topInsetCss, right = 0.0, bottom = bottomInsetCss, left = 0.0),
+                    capabilities = ReactorCapabilities.select(hasNarration = ui.hasMediaOverlay),
+                    locale = locale,
+                ),
+            )
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -348,26 +398,28 @@ fun ReaderScreen(
             }
         }
 
-        ui.toolbar?.let { target ->
-            val annotation = target.annotationId?.let { id -> ui.annotations.firstOrNull { it.id == id } }
-            val screenWidth = LocalConfiguration.current.screenWidthDp
-            val toolbarWidth = if (annotation != null) 340 else 290
-            val rect = target.rect
-            val centerX = rect?.let { (it.left + it.right) / 2 } ?: (screenWidth / 2.0)
-            val x = (centerX - toolbarWidth / 2).coerceIn(8.0, (screenWidth - toolbarWidth - 8).coerceAtLeast(8).toDouble())
-            // Above the selection when there's room, otherwise below it (clear of the selection handles).
-            val y = when {
-                rect == null -> 120.0
-                rect.top > 150 -> rect.top - 60
-                else -> rect.bottom + 36
+        if (!useReactorChrome) {
+            ui.toolbar?.let { target ->
+                val annotation = target.annotationId?.let { id -> ui.annotations.firstOrNull { it.id == id } }
+                val screenWidth = LocalConfiguration.current.screenWidthDp
+                val toolbarWidth = if (annotation != null) 340 else 290
+                val rect = target.rect
+                val centerX = rect?.let { (it.left + it.right) / 2 } ?: (screenWidth / 2.0)
+                val x = (centerX - toolbarWidth / 2).coerceIn(8.0, (screenWidth - toolbarWidth - 8).coerceAtLeast(8).toDouble())
+                // Above the selection when there's room, otherwise below it (clear of the selection handles).
+                val y = when {
+                    rect == null -> 120.0
+                    rect.top > 150 -> rect.top - 60
+                    else -> rect.bottom + 36
+                }
+                HighlightToolbar(
+                    currentColor = annotation?.color,
+                    onColor = { vm.highlight(it) },
+                    onNote = { noteDialog = annotation?.note.orEmpty() },
+                    onDelete = annotation?.let { a -> { vm.deleteAnnotation(a.id) } },
+                    modifier = Modifier.offset(x = x.dp, y = y.dp),
+                )
             }
-            HighlightToolbar(
-                currentColor = annotation?.color,
-                onColor = { vm.highlight(it) },
-                onNote = { noteDialog = annotation?.note.orEmpty() },
-                onDelete = annotation?.let { a -> { vm.deleteAnnotation(a.id) } },
-                modifier = Modifier.offset(x = x.dp, y = y.dp),
-            )
         }
 
         if ((!ui.loaded || !ready) && ui.error == null && !rendererFailed) {
@@ -399,12 +451,12 @@ fun ReaderScreen(
         }
 
         // One-time coach overlay teaching the (invisible) paginated tap zones.
-        if (!rendererFailed && paginated && ui.loaded && ui.showPagingHint) {
+        if (!useReactorChrome && !rendererFailed && paginated && ui.loaded && ui.showPagingHint) {
             PagingHintOverlay(onDismiss = { vm.dismissPagingHint() })
         }
     }
 
-    if (tocVisible) {
+    if (!useReactorChrome && tocVisible) {
         ReaderTocSheet(
             toc = ui.toc,
             onSelect = { href ->

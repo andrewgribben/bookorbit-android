@@ -1,0 +1,16 @@
+{
+  "type": "configure",
+  "chrome": "reactor",
+  "eink": false,
+  "insets": { "top": 24, "right": 0, "bottom": 16, "left": 0 },
+  "capabilities": {
+    "starred": true,
+    "related": true,
+    "glossary": true,
+    "notes": true,
+    "bookmarks": true,
+    "playback": false,
+    "userGlossary": false
+  },
+  "locale": "en-GB"
+}

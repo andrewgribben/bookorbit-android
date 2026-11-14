@@ -851,6 +851,126 @@ class ReaderViewModel @Inject constructor(
         flush()
     }
 
+    // --- Reactor protocol v2 chrome (A3): thin adapters onto this VM's own repos/state, built
+    // only when BuildConfig.READER_REACTOR_CHROME is on. Kept here (not in ReactorChromeController
+    // itself) so the controller stays pure/testable with fakes - see ReactorChromeControllerTest.
+
+    private fun reactorAnnotationActions(): ReactorAnnotationActions = object : ReactorAnnotationActions {
+        // The current repo/API has no "kind" field (style defaults to "highlight" server-side -
+        // see ReaderAnnotationRepository.DEFAULT_STYLE) - a kind/style distinction from Reactor's
+        // richer annotation model is dropped here, a known gap pending a server-side field.
+        override suspend fun create(cfi: String, kind: String, color: String?, style: String?, text: String?, note: String?) {
+            val fileId = _ui.value.resolved?.fileId ?: return
+            runCatching {
+                annotationRepo.create(
+                    bookId = bookId,
+                    fileId = fileId,
+                    cfi = cfi,
+                    text = text.orEmpty(),
+                    color = color ?: ReaderAnnotationRepository.COLORS.first().second,
+                    note = note,
+                    chapterTitle = _ui.value.chapterTitle,
+                )
+            }.onSuccess { refreshLocalAnnotations(); syncAnnotations() }
+        }
+
+        override suspend fun update(id: String, color: String?, style: String?, note: String?) {
+            val annotationId = id.toIntOrNull() ?: return
+            runCatching {
+                if (color != null) annotationRepo.setColor(bookId, annotationId, color)
+                if (note != null) annotationRepo.setNote(bookId, annotationId, note)
+            }.onSuccess { refreshLocalAnnotations(); syncAnnotations() }
+        }
+
+        override suspend fun delete(id: String) {
+            val annotationId = id.toIntOrNull() ?: return
+            runCatching { annotationRepo.delete(bookId, annotationId) }
+                .onSuccess { refreshLocalAnnotations(); syncAnnotations() }
+        }
+    }
+
+    private fun reactorBookmarkActions(): ReactorBookmarkActions = object : ReactorBookmarkActions {
+        override suspend fun toggle(cfi: String) {
+            val existing = _ui.value.bookmarks.firstOrNull { it.cfi == cfi }
+            if (existing != null) {
+                runCatching { bookmarkRepo.delete(bookId, existing.id) }
+                    .onSuccess { _ui.update { s -> s.copy(bookmarks = s.bookmarks.filterNot { it.id == existing.id }) } }
+            } else {
+                val title = BookmarkNames.default(_ui.value.chapterTitle, _ui.value.percentage)
+                runCatching { bookmarkRepo.add(bookId, cfi, title) }
+                    .onSuccess { created -> _ui.update { it.copy(bookmarks = it.bookmarks + created) } }
+            }
+        }
+    }
+
+    private fun reactorSettingsActions(): ReactorSettingsActions = object : ReactorSettingsActions {
+        override suspend fun change(scope: String, settings: ReactorSettings) {
+            updateSettings(reactorScopeFromWire(scope), settings)
+        }
+    }
+
+    private fun reactorPlaybackActions(): ReactorPlaybackActions = object : ReactorPlaybackActions {
+        override fun play() {
+            if (!playerManager.state.value.isPlaying) playerManager.togglePlay()
+        }
+        override fun pause() {
+            if (playerManager.state.value.isPlaying) playerManager.togglePlay()
+        }
+        override fun seek(positionSec: Double) { playerManager.seekToAbsolute(positionSec) }
+        override fun setRate(rate: Double) { playerManager.setSpeed(rate.toFloat()) }
+    }
+
+    /** Windowed, never "all of them" (scale conventions / WORKTREE_BRIEF.md rule 5): only the
+     * requested [offset]/[limit] slice is ever mapped and sent, however many annotations the book
+     * has. `sort`/`query`/`filter` are opaque per the v2 README; `filter` is matched against
+     * [BookAnnotation.style] and `query` against text/note, the only vocabulary this host needs. */
+    private fun reactorNotesSource(): ReactorNotesSource = object : ReactorNotesSource {
+        override suspend fun page(offset: Int, limit: Int, filter: String?, sort: String?, query: String?): ReactorV2Command.SetNotes {
+            val matching = _ui.value.annotations.filter { a ->
+                (filter == null || a.style == filter) &&
+                    (query == null || a.text.contains(query, ignoreCase = true) || a.note.orEmpty().contains(query, ignoreCase = true))
+            }
+            val window = matching.drop(offset).take(limit).map { a ->
+                ReactorV2Command.SetNotes.Item(
+                    id = a.id.toString(),
+                    cfi = a.cfi.orEmpty(),
+                    kind = a.style,
+                    color = a.color,
+                    style = a.style,
+                    text = a.text,
+                    note = a.note,
+                    createdAt = "",
+                )
+            }
+            return ReactorV2Command.SetNotes(total = matching.size, offset = offset, items = window)
+        }
+    }
+
+    /** Builds the controller wired to this VM's repos/state. [onBack]/[onClose] are screen-level
+     * navigation (both currently pop this same reader screen - the app has one nav callback, see
+     * A3 report); [sendCommand] pushes a command to the WebView via [ReaderController]. */
+    fun buildReactorChromeController(
+        onBack: () -> Unit,
+        onClose: () -> Unit,
+        sendCommand: suspend (ReactorV2Command) -> Unit,
+    ): ReactorChromeController = ReactorChromeController(
+        annotations = reactorAnnotationActions(),
+        bookmarks = reactorBookmarkActions(),
+        settings = reactorSettingsActions(),
+        playback = reactorPlaybackActions(),
+        notes = reactorNotesSource(),
+        onBack = onBack,
+        onClose = onClose,
+        sendCommand = sendCommand,
+    )
+
+    /** `configure`/`settingsChange`/`setSettingsScope` wire value <-> [ReaderSettingsScope]. */
+    fun reactorScopeToWire(scope: ReaderSettingsScope): String =
+        if (scope == ReaderSettingsScope.THIS_BOOK) "book" else "global"
+
+    private fun reactorScopeFromWire(scope: String): ReaderSettingsScope =
+        if (scope == "book") ReaderSettingsScope.THIS_BOOK else ReaderSettingsScope.GLOBAL
+
     override fun onCleared() {
         // viewModelScope is already cancelled by the time onCleared() runs (ViewModel.clear()
         // cancels it, then calls onCleared() - true since before 2.8.7), so a
