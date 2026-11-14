@@ -275,6 +275,11 @@ class ReactorV2Test {
     }
 
     @Test
+    fun `dismiss command serialises to match the fixture`() {
+        assertJsonEquals(commandFixture("dismiss.json"), ReactorV2.encode(ReactorV2Command.Dismiss))
+    }
+
+    @Test
     fun `setSettingsScope command serialises to match the fixture`() {
         val settings = ReactorSettings(
             fontSize = 16,
