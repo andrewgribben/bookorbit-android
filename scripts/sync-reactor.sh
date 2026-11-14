@@ -42,6 +42,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 WORKTREE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sync-reactor.XXXXXX")"
 rmdir "$WORKTREE_DIR" # git worktree add requires the target not to exist yet
+# On Windows git-bash, native git cannot resolve MSYS paths like /tmp/...
+if command -v cygpath >/dev/null 2>&1; then WORKTREE_DIR="$(cygpath -m "$WORKTREE_DIR")"; fi
 cleanup() {
   git -C "$REACTOR_REPO" worktree remove --force "$WORKTREE_DIR" >/dev/null 2>&1 || true
   rm -rf "$WORKTREE_DIR"
