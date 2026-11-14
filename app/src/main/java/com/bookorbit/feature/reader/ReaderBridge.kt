@@ -10,6 +10,8 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -118,6 +120,17 @@ object ReaderBridge {
         )
     }.getOrNull()
 
+    // bridge.js can post metadata.title as a plain string or, for an EPUB with multiple
+    // dc:title elements, as a { [lang]: string } map (see docs/SPEC.md section 2, A1 note).
+    // The legacy bundle sends the same shape for some real books, so this is an existing parser
+    // gap, not just a Reactor fixture quirk: pick the first value rather than dropping the whole
+    // 'loaded' event.
+    private fun parseTitle(el: JsonElement?): String? {
+        if (el == null) return null
+        (el as? JsonPrimitive)?.contentOrNull?.let { return it }
+        return runCatching { el.jsonObject.values.firstOrNull()?.jsonPrimitive?.contentOrNull }.getOrNull()
+    }
+
     fun parseEvent(data: String): ReaderEvent? = runCatching {
         val obj = json.parseToJsonElement(data).jsonObject
         when (obj["type"]?.jsonPrimitive?.contentOrNull) {
@@ -127,7 +140,7 @@ object ReaderBridge {
                     runCatching { json.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(TocItem.serializer()), it) }
                         .getOrDefault(emptyList())
                 } ?: emptyList()
-                val title = obj["metadata"]?.jsonObject?.get("title")?.jsonPrimitive?.contentOrNull
+                val title = parseTitle(obj["metadata"]?.jsonObject?.get("title"))
                 val hasMediaOverlay = obj["hasMediaOverlay"]?.jsonPrimitive?.booleanOrNull ?: false
                 val isRtl = obj["isRtl"]?.jsonPrimitive?.booleanOrNull ?: false
                 ReaderEvent.Loaded(toc, title, hasMediaOverlay, isRtl)
