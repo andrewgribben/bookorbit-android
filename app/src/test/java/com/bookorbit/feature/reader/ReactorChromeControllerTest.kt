@@ -267,4 +267,36 @@ class ReactorChromeControllerTest {
     fun `inset px to css px is zero-safe for a zero density`() {
         assertEquals(0.0, insetPxToCssPx(100, density = 0f), 0.0)
     }
+
+    // --- ReactorAnnotationStyle: kind/style mapping ---
+
+    @Test
+    fun `kindForStyle folds strikethrough onto highlight and squiggly onto underline`() {
+        assertEquals("highlight", ReactorAnnotationStyle.kindForStyle("highlight"))
+        assertEquals("highlight", ReactorAnnotationStyle.kindForStyle("strikethrough"))
+        assertEquals("underline", ReactorAnnotationStyle.kindForStyle("underline"))
+        assertEquals("underline", ReactorAnnotationStyle.kindForStyle("squiggly"))
+    }
+
+    @Test
+    fun `styleForIntent prefers the intent's own style over the kind default`() {
+        assertEquals("squiggly", ReactorAnnotationStyle.styleForIntent("underline", "squiggly"))
+        assertEquals("strikethrough", ReactorAnnotationStyle.styleForIntent("highlight", "strikethrough"))
+    }
+
+    @Test
+    fun `styleForIntent falls back to a kind default when style is null`() {
+        assertEquals("underline", ReactorAnnotationStyle.styleForIntent("underline", null))
+        assertEquals("highlight", ReactorAnnotationStyle.styleForIntent("highlight", null))
+        assertEquals("highlight", ReactorAnnotationStyle.styleForIntent("note", null))
+        assertEquals("highlight", ReactorAnnotationStyle.styleForIntent("bookmark", null))
+    }
+
+    @Test
+    fun `kind-style mapping round trips through every supported style`() {
+        for (style in listOf("highlight", "underline", "strikethrough", "squiggly")) {
+            val kind = ReactorAnnotationStyle.kindForStyle(style)
+            assertEquals(style, ReactorAnnotationStyle.styleForIntent(kind, style))
+        }
+    }
 }

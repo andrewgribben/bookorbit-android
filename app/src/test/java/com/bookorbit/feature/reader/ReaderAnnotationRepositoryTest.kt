@@ -78,6 +78,33 @@ class ReaderAnnotationRepositoryTest {
     }
 
     @Test
+    fun `create defaults to the highlight style, but a given style is persisted`() = runTest {
+        createOne()
+        repo.create(bookId = 1, fileId = 9, cfi = "epubcfi(/6/4)", text = "b", color = "#FACC15", note = null, chapterTitle = null, style = "underline")
+        assertEquals(listOf(ReaderAnnotationRepository.DEFAULT_STYLE, "underline"), dao.rows.map { it.style })
+    }
+
+    @Test
+    fun `setStyle queues a style-only change, folding into an unsynced create`() = runTest {
+        createOne()
+        repo.setStyle(1, -1, "squiggly")
+        assertEquals(1, dao.rows.size)
+        val op = dao.rows.single()
+        assertEquals(AnnotationOp.CREATE, op.kind)
+        assertEquals("squiggly", op.style)
+    }
+
+    @Test
+    fun `flush sends the queued style on create and update`() = runTest {
+        repo.create(bookId = 1, fileId = 9, cfi = "epubcfi(/6/2)", text = "a", color = "#FACC15", note = null, chapterTitle = null, style = "strikethrough")
+        repo.setStyle(1, 42, "squiggly")
+        repo.flushPending()
+
+        coVerify { api.createAnnotation(1, match { it.style == "strikethrough" }) }
+        coVerify { api.updateAnnotation(1, 42, match { it["style"] == kotlinx.serialization.json.JsonPrimitive("squiggly") }) }
+    }
+
+    @Test
     fun `editing an unsynced highlight folds into its create`() = runTest {
         createOne()
         repo.setColor(1, -1, "#4ADE80")
@@ -160,15 +187,17 @@ class ReaderAnnotationRepositoryTest {
             BookAnnotation(id = 3, bookId = 1, cfi = "c", text = "three"),
         )
         val ops = listOf(
-            PendingAnnotationOpEntity(1, 1, AnnotationOp.CREATE, -1, cfi = "d", text = "four", color = "#4ADE80"),
+            PendingAnnotationOpEntity(1, 1, AnnotationOp.CREATE, -1, cfi = "d", text = "four", color = "#4ADE80", style = "underline"),
             PendingAnnotationOpEntity(2, 1, AnnotationOp.UPDATE, 1, color = "#F472B6"),
-            PendingAnnotationOpEntity(3, 1, AnnotationOp.UPDATE, 2, note = "", noteSet = true),
+            PendingAnnotationOpEntity(3, 1, AnnotationOp.UPDATE, 2, note = "", noteSet = true, style = "strikethrough"),
             PendingAnnotationOpEntity(4, 1, AnnotationOp.DELETE, 3),
         )
         val result = overlayPendingOps(base, ops)
         assertEquals(listOf(1, 2, -1), result.map { it.id })
         assertEquals("#F472B6", result[0].color)
         assertEquals(null, result[1].note)
+        assertEquals("strikethrough", result[1].style)
         assertEquals("four", result[2].text)
+        assertEquals("underline", result[2].style)
     }
 }

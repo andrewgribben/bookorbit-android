@@ -19,7 +19,7 @@ fun overlayPendingOps(base: List<BookAnnotation>, ops: List<PendingAnnotationOpE
                 cfi = op.cfi,
                 text = op.text.orEmpty(),
                 color = op.color ?: ReaderAnnotationRepository.COLORS.first().second,
-                style = ReaderAnnotationRepository.DEFAULT_STYLE,
+                style = op.style ?: ReaderAnnotationRepository.DEFAULT_STYLE,
                 note = op.note?.takeIf { op.noteSet && it.isNotBlank() },
                 chapterTitle = op.chapterTitle,
                 origin = "web",
@@ -28,6 +28,7 @@ fun overlayPendingOps(base: List<BookAnnotation>, ops: List<PendingAnnotationOpE
                 if (a.id != op.annotationId) a
                 else a.copy(
                     color = op.color ?: a.color,
+                    style = op.style ?: a.style,
                     note = if (op.noteSet) op.note?.takeIf { it.isNotBlank() } else a.note,
                 )
             }

@@ -139,3 +139,27 @@ object ReactorCapabilities {
  * geometry sent across the bridge. */
 fun insetPxToCssPx(px: Int, density: Float): Double =
     if (density <= 0f) 0.0 else Math.round(px / density).toDouble()
+
+/**
+ * Maps between Reactor's text-mark `style` (the fine-grained visual style used by its own shell -
+ * `highlight`/`underline`/`strikethrough`/`squiggly`, see `reactor/src/marks/draw.ts` and
+ * `reactor/src/shell/annotations/mount.ts`) and protocol v2's coarser `kind`
+ * (`highlight`/`underline`/`note`/`bookmark`). This app's own [BookAnnotation.style] /
+ * [ReaderAnnotationRepository] use the same four style strings Reactor does - no server-side
+ * translation needed - so only `kind` (which this app has no field for) needs deriving.
+ *
+ * `kindForStyle` mirrors Reactor's own `markKindForStyle`: strikethrough is drawn as a highlight
+ * variant, squiggly as an underline variant, so both fold onto their coarser kind.
+ */
+object ReactorAnnotationStyle {
+    private val UNDERLINE_STYLES = setOf("underline", "squiggly")
+
+    fun kindForStyle(style: String): String = if (style in UNDERLINE_STYLES) "underline" else "highlight"
+
+    /** The style to persist for an `annotationCreate` intent: Reactor's own `style` field wins
+     * when present (it already carries the fine-grained value); otherwise fall back to a default
+     * for the coarse `kind` (`note`/`bookmark` have no mark style, so they default to highlight
+     * like every other kind-only intent). */
+    fun styleForIntent(kind: String, style: String?): String =
+        style ?: if (kind == "underline") "underline" else ReaderAnnotationRepository.DEFAULT_STYLE
+}

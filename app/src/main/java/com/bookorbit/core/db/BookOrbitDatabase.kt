@@ -20,7 +20,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PendingAnnotationOpEntity::class,
         AnnotationCacheEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 abstract class BookOrbitDatabase : RoomDatabase() {
@@ -32,6 +32,13 @@ abstract class BookOrbitDatabase : RoomDatabase() {
     abstract fun pendingReadingSessionDao(): PendingReadingSessionDao
     abstract fun pendingAnnotationOpDao(): PendingAnnotationOpDao
     abstract fun annotationCacheDao(): AnnotationCacheDao
+}
+
+/** Lets a queued highlight create/update carry its own mark style (Reactor protocol v2 A3). */
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `pending_annotation_ops` ADD COLUMN `style` TEXT")
+    }
 }
 
 /** Keeps a read-aloud page's first narrated sentence so an offline save still maps to audio exactly. */
