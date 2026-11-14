@@ -856,9 +856,6 @@ class ReaderViewModel @Inject constructor(
     // itself) so the controller stays pure/testable with fakes - see ReactorChromeControllerTest.
 
     private fun reactorAnnotationActions(): ReactorAnnotationActions = object : ReactorAnnotationActions {
-        // The current repo/API has no "kind" field (style defaults to "highlight" server-side -
-        // see ReaderAnnotationRepository.DEFAULT_STYLE) - a kind/style distinction from Reactor's
-        // richer annotation model is dropped here, a known gap pending a server-side field.
         override suspend fun create(cfi: String, kind: String, color: String?, style: String?, text: String?, note: String?) {
             val fileId = _ui.value.resolved?.fileId ?: return
             runCatching {
@@ -870,6 +867,7 @@ class ReaderViewModel @Inject constructor(
                     color = color ?: ReaderAnnotationRepository.COLORS.first().second,
                     note = note,
                     chapterTitle = _ui.value.chapterTitle,
+                    style = ReactorAnnotationStyle.styleForIntent(kind, style),
                 )
             }.onSuccess { refreshLocalAnnotations(); syncAnnotations() }
         }
@@ -878,6 +876,7 @@ class ReaderViewModel @Inject constructor(
             val annotationId = id.toIntOrNull() ?: return
             runCatching {
                 if (color != null) annotationRepo.setColor(bookId, annotationId, color)
+                if (style != null) annotationRepo.setStyle(bookId, annotationId, style)
                 if (note != null) annotationRepo.setNote(bookId, annotationId, note)
             }.onSuccess { refreshLocalAnnotations(); syncAnnotations() }
         }
@@ -934,7 +933,7 @@ class ReaderViewModel @Inject constructor(
                 ReactorV2Command.SetNotes.Item(
                     id = a.id.toString(),
                     cfi = a.cfi.orEmpty(),
-                    kind = a.style,
+                    kind = ReactorAnnotationStyle.kindForStyle(a.style),
                     color = a.color,
                     style = a.style,
                     text = a.text,

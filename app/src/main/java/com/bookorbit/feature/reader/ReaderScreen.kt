@@ -1,6 +1,7 @@
 package com.bookorbit.feature.reader
 
 import com.bookorbit.ui.asString
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.res.stringResource
 import com.bookorbit.R
 import androidx.compose.foundation.background
@@ -91,6 +92,10 @@ fun ReaderScreen(
     // audiobook player uses, whether triggered from the bottom bar or the Playback settings tab.
     var showSpeedSheet by remember { mutableStateOf(false) }
     var showSleepTimerSheet by remember { mutableStateOf(false) }
+    // Latest chromeState Reactor reported (sidebar/bars visibility) - see the BackHandler above.
+    var reactorChromeState by remember {
+        mutableStateOf(ReactorV2Intent.ChromeState(barsVisible = true, sidebar = "none"))
+    }
 
     val context = LocalContext.current
     val useReactorChrome = BuildConfig.READER_REACTOR_CHROME
@@ -109,10 +114,19 @@ fun ReaderScreen(
     }
     DisposableEffect(controller, reactorChromeController) {
         controller.reactorIntentListener = { intent ->
+            if (intent is ReactorV2Intent.ChromeState) reactorChromeState = intent
             coroutineScope.launch { reactorChromeController.handleIntent(intent) }
         }
         onDispose { controller.reactorIntentListener = null }
     }
+
+    // Lets the hardware/gesture back button hold off closing this screen while Reactor reports a
+    // sidebar open, instead of leaving the library behind it. Protocol v2 has no command/intent to
+    // ask Reactor to close its own sidebar (see the v2 README's command table and
+    // ReactorChromeController's own "chromeState -> ignored" note) - that is a real gap, not
+    // something invented here, so this only swallows the gesture rather than sending any message;
+    // it un-swallows itself the moment Reactor's own UI closes the sidebar and reports it back.
+    BackHandler(enabled = useReactorChrome && reactorChromeState.sidebar != "none") {}
 
     // Taps arrive from the page (so text selection keeps working): a plain tap that isn't on a
     // link or selection is resolved through the shared Controls zone model (preset, zone size,
@@ -307,6 +321,48 @@ fun ReaderScreen(
                 capabilities = capabilities,
                 locale = locale,
             ),
+        )
+    }
+
+    // Bookmarks aren't otherwise loaded until the (Compose-only) highlights sheet opens - load
+    // them once up front so the Reactor sidebar's Bookmarks tab has data from first paint.
+    LaunchedEffect(useReactorChrome) {
+        if (useReactorChrome) vm.loadBookmarks()
+    }
+
+    // setBookmarks: resent in full whenever the app's own bookmark list changes (the README's
+    // "replace a full snapshot, not a delta"). Only CFI-anchored (ebook) bookmarks apply here.
+    LaunchedEffect(useReactorChrome, ui.bookmarks) {
+        if (!useReactorChrome) return@LaunchedEffect
+        val items = ui.bookmarks.mapNotNull { b ->
+            val cfi = b.cfi ?: return@mapNotNull null
+            ReactorV2Command.SetBookmarks.Item(cfi = cfi, label = b.title.ifBlank { null }, createdAt = "")
+        }
+        reactorChromeController.pushBookmarks(items)
+    }
+
+    // setSettingsScope: the currently-active scope's settings, resent on open, on scope switch
+    // and on any settings change for that scope - whatever triggered it, including the shell's
+    // own settingsChange intent (harmless/idempotent: Reactor already has that exact value).
+    LaunchedEffect(useReactorChrome, ui.scope, ui.globalSettings, ui.bookState) {
+        if (!useReactorChrome) return@LaunchedEffect
+        val settingsForScope = when (ui.scope) {
+            ReaderSettingsScope.GLOBAL -> ui.globalSettings
+            ReaderSettingsScope.THIS_BOOK -> if (ui.bookState.useGlobal) ui.globalSettings else (ui.bookState.override ?: ui.globalSettings)
+        }
+        reactorChromeController.pushSettingsScope(vm.reactorScopeToWire(ui.scope), settingsForScope)
+    }
+
+    // setPlaybackState: throttled inside pushPlaybackState (PLAYBACK_PUSH_THROTTLE_MS) against a
+    // narration position that ticks far faster than Reactor's player bar needs updates.
+    LaunchedEffect(useReactorChrome, playerState.value) {
+        if (!useReactorChrome) return@LaunchedEffect
+        val s = playerState.value
+        if (!s.narrationActive) return@LaunchedEffect
+        reactorChromeController.pushPlaybackState(
+            playing = s.isPlaying,
+            positionSec = s.narrationPositionMs / 1000.0,
+            rate = s.speed.toDouble(),
         )
     }
 

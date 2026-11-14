@@ -301,4 +301,65 @@ class ReaderViewModelTest {
 
         assertEquals(null, model.ui.value.newerPosition)
     }
+
+    // --- Reactor protocol v2 chrome (A3): annotation style mapping ---
+
+    @Test
+    fun `reactor annotationCreate uses the intent's own style over the kind default`() = runTest {
+        val model = vm()
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+        controller.handleIntent(
+            ReactorV2Intent.AnnotationCreate("epubcfi(/6/2)", "underline", "#fff", "squiggly", "txt", null),
+        )
+        coVerify {
+            annotationRepo.create(bookId = 1, fileId = 5, cfi = "epubcfi(/6/2)", text = "txt", color = "#fff", note = null, chapterTitle = any(), style = "squiggly")
+        }
+    }
+
+    @Test
+    fun `reactor annotationCreate without a style falls back to the kind's default style`() = runTest {
+        val model = vm()
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+        controller.handleIntent(ReactorV2Intent.AnnotationCreate("epubcfi(/6/2)", "underline", null, null, "txt", null))
+        coVerify {
+            annotationRepo.create(bookId = 1, fileId = 5, cfi = "epubcfi(/6/2)", text = "txt", color = any(), note = null, chapterTitle = any(), style = "underline")
+        }
+
+        val model2 = vm()
+        val controller2 = model2.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+        controller2.handleIntent(ReactorV2Intent.AnnotationCreate("epubcfi(/6/2)", "highlight", null, null, "txt", null))
+        coVerify {
+            annotationRepo.create(bookId = 1, fileId = 5, cfi = "epubcfi(/6/2)", text = "txt", color = any(), note = null, chapterTitle = any(), style = "highlight")
+        }
+    }
+
+    @Test
+    fun `reactor annotationUpdate with a style calls setStyle`() = runTest {
+        val model = vm()
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+        controller.handleIntent(ReactorV2Intent.AnnotationUpdate("42", null, "strikethrough", null))
+        coVerify { annotationRepo.setStyle(1, 42, "strikethrough") }
+    }
+
+    @Test
+    fun `reactor notesPageRequest maps each annotation's style back to a coarse kind`() = runTest {
+        coEvery { annotationRepo.local(1) } returns listOf(
+            com.bookorbit.core.model.BookAnnotation(id = 1, bookId = 1, cfi = "c1", text = "a", style = "squiggly"),
+            com.bookorbit.core.model.BookAnnotation(id = 2, bookId = 1, cfi = "c2", text = "b", style = "strikethrough"),
+        )
+        coEvery { annotationRepo.load(1) } returns listOf(
+            com.bookorbit.core.model.BookAnnotation(id = 1, bookId = 1, cfi = "c1", text = "a", style = "squiggly"),
+            com.bookorbit.core.model.BookAnnotation(id = 2, bookId = 1, cfi = "c2", text = "b", style = "strikethrough"),
+        )
+        val model = vm()
+        var sent: ReactorV2Command? = null
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = { sent = it })
+        controller.handleIntent(ReactorV2Intent.NotesPageRequest(offset = 0, limit = 10, filter = null, sort = null, query = null))
+
+        val notes = sent as ReactorV2Command.SetNotes
+        assertEquals("underline", notes.items.first { it.id == "1" }.kind)
+        assertEquals("squiggly", notes.items.first { it.id == "1" }.style)
+        assertEquals("highlight", notes.items.first { it.id == "2" }.kind)
+        assertEquals("strikethrough", notes.items.first { it.id == "2" }.style)
+    }
 }
