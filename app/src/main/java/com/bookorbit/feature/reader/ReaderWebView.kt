@@ -71,6 +71,11 @@ class ReaderController {
     /** Set by the screen to receive parsed reader events. */
     var listener: ((ReaderEvent) -> Unit)? = null
 
+    /** Set by the screen (only when the `reactorChrome` flag is on) to receive parsed v2 intents.
+     * Per the v2 README, Reactor never emits these until the host has sent `configure`, so this
+     * stays unset (and [handleMessage] skips the v2 parse entirely) whenever the flag is off. */
+    var reactorIntentListener: ((ReactorV2Intent) -> Unit)? = null
+
     fun attach(webView: WebView) {
         this.webView = webView
     }
@@ -85,10 +90,20 @@ class ReaderController {
     /** Called from the JS interface (binder thread); marshals events to the main thread. */
     fun handleMessage(view: WebView, data: String) {
         if (webView !== view) return
-        val event = ReaderBridge.parseEvent(data) ?: return
-        logFirstRelocateTiming(event)
+        val event = ReaderBridge.parseEvent(data)
+        if (event != null) {
+            logFirstRelocateTiming(event)
+            Handler(Looper.getMainLooper()).post {
+                if (webView === view) listener?.invoke(event)
+            }
+            return
+        }
+        // v1's own type tag is unambiguous with v2's (disjoint `type` values per the v2 README's
+        // "Transport" note), so trying v1 then v2 never double-dispatches one message.
+        val intentListener = reactorIntentListener ?: return
+        val intent = ReactorV2.parseIntent(data) ?: return
         Handler(Looper.getMainLooper()).post {
-            if (webView === view) listener?.invoke(event)
+            if (webView === view) intentListener.invoke(intent)
         }
     }
 
@@ -160,6 +175,10 @@ class ReaderController {
         }
         command(cmd.toString())
     }
+
+    /** Sends a Reactor protocol v2 command (`configure`/`set*`); only meaningful once the host
+     * has sent `configure`, same `__readerCommand` channel as v1. */
+    fun sendReactorCommand(reactorCommand: ReactorV2Command) = command(ReactorV2.encode(reactorCommand))
 
     // The `window.__readerCommand &&` guard inside the JS no-ops if the bridge isn't ready yet.
     private fun command(json: String) = eval(ReaderBridge.jsCommand(json))

@@ -1,6 +1,7 @@
 package com.bookorbit.feature.reader
 
 import com.bookorbit.ui.asString
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.res.stringResource
 import com.bookorbit.R
 import androidx.compose.foundation.background
@@ -58,7 +59,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalDensity
+import com.bookorbit.BuildConfig
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -86,8 +92,41 @@ fun ReaderScreen(
     // audiobook player uses, whether triggered from the bottom bar or the Playback settings tab.
     var showSpeedSheet by remember { mutableStateOf(false) }
     var showSleepTimerSheet by remember { mutableStateOf(false) }
+    // Latest chromeState Reactor reported (sidebar/bars visibility) - see the BackHandler above.
+    var reactorChromeState by remember {
+        mutableStateOf(ReactorV2Intent.ChromeState(barsVisible = true, sidebar = "none"))
+    }
 
     val context = LocalContext.current
+    val useReactorChrome = BuildConfig.READER_REACTOR_CHROME
+    val density = LocalDensity.current
+    val coroutineScope = rememberCoroutineScope()
+
+    // Reactor protocol v2 chrome (A3): when the flag is on, the WebView shell drives the reader
+    // chrome instead of the Compose bars/sheets below. Built once per screen instance; onBack and
+    // "close" both pop this reader screen (the app has one nav callback here - see A3 report).
+    val reactorChromeController = remember(vm) {
+        vm.buildReactorChromeController(
+            onBack = onBack,
+            onClose = onBack,
+            sendCommand = { controller.sendReactorCommand(it) },
+        )
+    }
+    DisposableEffect(controller, reactorChromeController) {
+        controller.reactorIntentListener = { intent ->
+            if (intent is ReactorV2Intent.ChromeState) reactorChromeState = intent
+            coroutineScope.launch { reactorChromeController.handleIntent(intent) }
+        }
+        onDispose { controller.reactorIntentListener = null }
+    }
+
+    // Lets the hardware/gesture back button hold off closing this screen while Reactor reports a
+    // sidebar open, instead of leaving the library behind it. Protocol v2 has no command/intent to
+    // ask Reactor to close its own sidebar (see the v2 README's command table and
+    // ReactorChromeController's own "chromeState -> ignored" note) - that is a real gap, not
+    // something invented here, so this only swallows the gesture rather than sending any message;
+    // it un-swallows itself the moment Reactor's own UI closes the sidebar and reports it back.
+    BackHandler(enabled = useReactorChrome && reactorChromeState.sidebar != "none") {}
 
     // Taps arrive from the page (so text selection keeps working): a plain tap that isn't on a
     // link or selection is resolved through the shared Controls zone model (preset, zone size,
@@ -235,7 +274,7 @@ fun ReaderScreen(
 
     val surface = themeBackgroundColor(ui.effective.themeName, ui.effective.isDark)
     val paginated = ui.effective.flow == "paginated"
-    val showChrome = chromeVisible
+    val showChrome = chromeVisible && !useReactorChrome
     val onSurface = if (effectiveIsDark(ui.effective.themeName, ui.effective.isDark)) Color.White else Color.Black
     // Bars must clear both the status bar AND the display-cutout (camera punch-hole) — on a
     // Galaxy Z Fold's inner/outer screens in particular, statusBarsPadding() alone leaves the top
@@ -246,6 +285,86 @@ fun ReaderScreen(
     // any orientation/fold state.
     val topBarInsets = WindowInsets.statusBarsIgnoringVisibility.union(WindowInsets.displayCutout)
     val bottomBarInsets = WindowInsets.navigationBarsIgnoringVisibility.union(WindowInsets.displayCutout)
+
+    // Reactor chrome's own `configure.insets` (CSS px, same unit as ViewportRect - see its doc):
+    // the same top/bottom bars Compose would otherwise draw, so Reactor's own chrome clears the
+    // status bar/display cutout and navigation bar/cutout exactly like the Compose bars above.
+    // No left/right inset source exists here (phones/tablets don't reserve side bars in portrait
+    // or landscape the way a foldable's hinge might - left/right stay 0 until that's needed).
+    val topInsetCss = insetPxToCssPx(topBarInsets.getTop(density), density.density)
+    val bottomInsetCss = insetPxToCssPx(bottomBarInsets.getBottom(density), density.density)
+    // No e-ink detection exists in this app yet; always reports false until one is added.
+    val eink = false
+    val locale = remember { Locale.getDefault().toLanguageTag() }
+
+    // Per the v2 README, `configure.capabilities` is decided ONCE from the first `configure` a
+    // host sends - a later `configure` can update eink/insets but Reactor keeps whatever
+    // capabilities it saw the first time, however this one disagrees. So the first send must
+    // wait until every capability is actually known (in particular `playback`, which depends on
+    // ui.hasMediaOverlay - only set once the WebView's `loaded` event fires, after `ready`), and
+    // every later send (inset rotation, eink change) must re-send that same locked snapshot
+    // rather than recomputing it from whatever the UI state happens to be then.
+    var lockedCapabilities by remember { mutableStateOf<ReactorV2Command.Configure.Capabilities?>(null) }
+    LaunchedEffect(ready, ui.loaded, ui.hasMediaOverlay, useReactorChrome) {
+        if (useReactorChrome && ready && ui.loaded && lockedCapabilities == null) {
+            lockedCapabilities = ReactorCapabilities.select(hasNarration = ui.hasMediaOverlay)
+        }
+    }
+
+    LaunchedEffect(lockedCapabilities, topInsetCss, bottomInsetCss, eink, locale) {
+        val capabilities = lockedCapabilities ?: return@LaunchedEffect
+        controller.sendReactorCommand(
+            ReactorV2Command.Configure(
+                chrome = "reactor",
+                eink = eink,
+                insets = ReactorV2Command.Configure.Insets(top = topInsetCss, right = 0.0, bottom = bottomInsetCss, left = 0.0),
+                capabilities = capabilities,
+                locale = locale,
+            ),
+        )
+    }
+
+    // Bookmarks aren't otherwise loaded until the (Compose-only) highlights sheet opens - load
+    // them once up front so the Reactor sidebar's Bookmarks tab has data from first paint.
+    LaunchedEffect(useReactorChrome) {
+        if (useReactorChrome) vm.loadBookmarks()
+    }
+
+    // setBookmarks: resent in full whenever the app's own bookmark list changes (the README's
+    // "replace a full snapshot, not a delta"). Only CFI-anchored (ebook) bookmarks apply here.
+    LaunchedEffect(useReactorChrome, ui.bookmarks) {
+        if (!useReactorChrome) return@LaunchedEffect
+        val items = ui.bookmarks.mapNotNull { b ->
+            val cfi = b.cfi ?: return@mapNotNull null
+            ReactorV2Command.SetBookmarks.Item(cfi = cfi, label = b.title.ifBlank { null }, createdAt = "")
+        }
+        reactorChromeController.pushBookmarks(items)
+    }
+
+    // setSettingsScope: the currently-active scope's settings, resent on open, on scope switch
+    // and on any settings change for that scope - whatever triggered it, including the shell's
+    // own settingsChange intent (harmless/idempotent: Reactor already has that exact value).
+    LaunchedEffect(useReactorChrome, ui.scope, ui.globalSettings, ui.bookState) {
+        if (!useReactorChrome) return@LaunchedEffect
+        val settingsForScope = when (ui.scope) {
+            ReaderSettingsScope.GLOBAL -> ui.globalSettings
+            ReaderSettingsScope.THIS_BOOK -> if (ui.bookState.useGlobal) ui.globalSettings else (ui.bookState.override ?: ui.globalSettings)
+        }
+        reactorChromeController.pushSettingsScope(vm.reactorScopeToWire(ui.scope), settingsForScope)
+    }
+
+    // setPlaybackState: throttled inside pushPlaybackState (PLAYBACK_PUSH_THROTTLE_MS) against a
+    // narration position that ticks far faster than Reactor's player bar needs updates.
+    LaunchedEffect(useReactorChrome, playerState.value) {
+        if (!useReactorChrome) return@LaunchedEffect
+        val s = playerState.value
+        if (!s.narrationActive) return@LaunchedEffect
+        reactorChromeController.pushPlaybackState(
+            playing = s.isPlaying,
+            positionSec = s.narrationPositionMs / 1000.0,
+            rate = s.speed.toDouble(),
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -348,26 +467,28 @@ fun ReaderScreen(
             }
         }
 
-        ui.toolbar?.let { target ->
-            val annotation = target.annotationId?.let { id -> ui.annotations.firstOrNull { it.id == id } }
-            val screenWidth = LocalConfiguration.current.screenWidthDp
-            val toolbarWidth = if (annotation != null) 340 else 290
-            val rect = target.rect
-            val centerX = rect?.let { (it.left + it.right) / 2 } ?: (screenWidth / 2.0)
-            val x = (centerX - toolbarWidth / 2).coerceIn(8.0, (screenWidth - toolbarWidth - 8).coerceAtLeast(8).toDouble())
-            // Above the selection when there's room, otherwise below it (clear of the selection handles).
-            val y = when {
-                rect == null -> 120.0
-                rect.top > 150 -> rect.top - 60
-                else -> rect.bottom + 36
+        if (!useReactorChrome) {
+            ui.toolbar?.let { target ->
+                val annotation = target.annotationId?.let { id -> ui.annotations.firstOrNull { it.id == id } }
+                val screenWidth = LocalConfiguration.current.screenWidthDp
+                val toolbarWidth = if (annotation != null) 340 else 290
+                val rect = target.rect
+                val centerX = rect?.let { (it.left + it.right) / 2 } ?: (screenWidth / 2.0)
+                val x = (centerX - toolbarWidth / 2).coerceIn(8.0, (screenWidth - toolbarWidth - 8).coerceAtLeast(8).toDouble())
+                // Above the selection when there's room, otherwise below it (clear of the selection handles).
+                val y = when {
+                    rect == null -> 120.0
+                    rect.top > 150 -> rect.top - 60
+                    else -> rect.bottom + 36
+                }
+                HighlightToolbar(
+                    currentColor = annotation?.color,
+                    onColor = { vm.highlight(it) },
+                    onNote = { noteDialog = annotation?.note.orEmpty() },
+                    onDelete = annotation?.let { a -> { vm.deleteAnnotation(a.id) } },
+                    modifier = Modifier.offset(x = x.dp, y = y.dp),
+                )
             }
-            HighlightToolbar(
-                currentColor = annotation?.color,
-                onColor = { vm.highlight(it) },
-                onNote = { noteDialog = annotation?.note.orEmpty() },
-                onDelete = annotation?.let { a -> { vm.deleteAnnotation(a.id) } },
-                modifier = Modifier.offset(x = x.dp, y = y.dp),
-            )
         }
 
         if ((!ui.loaded || !ready) && ui.error == null && !rendererFailed) {
@@ -399,12 +520,12 @@ fun ReaderScreen(
         }
 
         // One-time coach overlay teaching the (invisible) paginated tap zones.
-        if (!rendererFailed && paginated && ui.loaded && ui.showPagingHint) {
+        if (!useReactorChrome && !rendererFailed && paginated && ui.loaded && ui.showPagingHint) {
             PagingHintOverlay(onDismiss = { vm.dismissPagingHint() })
         }
     }
 
-    if (tocVisible) {
+    if (!useReactorChrome && tocVisible) {
         ReaderTocSheet(
             toc = ui.toc,
             onSelect = { href ->

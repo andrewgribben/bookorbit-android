@@ -1,0 +1,7 @@
+{
+  "type": "setBookmarks",
+  "items": [
+    { "cfi": "epubcfi(/6/4!/4/2/1:0)", "label": "Chapter 1", "createdAt": "2026-11-01T12:00:00.000Z" },
+    { "cfi": "epubcfi(/6/8!/4/2/1:0)", "label": null, "createdAt": "2026-11-02T09:30:00.000Z" }
+  ]
+}

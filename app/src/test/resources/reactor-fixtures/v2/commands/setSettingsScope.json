@@ -1,0 +1,25 @@
+{
+  "type": "setSettingsScope",
+  "scope": "book",
+  "settings": {
+    "fontSize": 16,
+    "lineHeight": 1.5,
+    "fontFamily": null,
+    "paragraphSpacing": 0,
+    "maxColumnCount": 2,
+    "gap": 0.05,
+    "maxInlineSize": 720,
+    "maxBlockSize": 1440,
+    "justify": true,
+    "hyphenate": true,
+    "isDark": false,
+    "themeName": "default",
+    "flow": "paginated",
+    "useBookLayout": true,
+    "marginTop": 40,
+    "marginBottom": 40,
+    "marginLeft": 40,
+    "marginRight": 40,
+    "linkSideMargins": true
+  }
+}

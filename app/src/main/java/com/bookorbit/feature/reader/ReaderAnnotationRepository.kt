@@ -63,6 +63,7 @@ class ReaderAnnotationRepository @Inject constructor(
         color: String,
         note: String?,
         chapterTitle: String?,
+        style: String = DEFAULT_STYLE,
     ) {
         // Placeholder ids are negative and descending so they never clash with a server id.
         val tempId = (ops.minCreateId() ?: 0).coerceAtMost(0) - 1
@@ -74,6 +75,7 @@ class ReaderAnnotationRepository @Inject constructor(
                 cfi = cfi,
                 text = text,
                 color = color,
+                style = style,
                 note = note,
                 noteSet = note != null,
                 chapterTitle = chapterTitle,
@@ -85,6 +87,12 @@ class ReaderAnnotationRepository @Inject constructor(
 
     suspend fun setColor(bookId: Int, id: Int, color: String) {
         patch(bookId, id) { it.copy(color = color) }
+    }
+
+    /** Recolours the mark style (highlight/underline/strikethrough/squiggly) without touching
+     * colour or note - see ReactorAnnotationStyle for the Reactor kind/style mapping. */
+    suspend fun setStyle(bookId: Int, id: Int, style: String) {
+        patch(bookId, id) { it.copy(style = style) }
     }
 
     /** A blank note clears it. */
@@ -148,7 +156,7 @@ class ReaderAnnotationRepository @Inject constructor(
                     bookFileId = requireNotNull(op.bookFileId),
                     text = op.text.orEmpty(),
                     color = op.color ?: COLORS.first().second,
-                    style = DEFAULT_STYLE,
+                    style = op.style ?: DEFAULT_STYLE,
                     note = op.note?.takeIf { op.noteSet && it.isNotBlank() },
                     chapterTitle = op.chapterTitle,
                 ),
@@ -158,6 +166,7 @@ class ReaderAnnotationRepository @Inject constructor(
                 op.annotationId,
                 buildJsonObject {
                     op.color?.let { put("color", JsonPrimitive(it)) }
+                    op.style?.let { put("style", JsonPrimitive(it)) }
                     // A blank note is sent as an explicit null, which the server accepts to clear it.
                     if (op.noteSet) put("note", if (op.note.isNullOrBlank()) JsonNull else JsonPrimitive(op.note))
                 },

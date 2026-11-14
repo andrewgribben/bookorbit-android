@@ -1,0 +1,7 @@
+{
+  "type": "setRelated",
+  "items": [
+    { "id": "book-7", "title": "Moby Dick", "coverUrl": "https://example.com/covers/book-7.jpg" },
+    { "id": "book-8", "title": "The Yellow Wallpaper", "coverUrl": null }
+  ]
+}

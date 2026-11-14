@@ -1,0 +1,9 @@
+{
+  "type": "annotationCreate",
+  "cfi": "epubcfi(/6/4!/4/2/1:0)",
+  "kind": "highlight",
+  "color": "#ffeb3b",
+  "style": "highlight",
+  "text": "the quick brown fox",
+  "note": null
+}

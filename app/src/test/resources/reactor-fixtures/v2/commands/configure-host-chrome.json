@@ -1,0 +1,16 @@
+{
+  "type": "configure",
+  "chrome": "host",
+  "eink": true,
+  "insets": { "top": 48, "right": 0, "bottom": 32, "left": 0 },
+  "capabilities": {
+    "starred": false,
+    "related": false,
+    "glossary": false,
+    "notes": false,
+    "bookmarks": false,
+    "playback": false,
+    "userGlossary": false
+  },
+  "locale": "en-US"
+}

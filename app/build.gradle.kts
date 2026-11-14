@@ -66,6 +66,14 @@ android {
         // signs off the parity pass. See ReaderWebView.kt readerIndexUrl().
         val useReactor = (project.findProperty("reactor") as String?)?.toBoolean() ?: false
         buildConfigField("boolean", "READER_REACTOR", useReactor.toString())
+
+        // Reactor chrome swap (A3): -PreactorChrome=true additionally hands the WebView shell
+        // control of the reader chrome (bars, sheets) via a `configure` v2 command, instead of
+        // the Compose chrome driving it. Only meaningful together with -Preactor=true; ignored
+        // (forced off) otherwise, since there is no Reactor bundle to mount it in. Default off.
+        // See ReactorChromeController.kt / ReaderWebView.kt.
+        val useReactorChrome = useReactor && ((project.findProperty("reactorChrome") as String?)?.toBoolean() ?: false)
+        buildConfigField("boolean", "READER_REACTOR_CHROME", useReactorChrome.toString())
     }
 
     // "full" (default) links Google's proprietary Cast SDK for Chromecast support; "fdroid"

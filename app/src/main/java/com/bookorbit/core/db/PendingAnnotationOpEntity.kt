@@ -32,6 +32,10 @@ data class PendingAnnotationOpEntity(
     val cfi: String? = null,
     val text: String? = null,
     val color: String? = null,
+    /** New mark style ("highlight"/"underline"/"strikethrough"/"squiggly"); null means "not
+     * changing" on an UPDATE, and falls back to [ReaderAnnotationRepository.DEFAULT_STYLE] on a
+     * CREATE that didn't specify one. */
+    val style: String? = null,
     /** New note text. Only meaningful when [noteSet] (a blank note clears it). */
     val note: String? = null,
     val noteSet: Boolean = false,
