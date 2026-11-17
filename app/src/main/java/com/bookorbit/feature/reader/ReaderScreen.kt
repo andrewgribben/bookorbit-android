@@ -93,8 +93,11 @@ fun ReaderScreen(
     var showSpeedSheet by remember { mutableStateOf(false) }
     var showSleepTimerSheet by remember { mutableStateOf(false) }
     // Latest chromeState Reactor reported (sidebar/bars visibility) - see the BackHandler above.
+    // Starts matching Reactor's own default (src/shell/mount.ts's `barsVisible = false`): Reactor
+    // starts with its bars hidden, and guessing `true` here left this permanently a toggle out
+    // of phase with Reactor's real state until the first chromeState intent arrived (BO-53 #8).
     var reactorChromeState by remember {
-        mutableStateOf(ReactorV2Intent.ChromeState(barsVisible = true, sidebar = "none"))
+        mutableStateOf(ReactorV2Intent.ChromeState(barsVisible = false, sidebar = "none"))
     }
 
     val context = LocalContext.current
@@ -192,7 +195,12 @@ fun ReaderScreen(
     // state rather than two bar sets that can disagree. The WebView itself is never resized by
     // this (it already fills the whole Box below, with the bars drawn as floating overlays), so
     // page text never reflows when chrome/system bars toggle.
-    ReaderSystemBarsEffect(fullscreen = fullscreen, chromeVisible = chromeVisible)
+    // With Reactor chrome, `chromeVisible` is not the real chrome state (see
+    // effectiveChromeVisible's doc) - use Reactor's own reported chromeState instead (BO-53 #8).
+    ReaderSystemBarsEffect(
+        fullscreen = fullscreen,
+        chromeVisible = effectiveChromeVisible(useReactorChrome, chromeVisible, reactorChromeState.barsVisible),
+    )
 
     LaunchedEffect(Unit) {
         controller.listener = { event ->

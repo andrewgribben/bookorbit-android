@@ -39,9 +39,11 @@ fun ReaderDestination(
     val prefs = preferences ?: return
     val usingNativeEbookScreen = kind == ReaderKind.EBOOK && (prefs.readerInterface != ReaderInterface.SERVER_WEB || useApp)
     // The native ebook screen (ReaderScreen) and the comic reader (ComicReaderScreen) each own
-    // their own system-bars effect, synced to their own chrome-tap toggle (ReaderSystemBarsEffect),
-    // so they opt out of this screen-agnostic "hide for the whole visit" effect used by every
-    // other path (server web view, PDF — neither ties system bars to an in-reader chrome toggle).
+    // their own system-bars effect, synced to their own chrome-tap toggle (ReaderSystemBarsEffect)
+    // - or, for ReaderScreen with Reactor chrome, to Reactor's own reported chromeState
+    // (effectiveChromeVisible, BO-53 #8) - so they opt out of this screen-agnostic "hide for the
+    // whole visit" effect used by every other path (server web view, PDF - neither ties system
+    // bars to an in-reader chrome toggle).
     if (!usingNativeEbookScreen && kind != ReaderKind.COMIC) {
         ImmersiveReaderEffect(prefs.fullscreen)
     }

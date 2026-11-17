@@ -23,6 +23,24 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 fun readerWantsSystemBarsVisible(fullscreen: Boolean, chromeVisible: Boolean): Boolean = !fullscreen || chromeVisible
 
 /**
+ * Which "is the reader's chrome visible" signal [readerWantsSystemBarsVisible] should use.
+ *
+ * While Reactor draws its own chrome (`useReactorChrome`), [chromeVisible] (the Compose-only
+ * flag the legacy chrome's own tap handler flips - see ReaderScreen.kt's `onTap`) is not the
+ * real answer: taps still reach this screen's `onTap` (ContentCore emits its v1 `tap` event to
+ * the native bridge the same way regardless of which chrome is drawing), so `chromeVisible`
+ * keeps toggling in parallel with, but never informed by, Reactor's own internal bars state.
+ * Reactor starts with its bars hidden (src/shell/mount.ts's `barsVisible = false`) while
+ * `chromeVisible` always starts `true`, so without this the two states are a toggle out of
+ * phase from the very first frame onward - system bars end up permanently inverted relative to
+ * the reader's own chrome (BO-53 #8). [reactorBarsVisible] is this screen's copy of Reactor's
+ * explicit `chromeState{barsVisible}` intent (protocol v2) and is always the correct source once
+ * Reactor chrome is in use.
+ */
+fun effectiveChromeVisible(useReactorChrome: Boolean, chromeVisible: Boolean, reactorBarsVisible: Boolean): Boolean =
+    if (useReactorChrome) reactorBarsVisible else chromeVisible
+
+/**
  * Drives Android's system bars to follow [chromeVisible] exactly as [readerWantsSystemBarsVisible]
  * decides, for as long as this is in composition, and restores whatever visibility the window had
  * before entering (mirrors the save/restore `DisposableEffect` in `ImmersiveReaderEffect`, which
