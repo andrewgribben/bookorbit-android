@@ -19,6 +19,7 @@ import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewClientCompat
 import com.bookorbit.BuildConfig
 import com.bookorbit.core.model.BookAnnotation
+import com.bookorbit.core.settings.ReaderEngine
 import com.bookorbit.core.storage.LocalRef
 import com.bookorbit.core.storage.openInputStream
 import kotlinx.serialization.Serializable
@@ -269,11 +270,26 @@ internal fun readerIndexUrl(useReactor: Boolean): String =
         "https://appassets.androidplatform.net/assets/reader/index.html"
     }
 
+/** BO-53 item 7: whether Reactor actually opens the next book, combining the compile-time
+ * availability gate (`-Preactor=true`, [BuildConfig.READER_REACTOR] - whether the Reactor bundle
+ * is even in this APK) with the user's own runtime choice ([ReaderEngine], persisted in
+ * AppSettingsStore, default [ReaderEngine.REGULAR]). The build flag always wins: a build without
+ * the Reactor bundle can never be switched to it by the runtime setting alone. Pure so it is
+ * unit-testable without BuildConfig/DataStore. */
+internal fun resolveUseReactor(reactorAvailable: Boolean, engine: ReaderEngine): Boolean =
+    reactorAvailable && engine == ReaderEngine.REACTOR
+
+/** Same rule for the Reactor chrome flag (`-PreactorChrome=true`): only ever meaningful together
+ * with Reactor itself actually being the active engine this open. */
+internal fun resolveUseReactorChrome(chromeAvailable: Boolean, useReactor: Boolean): Boolean =
+    chromeAvailable && useReactor
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun ReaderWebView(
     controller: ReaderController,
     modifier: Modifier = Modifier,
+    useReactor: Boolean = BuildConfig.READER_REACTOR,
     onRendererGone: () -> Unit,
 ) {
     val destroyedViews = androidx.compose.runtime.remember { mutableSetOf<WebView>() }
@@ -330,7 +346,7 @@ fun ReaderWebView(
                 )
 
                 controller.attach(this)
-                loadUrl(readerIndexUrl(BuildConfig.READER_REACTOR))
+                loadUrl(readerIndexUrl(useReactor))
             }
         },
         onRelease = { view ->

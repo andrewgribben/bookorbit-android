@@ -21,6 +21,7 @@ import com.bookorbit.core.settings.AppSettingsStore
 import com.bookorbit.core.settings.DownloadLocationStore
 import com.bookorbit.core.settings.ThemeMode
 import com.bookorbit.core.settings.ReaderInterface
+import com.bookorbit.core.settings.ReaderEngine
 import com.bookorbit.feature.downloads.DownloadsRepository
 import com.bookorbit.feature.player.AudioSettingsStore
 import com.bookorbit.feature.player.DEFAULT_SPEED
@@ -73,6 +74,13 @@ class SettingsViewModel @Inject constructor(
 
     fun setReaderInterface(value: ReaderInterface) {
         viewModelScope.launch { appSettings.setReaderInterface(value) }
+    }
+
+    val readerEngine = appSettings.readerEngine
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReaderEngine.REGULAR)
+
+    fun setReaderEngine(value: ReaderEngine) {
+        viewModelScope.launch { appSettings.setReaderEngine(value) }
     }
 
     fun setReadingFullscreen(enabled: Boolean) {

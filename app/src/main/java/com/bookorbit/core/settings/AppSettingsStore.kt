@@ -17,6 +17,15 @@ enum class SeriesViewMode { LIST, GRID }
 
 enum class ReaderInterface { APP, SERVER_WEB }
 
+/** Which rendering engine opens a book: BookOrbit's original Compose+WebView reader (REGULAR,
+ * the default), or Reactor, the shared shell (REACTOR). Only meaningful when the app was built
+ * with `-Preactor=true` - that Gradle flag stays the compile-time availability gate (whether the
+ * Reactor bundle is in the APK at all), while this setting is the runtime choice of which engine
+ * actually opens the next book, read once when a reader screen opens (see ReaderViewModel.readerEngine).
+ * Switching does not move or duplicate reading position/annotations: both engines read the same
+ * per-book progress/annotation storage, so changing this only changes which engine opens them. */
+enum class ReaderEngine { REGULAR, REACTOR }
+
 private val Context.appSettingsDataStore by preferencesDataStore("app_settings")
 
 /**
@@ -36,6 +45,7 @@ class AppSettingsStore @Inject constructor(
     private val seriesViewModeKey = stringPreferencesKey("series_view_mode")
     private val navItemsKey = stringPreferencesKey("nav_items")
     private val readerInterfaceKey = stringPreferencesKey("reader_interface")
+    private val readerEngineKey = stringPreferencesKey("reader_engine")
     private val readingFullscreenKey = booleanPreferencesKey("reading_fullscreen")
     private val coverWallpaperFollowKey = booleanPreferencesKey("cover_wallpaper_follow")
     private val coverWallpaperFollowedBookIdKey = intPreferencesKey("cover_wallpaper_followed_book_id")
@@ -50,6 +60,15 @@ class AppSettingsStore @Inject constructor(
 
     suspend fun setReaderInterface(value: ReaderInterface) {
         context.appSettingsDataStore.edit { it[readerInterfaceKey] = value.name }
+    }
+
+    val readerEngine = context.appSettingsDataStore.data.map { prefs ->
+        prefs[readerEngineKey]?.let { runCatching { ReaderEngine.valueOf(it) }.getOrNull() }
+            ?: ReaderEngine.REGULAR
+    }
+
+    suspend fun setReaderEngine(value: ReaderEngine) {
+        context.appSettingsDataStore.edit { it[readerEngineKey] = value.name }
     }
 
     suspend fun setReadingFullscreen(enabled: Boolean) {

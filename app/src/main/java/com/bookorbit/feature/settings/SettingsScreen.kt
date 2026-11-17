@@ -59,6 +59,7 @@ import com.bookorbit.core.settings.ThemeMode
 import com.bookorbit.core.model.libraryScopeSummary
 import com.bookorbit.core.model.groupReadingServiceSummaries
 import com.bookorbit.core.settings.ReaderInterface
+import com.bookorbit.core.settings.ReaderEngine
 import com.bookorbit.core.wallpaper.SleepImageFile
 import com.bookorbit.feature.player.MediaButtonMode
 import com.bookorbit.feature.player.ProgressBarMode
@@ -70,6 +71,7 @@ import kotlin.math.pow
 @Composable
 fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard: () -> Unit = {}, onOpenIntegrations: () -> Unit = {}) {
     val readerInterface by vm.readerInterface.collectAsStateWithLifecycle()
+    val readerEngine by vm.readerEngine.collectAsStateWithLifecycle()
     val readingFullscreen by vm.readingFullscreen.collectAsStateWithLifecycle()
     val themeMode by vm.themeMode.collectAsStateWithLifecycle()
     val navItems by vm.navItems.collectAsStateWithLifecycle()
@@ -162,6 +164,25 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel(), onCustomizeDashboard
                     subtitle = stringResource(R.string.settings_reading_fullscreen_desc),
                     trailing = { Switch(checked = readingFullscreen, onCheckedChange = vm::setReadingFullscreen) },
                 )
+            }
+            if (BuildConfig.READER_REACTOR) {
+                item {
+                    SettingsRow(
+                        title = stringResource(R.string.settings_reader_engine),
+                        subtitle = stringResource(R.string.settings_reader_engine_desc),
+                        trailing = {},
+                    )
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                        ReaderEngine.entries.forEachIndexed { index, engine ->
+                            SegmentedButton(
+                                selected = readerEngine == engine,
+                                onClick = { vm.setReaderEngine(engine) },
+                                shape = SegmentedButtonDefaults.itemShape(index, ReaderEngine.entries.size),
+                                label = { Text(stringResource(if (engine == ReaderEngine.REGULAR) R.string.reader_engine_regular else R.string.reader_engine_reactor)) },
+                            )
+                        }
+                    }
+                }
             }
             item {
                 SettingsRow(

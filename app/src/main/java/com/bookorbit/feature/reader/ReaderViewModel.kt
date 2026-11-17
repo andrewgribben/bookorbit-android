@@ -9,6 +9,8 @@ import androidx.lifecycle.viewModelScope
 import com.bookorbit.core.di.ApplicationScope
 import com.bookorbit.core.model.BookAnnotation
 import com.bookorbit.core.model.BookBookmark
+import com.bookorbit.core.settings.AppSettingsStore
+import com.bookorbit.core.settings.ReaderEngine
 import com.bookorbit.core.storage.LocalRef
 import com.bookorbit.core.wallpaper.CoverWallpaperController
 import com.bookorbit.core.wallpaper.CoverWallpaperFollowController
@@ -24,15 +26,19 @@ import com.bookorbit.feature.sessions.ReadingSessionTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
+import com.bookorbit.BuildConfig
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 import kotlin.math.roundToInt
 
@@ -73,10 +79,23 @@ class ReaderViewModel @Inject constructor(
     private val wallpaper: CoverWallpaperController,
     private val wallpaperFollow: CoverWallpaperFollowController,
     private val controlsStore: ReaderControlsStore,
+    private val appSettings: AppSettingsStore,
     @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
     val bookId: Int = savedStateHandle.get<Int>("id") ?: 0
+
+    // BO-53 item 7: which engine actually opens this book, read once here (not reactively) so a
+    // setting change made while a reader screen is already open can never swap the WebView's
+    // bundle mid-session - the user re-opens the book to pick it up, same as ReaderInterface's
+    // own "applies the next time you open a book" rule. READER_REACTOR stays the compile-time
+    // availability gate (whether the Reactor bundle is even in this APK) regardless of the
+    // runtime setting; READER_REACTOR_CHROME is only ever meaningful together with it.
+    // Both engines read the same per-book progress/annotation storage (ReaderProgressRepository/
+    // ReaderAnnotationRepository/ReaderBookmarkRepository below), so switching never loses them.
+    val readerEngine: ReaderEngine = runBlocking(Dispatchers.IO) { appSettings.readerEngine.first() }
+    val useReactor: Boolean = resolveUseReactor(BuildConfig.READER_REACTOR, readerEngine)
+    val useReactorChrome: Boolean = resolveUseReactorChrome(BuildConfig.READER_REACTOR_CHROME, useReactor)
 
     /** Peek mode (opened via the book detail screen's "Peek" action): the book opens at the
      * start, reads nothing from and writes nothing to local/server progress, starts no reading

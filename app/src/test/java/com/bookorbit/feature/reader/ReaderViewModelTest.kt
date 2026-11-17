@@ -4,6 +4,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import com.bookorbit.core.model.BookDetail
 import com.bookorbit.core.model.BookFileRef
+import com.bookorbit.core.settings.AppSettingsStore
+import com.bookorbit.core.settings.ReaderEngine
 import com.bookorbit.core.storage.LocalRef
 import com.bookorbit.core.wallpaper.CoverWallpaperController
 import com.bookorbit.core.wallpaper.CoverWallpaperFollowController
@@ -53,6 +55,7 @@ class ReaderViewModelTest {
     private lateinit var wallpaper: CoverWallpaperController
     private lateinit var wallpaperFollow: CoverWallpaperFollowController
     private lateinit var controlsStore: ReaderControlsStore
+    private lateinit var appSettings: AppSettingsStore
 
     private val book = BookDetail(
         id = 1, libraryId = 1, libraryName = "L", status = "active", addedAt = "2024-01-01",
@@ -63,7 +66,7 @@ class ReaderViewModelTest {
     private fun vm(appScope: CoroutineScope = CoroutineScope(Dispatchers.Unconfined), peek: Boolean = false) = ReaderViewModel(
         SavedStateHandle(mapOf("id" to 1, "peek" to peek)),
         bookRepo, downloads, source, progress, settingsStore, sessions, annotationRepo, bookmarkRepo,
-        playerManager, narrationSource, wallpaper, wallpaperFollow, controlsStore, appScope,
+        playerManager, narrationSource, wallpaper, wallpaperFollow, controlsStore, appSettings, appScope,
     )
 
     @Before
@@ -81,6 +84,7 @@ class ReaderViewModelTest {
         wallpaper = mockk(relaxed = true)
         wallpaperFollow = mockk(relaxed = true)
         controlsStore = mockk(relaxed = true)
+        appSettings = mockk(relaxed = true)
 
         coEvery { settingsStore.loadGlobal() } returns ReaderSettings()
         coEvery { settingsStore.loadBookState(any()) } returns BookSettingsState()
@@ -88,6 +92,7 @@ class ReaderViewModelTest {
         coEvery { settingsStore.loadBookSavedDefault(any()) } returns null
         coEvery { settingsStore.hasSeenPagingHint() } returns true
         coEvery { controlsStore.load() } returns ReaderControlsSettings()
+        every { appSettings.readerEngine } returns MutableStateFlow(ReaderEngine.REGULAR)
         coEvery { bookRepo.detail(1) } returns book
         coEvery { source.resolve(book) } returns resolvedFile
         coEvery { progress.resolveInitial(5) } returns InitialProgress(null, 0.0)

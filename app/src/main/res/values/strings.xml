@@ -584,6 +584,10 @@
     <string name="settings_reader_interface_desc">App is the default and supports downloaded books. Server web reader uses your server’s interface and requires a connection. Applies the next time you open a book.</string>
     <string name="reader_interface_app">App (default)</string>
     <string name="reader_interface_web">Server web reader</string>
+    <string name="settings_reader_engine">Reader engine (experimental)</string>
+    <string name="settings_reader_engine_desc">Regular is the default. Reactor is an experimental shared reader shell. Switching does not lose your reading position or annotations. Applies the next time you open a book.</string>
+    <string name="reader_engine_regular">Regular (default)</string>
+    <string name="reader_engine_reactor">Reactor</string>
     <string name="settings_reading_fullscreen">Full-screen reading</string>
     <string name="settings_reading_fullscreen_desc">Hide the status and navigation bars in ebooks, PDFs, and comics. Swipe from the screen edge to reveal them.</string>
     <string name="settings_cover_wallpaper_follow">Cover as wallpaper: follow current book</string>

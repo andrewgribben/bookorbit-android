@@ -98,7 +98,7 @@ fun ReaderScreen(
     }
 
     val context = LocalContext.current
-    val useReactorChrome = BuildConfig.READER_REACTOR_CHROME
+    val useReactorChrome = vm.useReactorChrome
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
 
@@ -374,6 +374,7 @@ fun ReaderScreen(
             ReaderWebView(
                 controller = controller,
                 modifier = Modifier.fillMaxSize(),
+                useReactor = vm.useReactor,
                 onRendererGone = remember(vm) {
                     {
                         rendererFailed = true
