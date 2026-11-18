@@ -340,6 +340,20 @@ class ReactorV2Test {
     }
 
     @Test
+    fun `setPlaybackState command serialises skipBackSec and skipForwardSec to match the fixture`() {
+        val command = ReactorV2Command.SetPlaybackState(playing = true, positionSec = 30.0, rate = 1.0, skipBackSec = 10.0, skipForwardSec = 45.0)
+        assertJsonEquals(commandFixture("setPlaybackState-skip-seconds.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `setPlaybackState omits skipBackSec and skipForwardSec keys when null`() {
+        val command = ReactorV2Command.SetPlaybackState(playing = true, positionSec = 184.5, rate = 1.25)
+        val encoded = json.parseToJsonElement(ReactorV2.encode(command)).jsonObject
+        assertFalse(encoded.containsKey("skipBackSec"))
+        assertFalse(encoded.containsKey("skipForwardSec"))
+    }
+
+    @Test
     fun `configure omits the narrationFollow key when null, never writes a literal JSON null`() {
         val command = ReactorV2Command.Configure(
             chrome = "reactor",

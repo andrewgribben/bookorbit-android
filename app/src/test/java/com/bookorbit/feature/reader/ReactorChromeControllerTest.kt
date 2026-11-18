@@ -284,6 +284,26 @@ class ReactorChromeControllerTest {
         assertEquals(true, (sentCommands.last() as ReactorV2Command.SetPlaybackState).sleepTimerActive)
     }
 
+    @Test
+    fun `pushPlaybackState forwards skipBackSec and skipForwardSec`() = runTest {
+        val c = controller()
+        c.pushPlaybackState(playing = true, positionSec = 1.0, rate = 1.0, skipBackSec = 10.0, skipForwardSec = 45.0, nowMs = 1_000L)
+        val sent = sentCommands.single() as ReactorV2Command.SetPlaybackState
+        assertEquals(10.0, sent.skipBackSec)
+        assertEquals(45.0, sent.skipForwardSec)
+    }
+
+    @Test
+    fun `pushPlaybackState always delivers a skip-seconds-only change, bypassing the throttle`() = runTest {
+        val c = controller()
+        c.pushPlaybackState(playing = true, positionSec = 1.0, rate = 1.0, skipBackSec = 15.0, skipForwardSec = 15.0, nowMs = 1_000L)
+        c.pushPlaybackState(playing = true, positionSec = 1.01, rate = 1.0, skipBackSec = 10.0, skipForwardSec = 45.0, nowMs = 1_010L)
+        assertEquals(2, sentCommands.size)
+        val sent = sentCommands.last() as ReactorV2Command.SetPlaybackState
+        assertEquals(10.0, sent.skipBackSec)
+        assertEquals(45.0, sent.skipForwardSec)
+    }
+
     // --- capability selection ---
 
     @Test

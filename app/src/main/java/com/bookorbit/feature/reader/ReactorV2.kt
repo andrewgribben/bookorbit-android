@@ -140,6 +140,14 @@ sealed interface ReactorV2Command {
          * to `false` on the Reactor side when the key is absent (protocol v2 README's "Sleep
          * timer"). Omitted from the wire JSON when null, same pattern as [active]. */
         val sleepTimerActive: Boolean? = null,
+        /** BO-53 #6: seconds the transport row's skip-back button seeks by. Optional, defaults
+         * to Reactor's own pre-existing fixed offset when absent (protocol v2 README's
+         * "Transport skip seconds") - this app always sends its own configured value (the same
+         * one ReaderSettingsSheet's Controls tab edits, PlayerManager.UiState.skipBackSeconds),
+         * so the shell's transport buttons match the app's native reader exactly. */
+        val skipBackSec: Double? = null,
+        /** BO-53 #6: same shape as [skipBackSec], for the skip-forward button. */
+        val skipForwardSec: Double? = null,
     ) : ReactorV2Command
 
     data class SetSettingsScope(val scope: String, val settings: ReactorSettings) : ReactorV2Command
@@ -283,6 +291,8 @@ object ReactorV2 {
             put("rate", command.rate)
             command.active?.let { put("active", it) }
             command.sleepTimerActive?.let { put("sleepTimerActive", it) }
+            command.skipBackSec?.let { put("skipBackSec", it) }
+            command.skipForwardSec?.let { put("skipForwardSec", it) }
         }
         ReactorV2Command.Dismiss -> buildJsonObject { put("type", "dismiss") }
         is ReactorV2Command.SetSettingsScope -> buildJsonObject {

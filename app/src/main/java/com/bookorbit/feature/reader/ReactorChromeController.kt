@@ -37,6 +37,8 @@ class ReactorChromeController(
     private var lastPushedRate: Double? = null
     private var lastPushedActive: Boolean? = null
     private var lastPushedSleepTimerActive: Boolean? = null
+    private var lastPushedSkipBackSec: Double? = null
+    private var lastPushedSkipForwardSec: Double? = null
 
     /** Applies one parsed intent. Unknown intents never reach here - [ReactorV2.parseIntent]
      * already returns null for them. */
@@ -91,16 +93,24 @@ class ReactorChromeController(
         rate: Double,
         active: Boolean? = null,
         sleepTimerActive: Boolean? = null,
+        /** BO-53 #6: the app's own configured skip-back/skip-forward durations, pushed through
+         * so Reactor's transport buttons match [ReaderPlaybackBar]'s native ones instead of
+         * always using the shell's hardcoded fixed offset. */
+        skipBackSec: Double? = null,
+        skipForwardSec: Double? = null,
         nowMs: Long = System.currentTimeMillis(),
     ) {
-        val changed = playing != lastPushedPlaying || rate != lastPushedRate || active != lastPushedActive || sleepTimerActive != lastPushedSleepTimerActive
+        val changed = playing != lastPushedPlaying || rate != lastPushedRate || active != lastPushedActive || sleepTimerActive != lastPushedSleepTimerActive ||
+            skipBackSec != lastPushedSkipBackSec || skipForwardSec != lastPushedSkipForwardSec
         if (!changed && nowMs - lastPlaybackPushAtMs < PLAYBACK_PUSH_THROTTLE_MS) return
         lastPlaybackPushAtMs = nowMs
         lastPushedPlaying = playing
         lastPushedRate = rate
         lastPushedActive = active
         lastPushedSleepTimerActive = sleepTimerActive
-        sendCommand(ReactorV2Command.SetPlaybackState(playing, positionSec, rate, active, sleepTimerActive))
+        lastPushedSkipBackSec = skipBackSec
+        lastPushedSkipForwardSec = skipForwardSec
+        sendCommand(ReactorV2Command.SetPlaybackState(playing, positionSec, rate, active, sleepTimerActive, skipBackSec, skipForwardSec))
     }
 
     companion object {

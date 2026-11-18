@@ -393,6 +393,8 @@ fun ReaderScreen(
                 rate = s.speed.toDouble(),
                 active = true,
                 sleepTimerActive = s.sleepTimerRemainingSec != null,
+                skipBackSec = s.skipBackSeconds.toDouble(),
+                skipForwardSec = s.skipForwardSeconds.toDouble(),
             )
         } else if (ui.narrationLoading) {
             // BO-53 #3 review fix: narration is extracting/preparing (the user already tapped
@@ -406,6 +408,8 @@ fun ReaderScreen(
                 rate = s.speed.toDouble(),
                 active = true,
                 sleepTimerActive = s.sleepTimerRemainingSec != null,
+                skipBackSec = s.skipBackSeconds.toDouble(),
+                skipForwardSec = s.skipForwardSeconds.toDouble(),
             )
         } else if (wasNarrationActive) {
             wasNarrationActive = false
