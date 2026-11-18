@@ -37,10 +37,12 @@ private class FakeBookmarkActions : ReactorBookmarkActions {
 private class FakeSettingsActions : ReactorSettingsActions {
     var lastScope: String? = null
     var lastSettings: ReactorSettings? = null
+    var lastFollowsGlobal: Boolean? = null
     override suspend fun change(scope: String, settings: ReactorSettings) {
         lastScope = scope
         lastSettings = settings
     }
+    override fun setFollowsGlobal(follows: Boolean) { lastFollowsGlobal = follows }
 }
 
 private class FakePlaybackActions : ReactorPlaybackActions {
@@ -50,12 +52,18 @@ private class FakePlaybackActions : ReactorPlaybackActions {
     var seekedTo: Double? = null
     var rate: Double? = null
     var sleepTimerOpened = false
+    var lastSkipBackSec: Int? = null
+    var lastSkipForwardSec: Int? = null
     override fun play() { played = true }
     override fun pause() { paused = true }
     override fun stop() { stopped = true }
     override fun seek(positionSec: Double) { seekedTo = positionSec }
     override fun setRate(rate: Double) { this.rate = rate }
     override fun openSleepTimer() { sleepTimerOpened = true }
+    override fun setSkipSeconds(skipBackSec: Int, skipForwardSec: Int) {
+        lastSkipBackSec = skipBackSec
+        lastSkipForwardSec = skipForwardSec
+    }
 }
 
 private class FakeNotesSource(private val all: List<ReactorV2Command.SetNotes.Item>) : ReactorNotesSource {
@@ -210,6 +218,19 @@ class ReactorChromeControllerTest {
     }
 
     @Test
+    fun `scopeFollowChange maps onto ReactorSettingsActions setFollowsGlobal`() = runTest {
+        controller().handleIntent(ReactorV2Intent.ScopeFollowChange(follows = true))
+        assertEquals(true, settings.lastFollowsGlobal)
+    }
+
+    @Test
+    fun `playbackSkipChange maps onto ReactorPlaybackActions setSkipSeconds`() = runTest {
+        controller().handleIntent(ReactorV2Intent.PlaybackSkipChange(skipBackSec = 15.0, skipForwardSec = 45.0))
+        assertEquals(15, playback.lastSkipBackSec)
+        assertEquals(45, playback.lastSkipForwardSec)
+    }
+
+    @Test
     fun `back calls the host's own back navigation, not close`() = runTest {
         controller().handleIntent(ReactorV2Intent.Back)
         assertTrue(backCalled)
@@ -321,6 +342,13 @@ class ReactorChromeControllerTest {
         val s = ReactorSettings()
         controller().pushSettingsScope("global", s)
         assertEquals(ReactorV2Command.SetSettingsScope("global", s), sentCommands.single())
+    }
+
+    @Test
+    fun `pushSettingsScope forwards followsGlobal`() = runTest {
+        val s = ReactorSettings()
+        controller().pushSettingsScope("book", s, followsGlobal = true)
+        assertEquals(ReactorV2Command.SetSettingsScope("book", s, followsGlobal = true), sentCommands.single())
     }
 
     @Test

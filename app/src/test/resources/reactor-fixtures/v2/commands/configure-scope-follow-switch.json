@@ -1,0 +1,20 @@
+{
+  "type": "configure",
+  "chrome": "reactor",
+  "eink": false,
+  "insets": { "top": 24, "right": 0, "bottom": 16, "left": 0 },
+  "capabilities": {
+    "starred": false,
+    "related": false,
+    "glossary": false,
+    "notes": true,
+    "bookmarks": true,
+    "playback": false,
+    "userGlossary": false
+  },
+  "locale": "en-GB",
+  "scopeFollowSwitch": {
+    "label": "Use global settings",
+    "bannerText": "This book follows your Global settings. Turn this off to set your own just for this book."
+  }
+}

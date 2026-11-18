@@ -88,6 +88,15 @@ sealed interface ReactorV2Intent {
      * scope selected in the sheet at the moment of the click. Reactor shows no confirmation of
      * its own - see [ReactorChromeController]'s handling. */
     data class SettingsAction(val actionId: String, val scope: String) : ReactorV2Intent
+
+    /** BO-53 #14: asks the host to flip the book-scope "follow Global" switch - the only way a
+     * user can re-attach/detach a book under Reactor chrome; editing a book-scope control
+     * never does either implicitly (those controls are disabled while the switch is on). */
+    data class ScopeFollowChange(val follows: Boolean) : ReactorV2Intent
+
+    /** BO-53 #14: asks the host to persist the Playback tab's skip-back/skip-forward durations.
+     * Full current value set, not a delta - same shape as [ControlsChange]. */
+    data class PlaybackSkipChange(val skipBackSec: Double, val skipForwardSec: Double) : ReactorV2Intent
 }
 
 /** A host -> Reactor `configure`/`set*` command, per the README's "Host -> Reactor" section. */
@@ -123,6 +132,10 @@ sealed interface ReactorV2Command {
          * updated `enabled` per action id whenever this book's "follows Global" state
          * changes, same pattern as [controlsState]. */
         val settingsActions: List<SettingsAction>? = null,
+        /** BO-53 #14: the book-scope "follow Global" switch (host-supplied label/banner,
+         * ./README.md "Scope follow switch"). Optional and not frozen like [capabilities] -
+         * absent means the switch row never renders under Reactor chrome. */
+        val scopeFollowSwitch: ScopeFollowSwitch? = null,
     ) : ReactorV2Command {
         data class Insets(val top: Double, val right: Double, val bottom: Double, val left: Double)
         data class Capabilities(
@@ -162,6 +175,9 @@ sealed interface ReactorV2Command {
             val disabledScopes: List<String>? = null,
             val styleHint: String? = null,
         )
+        /** BO-53 #14: label/banner strings for the book-scope "follow Global" switch, shown
+         * verbatim by Reactor - it defines no label/banner wording of its own. */
+        data class ScopeFollowSwitch(val label: String, val bannerText: String)
     }
 
     data class SetBookmarks(val items: List<Item>) : ReactorV2Command {
@@ -211,7 +227,7 @@ sealed interface ReactorV2Command {
         val skipForwardSec: Double? = null,
     ) : ReactorV2Command
 
-    data class SetSettingsScope(val scope: String, val settings: ReactorSettings) : ReactorV2Command
+    data class SetSettingsScope(val scope: String, val settings: ReactorSettings, val followsGlobal: Boolean? = null) : ReactorV2Command
 
     /** Closes Reactor's top-most open layer; when nothing is open Reactor answers with `back`. */
     data object Dismiss : ReactorV2Command
@@ -279,6 +295,13 @@ object ReactorV2 {
                 actionId = obj["actionId"]!!.jsonPrimitive.contentOrNull!!,
                 scope = obj["scope"]!!.jsonPrimitive.contentOrNull!!,
             )
+            "scopeFollowChange" -> ReactorV2Intent.ScopeFollowChange(
+                follows = obj["follows"]!!.jsonPrimitive.booleanOrNull!!,
+            )
+            "playbackSkipChange" -> ReactorV2Intent.PlaybackSkipChange(
+                skipBackSec = obj["skipBackSec"]!!.jsonPrimitive.doubleOrNull!!,
+                skipForwardSec = obj["skipForwardSec"]!!.jsonPrimitive.doubleOrNull!!,
+            )
             else -> null
         }
     }.getOrNull()
@@ -342,6 +365,12 @@ object ReactorV2 {
                             action.styleHint?.let { put("styleHint", it) }
                         }
                     }
+                }
+            }
+            command.scopeFollowSwitch?.let { switch ->
+                putJsonObject("scopeFollowSwitch") {
+                    put("label", switch.label)
+                    put("bannerText", switch.bannerText)
                 }
             }
         }
@@ -408,6 +437,7 @@ object ReactorV2 {
             put("type", "setSettingsScope")
             put("scope", command.scope)
             put("settings", json.encodeToJsonElement(ReactorSettings.serializer(), command.settings))
+            command.followsGlobal?.let { put("followsGlobal", it) }
         }
     }.toString()
 }

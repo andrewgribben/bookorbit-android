@@ -71,6 +71,8 @@ class ReactorChromeController(
                 sendCommand(notes.page(intent.offset, intent.limit, intent.filter, intent.sort, intent.query))
             is ReactorV2Intent.ControlsChange -> controls.change(intent.swipeEnabled, intent.volumeKeysEnabled, intent.tapZonePreset)
             is ReactorV2Intent.SettingsAction -> applySettingsAction(intent)
+            is ReactorV2Intent.ScopeFollowChange -> settings.setFollowsGlobal(intent.follows)
+            is ReactorV2Intent.PlaybackSkipChange -> playback.setSkipSeconds(intent.skipBackSec.toInt(), intent.skipForwardSec.toInt())
         }
     }
 
@@ -109,8 +111,8 @@ class ReactorChromeController(
     /** Called after the host's own confirm dialog, triggered by [onRequestRestoreConfirm]. */
     suspend fun confirmRestore(scope: String) = settingsSheetActions.restoreBuiltIn(scope)
 
-    suspend fun pushSettingsScope(scope: String, settings: ReactorSettings) =
-        sendCommand(ReactorV2Command.SetSettingsScope(scope, settings))
+    suspend fun pushSettingsScope(scope: String, settings: ReactorSettings, followsGlobal: Boolean? = null) =
+        sendCommand(ReactorV2Command.SetSettingsScope(scope, settings, followsGlobal))
 
     /** Throttled, but only for position ticks: a narration position ticks far faster than
      * Reactor's player bar needs updates, but a `playing`/`rate`/`active` transition must always
@@ -161,6 +163,9 @@ interface ReactorBookmarkActions {
 
 interface ReactorSettingsActions {
     suspend fun change(scope: String, settings: ReactorSettings)
+    /** BO-53 #14: flips the book-scope "follow Global" switch, the only way a user can
+     * re-attach/detach a book under Reactor chrome. */
+    fun setFollowsGlobal(follows: Boolean)
 }
 
 interface ReactorPlaybackActions {
@@ -176,6 +181,10 @@ interface ReactorPlaybackActions {
      * audiobook player and the legacy reader's own playback bar use). Reactor never runs a
      * timer or shows a picker itself; this only asks the host to. */
     fun openSleepTimer()
+    /** BO-53 #14: persists the Playback tab's skip-back/skip-forward durations, the same
+     * [ReaderViewModel.setSkipBackSeconds]/[ReaderViewModel.setSkipForwardSeconds] setters the
+     * native sheet's own Playback tab steppers use. */
+    fun setSkipSeconds(skipBackSec: Int, skipForwardSec: Int)
 }
 
 interface ReactorNotesSource {

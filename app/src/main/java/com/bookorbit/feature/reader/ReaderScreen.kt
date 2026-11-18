@@ -415,6 +415,12 @@ fun ReaderScreen(
                     tapZonePresets = tapZonePresetOptions,
                 ),
                 settingsActions = settingsActions,
+                // BO-53 #14: label/banner strings are host-owned, Reactor renders them
+                // verbatim. Reuses the exact strings the native sheet's own switch/banner use.
+                scopeFollowSwitch = ReactorV2Command.Configure.ScopeFollowSwitch(
+                    label = context.getString(R.string.rs_use_global_settings),
+                    bannerText = context.getString(R.string.rs_use_global_banner),
+                ),
             ),
         )
     }
@@ -436,16 +442,23 @@ fun ReaderScreen(
         reactorChromeController.pushBookmarks(items)
     }
 
-    // setSettingsScope: the currently-active scope's settings, resent on open, on scope switch
-    // and on any settings change for that scope - whatever triggered it, including the shell's
-    // own settingsChange intent (harmless/idempotent: Reactor already has that exact value).
-    LaunchedEffect(useReactorChrome, ui.scope, ui.globalSettings, ui.bookState) {
+    // setSettingsScope: both scopes resent whenever globalSettings or bookState changes -
+    // whatever triggered it, including the shell's own settingsChange intent (harmless/
+    // idempotent: Reactor already has that exact value). BO-53 #14 review fix: previously keyed
+    // off `ui.scope` (the native sheet's own scope, which Reactor's own scope toggle never
+    // updates - see ReaderViewModel's `scope` doc, "UI-only, not persisted"), so the book scope
+    // was never pushed at all under Reactor chrome once the user switched to it there. Pushing
+    // both scopes unconditionally keeps Reactor's book tab live regardless of which scope the
+    // native (unused-under-Reactor-chrome) sheet happens to remember.
+    LaunchedEffect(useReactorChrome, ui.globalSettings, ui.bookState) {
         if (!useReactorChrome) return@LaunchedEffect
-        val settingsForScope = when (ui.scope) {
-            ReaderSettingsScope.GLOBAL -> ui.globalSettings
-            ReaderSettingsScope.THIS_BOOK -> if (ui.bookState.useGlobal) ui.globalSettings else (ui.bookState.override ?: ui.globalSettings)
-        }
-        reactorChromeController.pushSettingsScope(vm.reactorScopeToWire(ui.scope), settingsForScope)
+        reactorChromeController.pushSettingsScope(vm.reactorScopeToWire(ReaderSettingsScope.GLOBAL), ui.globalSettings)
+        val bookSettings = if (ui.bookState.useGlobal) ui.globalSettings else (ui.bookState.override ?: ui.globalSettings)
+        reactorChromeController.pushSettingsScope(
+            vm.reactorScopeToWire(ReaderSettingsScope.THIS_BOOK),
+            bookSettings,
+            followsGlobal = ui.bookState.useGlobal,
+        )
     }
 
     // setPlaybackState: throttled inside pushPlaybackState (PLAYBACK_PUSH_THROTTLE_MS) against a

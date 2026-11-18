@@ -927,6 +927,7 @@ class ReaderViewModel @Inject constructor(
         override suspend fun change(scope: String, settings: ReactorSettings) {
             updateSettings(reactorScopeFromWire(scope), settings)
         }
+        override fun setFollowsGlobal(follows: Boolean) = setUseGlobal(follows)
     }
 
     /** BO-53 #13: routes `settingsAction` to the same functions the native sheet's footer
@@ -981,6 +982,10 @@ class ReaderViewModel @Inject constructor(
         override fun seek(positionSec: Double) { playerManager.seekToAbsolute(positionSec) }
         override fun setRate(rate: Double) { playerManager.setSpeed(rate.toFloat()) }
         override fun openSleepTimer() { onOpenSleepTimer() }
+        override fun setSkipSeconds(skipBackSec: Int, skipForwardSec: Int) {
+            setSkipBackSeconds(skipBackSec)
+            setSkipForwardSeconds(skipForwardSec)
+        }
     }
 
     /** Windowed, never "all of them" (scale conventions / WORKTREE_BRIEF.md rule 5): only the

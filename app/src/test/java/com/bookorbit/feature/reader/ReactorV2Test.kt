@@ -188,6 +188,22 @@ class ReactorV2Test {
     }
 
     @Test
+    fun `scopeFollowChange intent parses`() {
+        assertEquals(
+            ReactorV2Intent.ScopeFollowChange(follows = false),
+            ReactorV2.parseIntent(intentFixture("scopeFollowChange.json")),
+        )
+    }
+
+    @Test
+    fun `playbackSkipChange intent parses`() {
+        assertEquals(
+            ReactorV2Intent.PlaybackSkipChange(skipBackSec = 15.0, skipForwardSec = 45.0),
+            ReactorV2.parseIntent(intentFixture("playbackSkipChange.json")),
+        )
+    }
+
+    @Test
     fun `a v1 event type parses to null, not thrown`() {
         assertNull(ReactorV2.parseIntent("""{"type":"ready"}"""))
     }
@@ -414,6 +430,51 @@ class ReactorV2Test {
     }
 
     @Test
+    fun `configure command serialises scopeFollowSwitch to match the fixture`() {
+        val command = ReactorV2Command.Configure(
+            chrome = "reactor",
+            eink = false,
+            insets = ReactorV2Command.Configure.Insets(top = 24.0, right = 0.0, bottom = 16.0, left = 0.0),
+            capabilities = ReactorV2Command.Configure.Capabilities(
+                starred = false,
+                related = false,
+                glossary = false,
+                notes = true,
+                bookmarks = true,
+                playback = false,
+                userGlossary = false,
+            ),
+            locale = "en-GB",
+            scopeFollowSwitch = ReactorV2Command.Configure.ScopeFollowSwitch(
+                label = "Use global settings",
+                bannerText = "This book follows your Global settings. Turn this off to set your own just for this book.",
+            ),
+        )
+        assertJsonEquals(commandFixture("configure-scope-follow-switch.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `configure omits the scopeFollowSwitch key when null`() {
+        val command = ReactorV2Command.Configure(
+            chrome = "reactor",
+            eink = false,
+            insets = ReactorV2Command.Configure.Insets(top = 0.0, right = 0.0, bottom = 0.0, left = 0.0),
+            capabilities = ReactorV2Command.Configure.Capabilities(
+                starred = false,
+                related = false,
+                glossary = false,
+                notes = false,
+                bookmarks = false,
+                playback = false,
+                userGlossary = false,
+            ),
+            locale = "en-GB",
+        )
+        val encoded = json.parseToJsonElement(ReactorV2.encode(command)).jsonObject
+        assertFalse(encoded.containsKey("scopeFollowSwitch"))
+    }
+
+    @Test
     fun `toggleBars command serialises to match the fixture`() {
         assertJsonEquals(commandFixture("toggleBars.json"), ReactorV2.encode(ReactorV2Command.ToggleBars))
     }
@@ -603,5 +664,39 @@ class ReactorV2Test {
         )
         val command = ReactorV2Command.SetSettingsScope(scope = "book", settings = settings)
         assertJsonEquals(commandFixture("setSettingsScope.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `setSettingsScope command serialises followsGlobal to match the fixture`() {
+        val settings = ReactorSettings(
+            fontSize = 16,
+            lineHeight = 1.5,
+            fontFamily = null,
+            paragraphSpacing = 0.0,
+            maxColumnCount = 2,
+            gap = 0.05,
+            maxInlineSize = 720,
+            maxBlockSize = 1440,
+            justify = true,
+            hyphenate = true,
+            isDark = false,
+            themeName = "default",
+            flow = "paginated",
+            useBookLayout = true,
+            marginTop = 40,
+            marginBottom = 40,
+            marginLeft = 40,
+            marginRight = 40,
+            linkSideMargins = true,
+        )
+        val command = ReactorV2Command.SetSettingsScope(scope = "book", settings = settings, followsGlobal = true)
+        assertJsonEquals(commandFixture("setSettingsScope-follows-global.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `setSettingsScope omits the followsGlobal key when null`() {
+        val command = ReactorV2Command.SetSettingsScope(scope = "global", settings = ReactorSettings())
+        val encoded = json.parseToJsonElement(ReactorV2.encode(command)).jsonObject
+        assertFalse(encoded.containsKey("followsGlobal"))
     }
 }
