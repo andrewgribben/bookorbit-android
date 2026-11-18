@@ -26,19 +26,17 @@ import com.bookorbit.feature.sessions.ReadingSessionTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
-import com.bookorbit.BuildConfig
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 import kotlin.math.roundToInt
 
@@ -93,9 +91,12 @@ class ReaderViewModel @Inject constructor(
     // runtime setting; READER_REACTOR_CHROME is only ever meaningful together with it.
     // Both engines read the same per-book progress/annotation storage (ReaderProgressRepository/
     // ReaderAnnotationRepository/ReaderBookmarkRepository below), so switching never loses them.
-    val readerEngine: ReaderEngine = runBlocking(Dispatchers.IO) { appSettings.readerEngine.first() }
-    val useReactor: Boolean = resolveUseReactor(BuildConfig.READER_REACTOR, readerEngine)
-    val useReactorChrome: Boolean = resolveUseReactorChrome(BuildConfig.READER_REACTOR_CHROME, useReactor)
+    // Null until resolved from DataStore in init below, without blocking the main thread;
+    // ReaderScreen renders nothing until it resolves, so the WebView is never built with the
+    // wrong engine and never reloaded. Set exactly once, so it then stays fixed for the screen's
+    // lifetime regardless of later setting changes.
+    private val _readerEngine = MutableStateFlow<ReaderEngine?>(null)
+    val readerEngine: StateFlow<ReaderEngine?> = _readerEngine.asStateFlow()
 
     /** Peek mode (opened via the book detail screen's "Peek" action): the book opens at the
      * start, reads nothing from and writes nothing to local/server progress, starts no reading
@@ -248,6 +249,7 @@ class ReaderViewModel @Inject constructor(
     private var savesInFlight = 0
 
     init {
+        viewModelScope.launch { _readerEngine.value = appSettings.readerEngine.first() }
         load()
         loadAnnotations()
         // Peeking must not register as the opened book for the cover-wallpaper "follow" feature.

@@ -75,6 +75,13 @@ fun ReaderScreen(
     fullscreen: Boolean = false,
     vm: ReaderViewModel = hiltViewModel(),
 ) {
+    // Nothing is drawn (same as ReaderDestination's `prefs ?: return`) until the engine for this
+    // book resolves, so the WebView below is never built for the wrong engine and never reloaded.
+    val engine by vm.readerEngine.collectAsStateWithLifecycle()
+    val resolvedEngine = engine ?: return
+    val useReactor = resolveUseReactor(BuildConfig.READER_REACTOR, resolvedEngine)
+    val useReactorChrome = resolveUseReactorChrome(BuildConfig.READER_REACTOR_CHROME, useReactor)
+
     val ui by vm.ui.collectAsStateWithLifecycle()
     // Held as State: it ticks twice a second while narrating, so only the readers recompose, not this screen.
     val playerState = vm.playerState.collectAsStateWithLifecycle()
@@ -102,7 +109,6 @@ fun ReaderScreen(
     }
 
     val context = LocalContext.current
-    val useReactorChrome = vm.useReactorChrome
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
 
@@ -418,7 +424,7 @@ fun ReaderScreen(
             ReaderWebView(
                 controller = controller,
                 modifier = Modifier.fillMaxSize(),
-                useReactor = vm.useReactor,
+                useReactor = useReactor,
                 onRendererGone = remember(vm) {
                     {
                         rendererFailed = true

@@ -111,6 +111,19 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun `reader engine resolves from settings asynchronously and stays fixed for the screen`() = runTest {
+        val engineFlow = MutableStateFlow(ReaderEngine.REACTOR)
+        every { appSettings.readerEngine } returns engineFlow
+        val model = vm()
+
+        assertEquals(ReaderEngine.REACTOR, model.readerEngine.value)
+
+        // A later setting change must not swap the engine mid-session (BO-53 item 7).
+        engineFlow.value = ReaderEngine.REGULAR
+        assertEquals(ReaderEngine.REACTOR, model.readerEngine.value)
+    }
+
+    @Test
     fun `peeking never applies or notes the cover wallpaper, until Start reading`() = runTest {
         val model = vm(peek = true)
         verify(exactly = 0) { wallpaperFollow.openBookForReading(any()) }
