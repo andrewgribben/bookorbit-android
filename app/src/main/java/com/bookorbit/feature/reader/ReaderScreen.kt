@@ -358,18 +358,9 @@ fun ReaderScreen(
         }
     }
 
-    // BO-53 #13: the four legacy settings-sheet actions, reachable again under Reactor chrome
-    // via this app's own string resources. `enabled` mirrors ReaderSettingsSheet's
-    // `scopeEditable` rule as closely as the protocol allows: Reactor's own Global/This book
-    // toggle emits no signal on a plain switch (protocol v2 README "Settings actions" - "no
-    // intent emitted for the switch itself"), so this can only react to this book's own
-    // "follows Global" state, not to which scope tab happens to be selected inside Reactor at
-    // any given moment. ReaderViewModel.resetToSavedDefault/restoreBuiltInDefaults still no-op
-    // correctly regardless of what this says, so the rule is never violated, only sometimes
-    // shown enabled when clicking it would have no effect (viewing Global while this book
-    // happens to follow it).
+    // BO-53 review fix 1: disabled only while viewing This book on a book that follows Global, never in Global scope (matches ReaderSettingsSheet's scopeEditable).
     val settingsActions = remember(ui.bookState.useGlobal) {
-        val resetRestoreEnabled = !ui.bookState.useGlobal
+        val disabledScopes = if (ui.bookState.useGlobal) listOf("book") else null
         listOf(
             ReactorV2Command.Configure.SettingsAction(
                 id = ReactorSettingsActionIds.SAVE_AS_DEFAULT,
@@ -380,13 +371,13 @@ fun ReaderScreen(
                 id = ReactorSettingsActionIds.RESET_TO_DEFAULT,
                 label = context.getString(R.string.rs_reset_to_default),
                 tabs = listOf("typography", "layout", "theme"),
-                enabled = resetRestoreEnabled,
+                disabledScopes = disabledScopes,
             ),
             ReactorV2Command.Configure.SettingsAction(
                 id = ReactorSettingsActionIds.RESTORE_BUILT_IN,
                 label = context.getString(R.string.rs_restore_built_in),
                 tabs = listOf("typography", "layout", "theme"),
-                enabled = resetRestoreEnabled,
+                disabledScopes = disabledScopes,
             ),
             ReactorV2Command.Configure.SettingsAction(
                 id = ReactorSettingsActionIds.SET_WALLPAPER,

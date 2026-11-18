@@ -313,13 +313,13 @@ class ReactorV2Test {
                     id = "resetToDefault",
                     label = "Reset to saved default",
                     tabs = listOf("typography", "layout", "theme"),
-                    enabled = false,
+                    disabledScopes = listOf("book"),
                 ),
                 ReactorV2Command.Configure.SettingsAction(
                     id = "restoreBuiltIn",
                     label = "Restore built-in defaults",
                     tabs = listOf("typography", "layout", "theme"),
-                    enabled = false,
+                    disabledScopes = listOf("book"),
                 ),
                 ReactorV2Command.Configure.SettingsAction(
                     id = "setWallpaper",
@@ -330,6 +330,33 @@ class ReactorV2Test {
             ),
         )
         assertJsonEquals(commandFixture("configure-settings-actions.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `configure command serialises settingsActions enabled false to match the fixture`() {
+        val command = ReactorV2Command.Configure(
+            chrome = "reactor",
+            eink = false,
+            insets = ReactorV2Command.Configure.Insets(top = 0.0, right = 0.0, bottom = 0.0, left = 0.0),
+            capabilities = ReactorV2Command.Configure.Capabilities(
+                starred = false,
+                related = false,
+                glossary = false,
+                notes = false,
+                bookmarks = false,
+                playback = false,
+                userGlossary = false,
+            ),
+            locale = "en",
+            settingsActions = listOf(
+                ReactorV2Command.Configure.SettingsAction(
+                    id = "resetToDefault",
+                    label = "Reset to saved default",
+                    enabled = false,
+                ),
+            ),
+        )
+        assertJsonEquals(commandFixture("configure-settings-actions-enabled-false.json"), ReactorV2.encode(command))
     }
 
     @Test

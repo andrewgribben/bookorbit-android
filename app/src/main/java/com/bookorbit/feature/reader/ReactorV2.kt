@@ -148,14 +148,18 @@ sealed interface ReactorV2Command {
         )
         data class TapZonePresetOption(val id: String, val label: String)
         /** BO-53 #13: one action button, opaque to Reactor beyond [id]/[label]/[tabs]. [tabs]
-         * absent means every tab; [enabled] defaults to `true`; [styleHint] is only ever
-         * `"accent"` for this app (Set as wallpaper), matching a look Reactor's sheet already
-         * uses elsewhere - see [ReactorSettingsActionIds]. */
+         * absent means every tab; [enabled] defaults to `true`; [disabledScopes] (BO-53 review
+         * fix 1) disables the button while Reactor's own scope toggle is on one of these scopes,
+         * which this app uses instead of [enabled] for reset/restore since it can see the book's
+         * follows-Global state but not which scope Reactor's own toggle is showing; [styleHint]
+         * is only ever `"accent"` for this app (Set as wallpaper), matching a look Reactor's
+         * sheet already uses elsewhere - see [ReactorSettingsActionIds]. */
         data class SettingsAction(
             val id: String,
             val label: String,
             val tabs: List<String>? = null,
             val enabled: Boolean? = null,
+            val disabledScopes: List<String>? = null,
             val styleHint: String? = null,
         )
     }
@@ -334,6 +338,7 @@ object ReactorV2 {
                             put("label", action.label)
                             action.tabs?.let { tabs -> putJsonArray("tabs") { tabs.forEach { add(it) } } }
                             action.enabled?.let { put("enabled", it) }
+                            action.disabledScopes?.let { scopes -> putJsonArray("disabledScopes") { scopes.forEach { add(it) } } }
                             action.styleHint?.let { put("styleHint", it) }
                         }
                     }

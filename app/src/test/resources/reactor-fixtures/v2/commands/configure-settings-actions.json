@@ -15,8 +15,8 @@
   "locale": "en",
   "settingsActions": [
     { "id": "saveAsDefault", "label": "Save as default", "tabs": ["typography", "layout", "theme"] },
-    { "id": "resetToDefault", "label": "Reset to saved default", "tabs": ["typography", "layout", "theme"], "enabled": false },
-    { "id": "restoreBuiltIn", "label": "Restore built-in defaults", "tabs": ["typography", "layout", "theme"], "enabled": false },
+    { "id": "resetToDefault", "label": "Reset to saved default", "tabs": ["typography", "layout", "theme"], "disabledScopes": ["book"] },
+    { "id": "restoreBuiltIn", "label": "Restore built-in defaults", "tabs": ["typography", "layout", "theme"], "disabledScopes": ["book"] },
     { "id": "setWallpaper", "label": "Set as wallpaper", "tabs": ["theme"], "styleHint": "accent" }
   ]
 }
