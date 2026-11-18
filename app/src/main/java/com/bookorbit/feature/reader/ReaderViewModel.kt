@@ -929,6 +929,17 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
+    /** BO-53 #13: routes `settingsAction` to the same functions the native sheet's footer
+     * buttons already call (see [saveAsDefault]/[resetToSavedDefault]/[restoreBuiltInDefaults]/
+     * [setCoverAsWallpaper]), so a book's "follows Global" no-op guard applies regardless of
+     * which chrome asked. */
+    private fun reactorSettingsSheetActions(): ReactorSettingsSheetActions = object : ReactorSettingsSheetActions {
+        override suspend fun saveAsDefault(scope: String) = this@ReaderViewModel.saveAsDefault(reactorScopeFromWire(scope))
+        override suspend fun resetToSavedDefault(scope: String) = this@ReaderViewModel.resetToSavedDefault(reactorScopeFromWire(scope))
+        override suspend fun restoreBuiltIn(scope: String) = this@ReaderViewModel.restoreBuiltInDefaults(reactorScopeFromWire(scope))
+        override fun setCoverAsWallpaper() = this@ReaderViewModel.setCoverAsWallpaper()
+    }
+
     /** BO-53 #10: routes the `controlsChange` intent through the exact same setter the native
      * [ReaderSettingsSheet] Controls tab uses - one owner for [ReaderControlsSettings] writes
      * regardless of which UI changed it. [tapZonePreset] is the enum name of a [ZoneLayoutPreset]
@@ -1000,11 +1011,15 @@ class ReaderViewModel @Inject constructor(
 
     /** Builds the controller wired to this VM's repos/state. [onBack]/[onClose] are screen-level
      * navigation (both currently pop this same reader screen - the app has one nav callback, see
-     * A3 report); [sendCommand] pushes a command to the WebView via [ReaderController]. */
+     * A3 report); [sendCommand] pushes a command to the WebView via [ReaderController].
+     * [onRequestResetConfirm]/[onRequestRestoreConfirm] show the existing native confirm
+     * dialogs (BO-53 #13) before the matching action actually runs. */
     fun buildReactorChromeController(
         onBack: () -> Unit,
         onClose: () -> Unit,
         onOpenSleepTimer: () -> Unit,
+        onRequestResetConfirm: (scope: String) -> Unit = {},
+        onRequestRestoreConfirm: (scope: String) -> Unit = {},
         sendCommand: suspend (ReactorV2Command) -> Unit,
     ): ReactorChromeController = ReactorChromeController(
         annotations = reactorAnnotationActions(),
@@ -1013,6 +1028,9 @@ class ReaderViewModel @Inject constructor(
         playback = reactorPlaybackActions(onOpenSleepTimer),
         notes = reactorNotesSource(),
         controls = reactorControlsActions(),
+        settingsSheetActions = reactorSettingsSheetActions(),
+        onRequestResetConfirm = onRequestResetConfirm,
+        onRequestRestoreConfirm = onRequestRestoreConfirm,
         onBack = onBack,
         onClose = onClose,
         sendCommand = sendCommand,
@@ -1022,7 +1040,7 @@ class ReaderViewModel @Inject constructor(
     fun reactorScopeToWire(scope: ReaderSettingsScope): String =
         if (scope == ReaderSettingsScope.THIS_BOOK) "book" else "global"
 
-    private fun reactorScopeFromWire(scope: String): ReaderSettingsScope =
+    fun reactorScopeFromWire(scope: String): ReaderSettingsScope =
         if (scope == "book") ReaderSettingsScope.THIS_BOOK else ReaderSettingsScope.GLOBAL
 
     override fun onCleared() {

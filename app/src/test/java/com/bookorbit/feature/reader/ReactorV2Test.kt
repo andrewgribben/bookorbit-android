@@ -180,6 +180,14 @@ class ReactorV2Test {
     }
 
     @Test
+    fun `settingsAction intent parses`() {
+        assertEquals(
+            ReactorV2Intent.SettingsAction(actionId = "saveAsDefault", scope = "book"),
+            ReactorV2.parseIntent(intentFixture("settingsAction.json")),
+        )
+    }
+
+    @Test
     fun `a v1 event type parses to null, not thrown`() {
         assertNull(ReactorV2.parseIntent("""{"type":"ready"}"""))
     }
@@ -277,6 +285,51 @@ class ReactorV2Test {
             controlsState = ReactorV2Command.Configure.ControlsState(swipeEnabled = false, volumeKeysEnabled = true),
         )
         assertJsonEquals(commandFixture("configure-controls-state.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `configure command serialises settingsActions to match the fixture`() {
+        val command = ReactorV2Command.Configure(
+            chrome = "reactor",
+            eink = false,
+            insets = ReactorV2Command.Configure.Insets(top = 0.0, right = 0.0, bottom = 0.0, left = 0.0),
+            capabilities = ReactorV2Command.Configure.Capabilities(
+                starred = false,
+                related = false,
+                glossary = false,
+                notes = false,
+                bookmarks = false,
+                playback = false,
+                userGlossary = false,
+            ),
+            locale = "en",
+            settingsActions = listOf(
+                ReactorV2Command.Configure.SettingsAction(
+                    id = "saveAsDefault",
+                    label = "Save as default",
+                    tabs = listOf("typography", "layout", "theme"),
+                ),
+                ReactorV2Command.Configure.SettingsAction(
+                    id = "resetToDefault",
+                    label = "Reset to saved default",
+                    tabs = listOf("typography", "layout", "theme"),
+                    enabled = false,
+                ),
+                ReactorV2Command.Configure.SettingsAction(
+                    id = "restoreBuiltIn",
+                    label = "Restore built-in defaults",
+                    tabs = listOf("typography", "layout", "theme"),
+                    enabled = false,
+                ),
+                ReactorV2Command.Configure.SettingsAction(
+                    id = "setWallpaper",
+                    label = "Set as wallpaper",
+                    tabs = listOf("theme"),
+                    styleHint = "accent",
+                ),
+            ),
+        )
+        assertJsonEquals(commandFixture("configure-settings-actions.json"), ReactorV2.encode(command))
     }
 
     @Test

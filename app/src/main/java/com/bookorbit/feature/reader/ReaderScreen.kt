@@ -107,6 +107,11 @@ fun ReaderScreen(
     var reactorChromeState by remember {
         mutableStateOf(ReactorV2Intent.ChromeState(barsVisible = false, sidebar = "none"))
     }
+    // BO-53 #13: reset/restore keep their existing native confirm dialogs even under Reactor
+    // chrome - Reactor shows none of its own. Holds the wire scope ("book"/"global") the
+    // settingsAction intent carried, or null when no dialog is pending.
+    var reactorResetConfirmScope by remember { mutableStateOf<String?>(null) }
+    var reactorRestoreConfirmScope by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -120,6 +125,8 @@ fun ReaderScreen(
             onBack = onBack,
             onClose = onBack,
             onOpenSleepTimer = { showSleepTimerSheet = true },
+            onRequestResetConfirm = { scope -> reactorResetConfirmScope = scope },
+            onRequestRestoreConfirm = { scope -> reactorRestoreConfirmScope = scope },
             sendCommand = { controller.sendReactorCommand(it) },
         )
     }
@@ -351,7 +358,46 @@ fun ReaderScreen(
         }
     }
 
-    LaunchedEffect(lockedCapabilities, topInsetCss, bottomInsetCss, leftInsetCss, rightInsetCss, eink, locale, ui.controlsSettings) {
+    // BO-53 #13: the four legacy settings-sheet actions, reachable again under Reactor chrome
+    // via this app's own string resources. `enabled` mirrors ReaderSettingsSheet's
+    // `scopeEditable` rule as closely as the protocol allows: Reactor's own Global/This book
+    // toggle emits no signal on a plain switch (protocol v2 README "Settings actions" - "no
+    // intent emitted for the switch itself"), so this can only react to this book's own
+    // "follows Global" state, not to which scope tab happens to be selected inside Reactor at
+    // any given moment. ReaderViewModel.resetToSavedDefault/restoreBuiltInDefaults still no-op
+    // correctly regardless of what this says, so the rule is never violated, only sometimes
+    // shown enabled when clicking it would have no effect (viewing Global while this book
+    // happens to follow it).
+    val settingsActions = remember(ui.bookState.useGlobal) {
+        val resetRestoreEnabled = !ui.bookState.useGlobal
+        listOf(
+            ReactorV2Command.Configure.SettingsAction(
+                id = ReactorSettingsActionIds.SAVE_AS_DEFAULT,
+                label = context.getString(R.string.rs_save_as_default),
+                tabs = listOf("typography", "layout", "theme"),
+            ),
+            ReactorV2Command.Configure.SettingsAction(
+                id = ReactorSettingsActionIds.RESET_TO_DEFAULT,
+                label = context.getString(R.string.rs_reset_to_default),
+                tabs = listOf("typography", "layout", "theme"),
+                enabled = resetRestoreEnabled,
+            ),
+            ReactorV2Command.Configure.SettingsAction(
+                id = ReactorSettingsActionIds.RESTORE_BUILT_IN,
+                label = context.getString(R.string.rs_restore_built_in),
+                tabs = listOf("typography", "layout", "theme"),
+                enabled = resetRestoreEnabled,
+            ),
+            ReactorV2Command.Configure.SettingsAction(
+                id = ReactorSettingsActionIds.SET_WALLPAPER,
+                label = context.getString(R.string.wallpaper_set_as_wallpaper),
+                tabs = listOf("theme"),
+                styleHint = "accent",
+            ),
+        )
+    }
+
+    LaunchedEffect(lockedCapabilities, topInsetCss, bottomInsetCss, leftInsetCss, rightInsetCss, eink, locale, ui.controlsSettings, settingsActions) {
         val capabilities = lockedCapabilities ?: return@LaunchedEffect
         controller.sendReactorCommand(
             ReactorV2Command.Configure(
@@ -377,6 +423,7 @@ fun ReaderScreen(
                     tapZonePreset = ui.controlsSettings.layoutPreset.name,
                     tapZonePresets = tapZonePresetOptions,
                 ),
+                settingsActions = settingsActions,
             ),
         )
     }
@@ -704,6 +751,24 @@ fun ReaderScreen(
             controlsSettings = ui.controlsSettings,
             onControlsSettingsChange = vm::updateControlsSettings,
             onDismiss = { settingsVisible = false },
+        )
+    }
+
+    // BO-53 #13: Reactor's settingsAction intent for reset/restore asks for these same
+    // confirm dialogs natively instead of running the action straight away - Reactor shows
+    // none of its own. Only one of these two nullable scopes is ever set at a time.
+    reactorResetConfirmScope?.let { scope ->
+        ResetToSavedDefaultConfirmDialog(
+            scopeName = stringResource(if (scope == "book") R.string.rs_scope_name_this_book else R.string.rs_scope_name_global),
+            onConfirm = { coroutineScope.launch { reactorChromeController.confirmReset(scope) } },
+            onDismiss = { reactorResetConfirmScope = null },
+        )
+    }
+    reactorRestoreConfirmScope?.let { scope ->
+        RestoreBuiltInConfirmDialog(
+            scopeName = stringResource(if (scope == "book") R.string.rs_scope_name_this_book else R.string.rs_scope_name_global),
+            onConfirm = { coroutineScope.launch { reactorChromeController.confirmRestore(scope) } },
+            onDismiss = { reactorRestoreConfirmScope = null },
         )
     }
 

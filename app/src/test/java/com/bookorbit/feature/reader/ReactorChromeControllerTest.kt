@@ -80,14 +80,28 @@ private class FakeControlsActions : ReactorControlsActions {
     }
 }
 
+private class FakeSettingsSheetActions : ReactorSettingsSheetActions {
+    var savedScope: String? = null
+    var resetScope: String? = null
+    var restoreScope: String? = null
+    var wallpaperSet = false
+    override suspend fun saveAsDefault(scope: String) { savedScope = scope }
+    override suspend fun resetToSavedDefault(scope: String) { resetScope = scope }
+    override suspend fun restoreBuiltIn(scope: String) { restoreScope = scope }
+    override fun setCoverAsWallpaper() { wallpaperSet = true }
+}
+
 class ReactorChromeControllerTest {
     private val annotations = FakeAnnotationActions()
     private val bookmarks = FakeBookmarkActions()
     private val settings = FakeSettingsActions()
     private val playback = FakePlaybackActions()
     private val controls = FakeControlsActions()
+    private val settingsSheetActions = FakeSettingsSheetActions()
     private var backCalled = false
     private var closeCalled = false
+    private var resetConfirmRequestedScope: String? = null
+    private var restoreConfirmRequestedScope: String? = null
     private val sentCommands = mutableListOf<ReactorV2Command>()
 
     private fun notesSource(items: List<ReactorV2Command.SetNotes.Item> = emptyList()) = FakeNotesSource(items)
@@ -99,6 +113,9 @@ class ReactorChromeControllerTest {
         playback = playback,
         notes = notes,
         controls = controls,
+        settingsSheetActions = settingsSheetActions,
+        onRequestResetConfirm = { resetConfirmRequestedScope = it },
+        onRequestRestoreConfirm = { restoreConfirmRequestedScope = it },
         onBack = { backCalled = true },
         onClose = { closeCalled = true },
         sendCommand = { sentCommands.add(it) },
@@ -217,6 +234,42 @@ class ReactorChromeControllerTest {
     fun `chromeState is ignored - the host already owns system bars`() = runTest {
         controller().handleIntent(ReactorV2Intent.ChromeState(barsVisible = false, sidebar = "left"))
         assertTrue(sentCommands.isEmpty())
+    }
+
+    @Test
+    fun `settingsAction saveAsDefault calls the sheet action directly, no confirm`() = runTest {
+        controller().handleIntent(ReactorV2Intent.SettingsAction("saveAsDefault", "book"))
+        assertEquals("book", settingsSheetActions.savedScope)
+        assertEquals(null, resetConfirmRequestedScope)
+    }
+
+    @Test
+    fun `settingsAction setWallpaper calls the sheet action directly, no confirm`() = runTest {
+        controller().handleIntent(ReactorV2Intent.SettingsAction("setWallpaper", "global"))
+        assertTrue(settingsSheetActions.wallpaperSet)
+    }
+
+    @Test
+    fun `settingsAction resetToDefault requests confirm instead of acting directly`() = runTest {
+        controller().handleIntent(ReactorV2Intent.SettingsAction("resetToDefault", "book"))
+        assertEquals("book", resetConfirmRequestedScope)
+        assertEquals(null, settingsSheetActions.resetScope)
+    }
+
+    @Test
+    fun `settingsAction restoreBuiltIn requests confirm instead of acting directly`() = runTest {
+        controller().handleIntent(ReactorV2Intent.SettingsAction("restoreBuiltIn", "global"))
+        assertEquals("global", restoreConfirmRequestedScope)
+        assertEquals(null, settingsSheetActions.restoreScope)
+    }
+
+    @Test
+    fun `confirmReset and confirmRestore call the sheet action after the host's own dialog`() = runTest {
+        val c = controller()
+        c.confirmReset("book")
+        c.confirmRestore("global")
+        assertEquals("book", settingsSheetActions.resetScope)
+        assertEquals("global", settingsSheetActions.restoreScope)
     }
 
     @Test

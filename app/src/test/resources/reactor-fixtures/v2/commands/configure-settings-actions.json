@@ -1,0 +1,22 @@
+{
+  "type": "configure",
+  "chrome": "reactor",
+  "eink": false,
+  "insets": { "top": 0, "right": 0, "bottom": 0, "left": 0 },
+  "capabilities": {
+    "starred": false,
+    "related": false,
+    "glossary": false,
+    "notes": false,
+    "bookmarks": false,
+    "playback": false,
+    "userGlossary": false
+  },
+  "locale": "en",
+  "settingsActions": [
+    { "id": "saveAsDefault", "label": "Save as default", "tabs": ["typography", "layout", "theme"] },
+    { "id": "resetToDefault", "label": "Reset to saved default", "tabs": ["typography", "layout", "theme"], "enabled": false },
+    { "id": "restoreBuiltIn", "label": "Restore built-in defaults", "tabs": ["typography", "layout", "theme"], "enabled": false },
+    { "id": "setWallpaper", "label": "Set as wallpaper", "tabs": ["theme"], "styleHint": "accent" }
+  ]
+}

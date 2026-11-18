@@ -21,6 +21,9 @@ package com.bookorbit.feature.reader
  *   intents can only arrive if `configure.capabilities.starred`/`related` was sent true, which
  *   [ReactorCapabilities.select] never does while that's the case)
  * - chromeState -> ignored; the host already manages system bars/back itself (see A3 BUILD section)
+ * - settingsAction{actionId,scope} -> [ReactorSettingsSheetActions] (BO-53 #13); reset/restore
+ *   go through [onRequestResetConfirm]/[onRequestRestoreConfirm] first since Reactor shows no
+ *   confirmation of its own and the native confirm dialogs stay
  */
 class ReactorChromeController(
     private val annotations: ReactorAnnotationActions,
@@ -29,6 +32,12 @@ class ReactorChromeController(
     private val playback: ReactorPlaybackActions,
     private val notes: ReactorNotesSource,
     private val controls: ReactorControlsActions,
+    private val settingsSheetActions: ReactorSettingsSheetActions,
+    /** BO-53 #13: reset/restore keep their existing native confirm dialogs - Reactor shows
+     * none of its own. The caller (ReaderScreen) shows the dialog and only then calls
+     * [ReactorSettingsSheetActions.resetToSavedDefault]/[restoreBuiltIn]. */
+    private val onRequestResetConfirm: (scope: String) -> Unit,
+    private val onRequestRestoreConfirm: (scope: String) -> Unit,
     private val onBack: () -> Unit,
     private val onClose: () -> Unit,
     private val sendCommand: suspend (ReactorV2Command) -> Unit,
@@ -61,6 +70,20 @@ class ReactorChromeController(
             is ReactorV2Intent.NotesPageRequest ->
                 sendCommand(notes.page(intent.offset, intent.limit, intent.filter, intent.sort, intent.query))
             is ReactorV2Intent.ControlsChange -> controls.change(intent.swipeEnabled, intent.volumeKeysEnabled, intent.tapZonePreset)
+            is ReactorV2Intent.SettingsAction -> applySettingsAction(intent)
+        }
+    }
+
+    private suspend fun applySettingsAction(intent: ReactorV2Intent.SettingsAction) {
+        when (intent.actionId) {
+            ReactorSettingsActionIds.SAVE_AS_DEFAULT -> settingsSheetActions.saveAsDefault(intent.scope)
+            // Reset/restore keep their existing confirm dialogs - handled by the caller, which
+            // only then calls back into settingsSheetActions. Both also still no-op on the app
+            // side (ReaderViewModel) when this book follows Global, regardless of what the
+            // pushed `enabled` flag said at the time the button was clicked.
+            ReactorSettingsActionIds.RESET_TO_DEFAULT -> onRequestResetConfirm(intent.scope)
+            ReactorSettingsActionIds.RESTORE_BUILT_IN -> onRequestRestoreConfirm(intent.scope)
+            ReactorSettingsActionIds.SET_WALLPAPER -> settingsSheetActions.setCoverAsWallpaper()
         }
     }
 
@@ -79,6 +102,12 @@ class ReactorChromeController(
 
     suspend fun pushBookmarks(items: List<ReactorV2Command.SetBookmarks.Item>) =
         sendCommand(ReactorV2Command.SetBookmarks(items))
+
+    /** Called after the host's own confirm dialog, triggered by [onRequestResetConfirm]. */
+    suspend fun confirmReset(scope: String) = settingsSheetActions.resetToSavedDefault(scope)
+
+    /** Called after the host's own confirm dialog, triggered by [onRequestRestoreConfirm]. */
+    suspend fun confirmRestore(scope: String) = settingsSheetActions.restoreBuiltIn(scope)
 
     suspend fun pushSettingsScope(scope: String, settings: ReactorSettings) =
         sendCommand(ReactorV2Command.SetSettingsScope(scope, settings))
@@ -161,6 +190,26 @@ interface ReactorNotesSource {
  * [ReaderControlsSettings] regardless of which UI changed it. */
 interface ReactorControlsActions {
     suspend fun change(swipeEnabled: Boolean, volumeKeysEnabled: Boolean, tapZonePreset: String?)
+}
+
+/** BO-53 #13: the four legacy settings-sheet actions, routed through the same
+ * [ReaderViewModel] functions the native [ReaderSettingsSheet] footer buttons already call -
+ * one path that saves/resets/restores/sets wallpaper regardless of which chrome asked. */
+interface ReactorSettingsSheetActions {
+    suspend fun saveAsDefault(scope: String)
+    suspend fun resetToSavedDefault(scope: String)
+    suspend fun restoreBuiltIn(scope: String)
+    fun setCoverAsWallpaper()
+}
+
+/** Action ids this app chooses for `configure.settingsActions` (opaque to Reactor) - kept here,
+ * not in [ReactorV2], since Reactor never reads them beyond echoing one back on the matching
+ * `settingsAction` intent. Match the four footer actions [ReaderSettingsSheet] already has. */
+object ReactorSettingsActionIds {
+    const val SAVE_AS_DEFAULT = "saveAsDefault"
+    const val RESET_TO_DEFAULT = "resetToDefault"
+    const val RESTORE_BUILT_IN = "restoreBuiltIn"
+    const val SET_WALLPAPER = "setWallpaper"
 }
 
 /**

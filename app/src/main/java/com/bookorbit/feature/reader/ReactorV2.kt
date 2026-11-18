@@ -82,6 +82,12 @@ sealed interface ReactorV2Intent {
         val volumeKeysEnabled: Boolean,
         val tapZonePreset: String? = null,
     ) : ReactorV2Intent
+
+    /** BO-53 #13: asks the host to run one of its own `configure.settingsActions` buttons,
+     * carrying the opaque action id this app chose (see [ReactorSettingsActionIds]) and the
+     * scope selected in the sheet at the moment of the click. Reactor shows no confirmation of
+     * its own - see [ReactorChromeController]'s handling. */
+    data class SettingsAction(val actionId: String, val scope: String) : ReactorV2Intent
 }
 
 /** A host -> Reactor `configure`/`set*` command, per the README's "Host -> Reactor" section. */
@@ -111,6 +117,12 @@ sealed interface ReactorV2Command {
          * defaults. Not frozen like [capabilities] - resent on every later `configure` (e.g.
          * alongside an insets change) with the latest value. */
         val controlsState: ControlsState? = null,
+        /** BO-53 #13: the four legacy settings-sheet actions, made reachable again under
+         * Reactor chrome via the host-neutral `settingsActions` mechanism (protocol v2
+         * README's "Settings actions"). Not frozen like [capabilities] - resent with an
+         * updated `enabled` per action id whenever this book's "follows Global" state
+         * changes, same pattern as [controlsState]. */
+        val settingsActions: List<SettingsAction>? = null,
     ) : ReactorV2Command {
         data class Insets(val top: Double, val right: Double, val bottom: Double, val left: Double)
         data class Capabilities(
@@ -135,6 +147,17 @@ sealed interface ReactorV2Command {
             val tapZonePresets: List<TapZonePresetOption>? = null,
         )
         data class TapZonePresetOption(val id: String, val label: String)
+        /** BO-53 #13: one action button, opaque to Reactor beyond [id]/[label]/[tabs]. [tabs]
+         * absent means every tab; [enabled] defaults to `true`; [styleHint] is only ever
+         * `"accent"` for this app (Set as wallpaper), matching a look Reactor's sheet already
+         * uses elsewhere - see [ReactorSettingsActionIds]. */
+        data class SettingsAction(
+            val id: String,
+            val label: String,
+            val tabs: List<String>? = null,
+            val enabled: Boolean? = null,
+            val styleHint: String? = null,
+        )
     }
 
     data class SetBookmarks(val items: List<Item>) : ReactorV2Command {
@@ -248,6 +271,10 @@ object ReactorV2 {
                 volumeKeysEnabled = obj["volumeKeysEnabled"]!!.jsonPrimitive.booleanOrNull!!,
                 tapZonePreset = obj["tapZonePreset"]?.jsonPrimitive?.contentOrNull,
             )
+            "settingsAction" -> ReactorV2Intent.SettingsAction(
+                actionId = obj["actionId"]!!.jsonPrimitive.contentOrNull!!,
+                scope = obj["scope"]!!.jsonPrimitive.contentOrNull!!,
+            )
             else -> null
         }
     }.getOrNull()
@@ -295,6 +322,19 @@ object ReactorV2 {
                                     put("label", preset.label)
                                 }
                             }
+                        }
+                    }
+                }
+            }
+            command.settingsActions?.let { actions ->
+                putJsonArray("settingsActions") {
+                    for (action in actions) {
+                        addJsonObject {
+                            put("id", action.id)
+                            put("label", action.label)
+                            action.tabs?.let { tabs -> putJsonArray("tabs") { tabs.forEach { add(it) } } }
+                            action.enabled?.let { put("enabled", it) }
+                            action.styleHint?.let { put("styleHint", it) }
                         }
                     }
                 }

@@ -243,38 +243,60 @@ fun ReaderSettingsSheet(
     }
 
     if (showResetDialog) {
-        AlertDialog(
-            onDismissRequest = { showResetDialog = false },
-            title = { Text(stringResource(R.string.rs_reset_dialog_title, scopeName)) },
-            text = { Text(stringResource(R.string.rs_reset_dialog_body, scopeName)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showResetDialog = false
-                    onResetToSavedDefault()
-                }) { Text(stringResource(R.string.reset)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showResetDialog = false }) { Text(stringResource(R.string.cancel)) }
-            },
+        ResetToSavedDefaultConfirmDialog(
+            scopeName = scopeName,
+            onConfirm = onResetToSavedDefault,
+            onDismiss = { showResetDialog = false },
         )
     }
 
     if (showRestoreDialog) {
-        AlertDialog(
-            onDismissRequest = { showRestoreDialog = false },
-            title = { Text(stringResource(R.string.rs_restore_dialog_title, scopeName)) },
-            text = { Text(stringResource(R.string.rs_restore_dialog_body, scopeName)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showRestoreDialog = false
-                    onRestoreBuiltIn()
-                }) { Text(stringResource(R.string.rs_restore_built_in)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRestoreDialog = false }) { Text(stringResource(R.string.cancel)) }
-            },
+        RestoreBuiltInConfirmDialog(
+            scopeName = scopeName,
+            onConfirm = onRestoreBuiltIn,
+            onDismiss = { showRestoreDialog = false },
         )
     }
+}
+
+/** Shared with the Reactor chrome path (BO-53 #13), which shows this same native dialog
+ * before calling [onConfirm] since Reactor's own sheet has no confirmation of its own. */
+@Composable
+internal fun ResetToSavedDefaultConfirmDialog(scopeName: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.rs_reset_dialog_title, scopeName)) },
+        text = { Text(stringResource(R.string.rs_reset_dialog_body, scopeName)) },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                onConfirm()
+            }) { Text(stringResource(R.string.reset)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+/** Shared with the Reactor chrome path (BO-53 #13), which shows this same native dialog
+ * before calling [onConfirm] since Reactor's own sheet has no confirmation of its own. */
+@Composable
+internal fun RestoreBuiltInConfirmDialog(scopeName: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.rs_restore_dialog_title, scopeName)) },
+        text = { Text(stringResource(R.string.rs_restore_dialog_body, scopeName)) },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                onConfirm()
+            }) { Text(stringResource(R.string.rs_restore_built_in)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)
