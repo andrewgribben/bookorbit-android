@@ -147,7 +147,8 @@ fun ReaderScreen(
     onTap.value = { x, y ->
         if (ui.toolbar != null) {
             vm.dismissToolbar()
-        } else {
+        } else if (!useReactorChrome) {
+            // Reactor's shell resolves its own tap zones; acting here too would turn two pages.
             when (ui.controlsSettings.resolveTapAction(x.toFloat(), y.toFloat(), ui.isRtl)) {
                 TapAction.NEXT -> controller.next()
                 TapAction.PREVIOUS -> controller.prev()
