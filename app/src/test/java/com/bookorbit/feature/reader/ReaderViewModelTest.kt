@@ -24,6 +24,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -366,5 +370,74 @@ class ReaderViewModelTest {
         assertEquals("squiggly", notes.items.first { it.id == "1" }.style)
         assertEquals("highlight", notes.items.first { it.id == "2" }.kind)
         assertEquals("strikethrough", notes.items.first { it.id == "2" }.style)
+    }
+
+    // --- BO-53 #1: Reactor playback parity with the app's own narration toggle/transport ---
+
+    @Test
+    fun `reactor play starts narration through NarrationPrepare when it is off`() = runTest {
+        val model = vm()
+        val commands = mutableListOf<ReaderViewModel.ReaderCommand>()
+        val collectJob = launch { model.commands.toList(commands) }
+        runCurrent()
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+
+        controller.handleIntent(ReactorV2Intent.Playback("play", null, null))
+        advanceUntilIdle()
+
+        assertEquals(true, model.ui.value.narrationLoading)
+        assertEquals(1, commands.filterIsInstance<ReaderViewModel.ReaderCommand.NarrationPrepare>().size)
+        coVerify(exactly = 0) { playerManager.togglePlay() }
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `reactor play resumes an already loaded, paused narration queue`() = runTest {
+        val model = vm()
+        val uiField = ReaderViewModel::class.java.getDeclaredField("_ui")
+        uiField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val uiFlow = uiField.get(model) as kotlinx.coroutines.flow.MutableStateFlow<ReaderViewModel.UiState>
+        uiFlow.value = uiFlow.value.copy(narrationOn = true)
+        every { playerManager.state } returns MutableStateFlow(PlayerManager.UiState(narrationActive = true, isPlaying = false))
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+
+        controller.handleIntent(ReactorV2Intent.Playback("play", null, null))
+
+        coVerify(exactly = 1) { playerManager.togglePlay() }
+    }
+
+    @Test
+    fun `reactor pause suspends an already playing narration queue`() = runTest {
+        val model = vm()
+        val uiField = ReaderViewModel::class.java.getDeclaredField("_ui")
+        uiField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val uiFlow = uiField.get(model) as kotlinx.coroutines.flow.MutableStateFlow<ReaderViewModel.UiState>
+        uiFlow.value = uiFlow.value.copy(narrationOn = true)
+        every { playerManager.state } returns MutableStateFlow(PlayerManager.UiState(narrationActive = true, isPlaying = true))
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+
+        controller.handleIntent(ReactorV2Intent.Playback("pause", null, null))
+
+        coVerify(exactly = 1) { playerManager.togglePlay() }
+    }
+
+    @Test
+    fun `reactor stop fully turns narration off, distinct from pause`() = runTest {
+        val model = vm()
+        val uiField = ReaderViewModel::class.java.getDeclaredField("_ui")
+        uiField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val uiFlow = uiField.get(model) as kotlinx.coroutines.flow.MutableStateFlow<ReaderViewModel.UiState>
+        uiFlow.value = uiFlow.value.copy(narrationOn = true)
+        every { playerManager.state } returns MutableStateFlow(PlayerManager.UiState(narrationActive = true, isPlaying = true))
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+
+        controller.handleIntent(ReactorV2Intent.Playback("stop", null, null))
+
+        coVerify(exactly = 1) { playerManager.stopNarration() }
+        coVerify(exactly = 0) { playerManager.togglePlay() }
+        assertEquals(false, model.ui.value.narrationOn)
     }
 }

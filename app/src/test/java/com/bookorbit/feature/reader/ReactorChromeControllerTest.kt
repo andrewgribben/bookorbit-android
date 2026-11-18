@@ -46,10 +46,12 @@ private class FakeSettingsActions : ReactorSettingsActions {
 private class FakePlaybackActions : ReactorPlaybackActions {
     var played = false
     var paused = false
+    var stopped = false
     var seekedTo: Double? = null
     var rate: Double? = null
     override fun play() { played = true }
     override fun pause() { paused = true }
+    override fun stop() { stopped = true }
     override fun seek(positionSec: Double) { seekedTo = positionSec }
     override fun setRate(rate: Double) { this.rate = rate }
 }
@@ -149,6 +151,13 @@ class ReactorChromeControllerTest {
     }
 
     @Test
+    fun `playback stop maps to stop, distinct from pause`() = runTest {
+        controller().handleIntent(ReactorV2Intent.Playback("stop", null, null))
+        assertTrue(playback.stopped)
+        assertFalse(playback.paused)
+    }
+
+    @Test
     fun `back calls the host's own back navigation, not close`() = runTest {
         controller().handleIntent(ReactorV2Intent.Back)
         assertTrue(backCalled)
@@ -234,6 +243,28 @@ class ReactorChromeControllerTest {
         assertEquals(1, sentCommands.size)
         c.pushPlaybackState(playing = true, positionSec = 2.0, rate = 1.0, nowMs = 1_000L + ReactorChromeController.PLAYBACK_PUSH_THROTTLE_MS + 1)
         assertEquals(2, sentCommands.size)
+    }
+
+    @Test
+    fun `pushPlaybackState always delivers a playing transition, bypassing the throttle`() = runTest {
+        val c = controller()
+        c.pushPlaybackState(playing = true, positionSec = 1.0, rate = 1.0, nowMs = 1_000L)
+        // a position-only tick 10ms later is throttled away, as before
+        c.pushPlaybackState(playing = true, positionSec = 1.01, rate = 1.0, nowMs = 1_010L)
+        assertEquals(1, sentCommands.size)
+        // but playing flips to false 10ms later - this must land immediately, not be dropped
+        c.pushPlaybackState(playing = false, positionSec = 1.02, rate = 1.0, nowMs = 1_020L)
+        assertEquals(2, sentCommands.size)
+        assertFalse((sentCommands.last() as ReactorV2Command.SetPlaybackState).playing)
+    }
+
+    @Test
+    fun `pushPlaybackState always delivers a rate change, bypassing the throttle`() = runTest {
+        val c = controller()
+        c.pushPlaybackState(playing = true, positionSec = 1.0, rate = 1.0, nowMs = 1_000L)
+        c.pushPlaybackState(playing = true, positionSec = 1.01, rate = 1.5, nowMs = 1_010L)
+        assertEquals(2, sentCommands.size)
+        assertEquals(1.5, (sentCommands.last() as ReactorV2Command.SetPlaybackState).rate, 0.0)
     }
 
     // --- capability selection ---

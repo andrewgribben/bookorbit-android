@@ -928,11 +928,22 @@ class ReaderViewModel @Inject constructor(
     }
 
     private fun reactorPlaybackActions(): ReactorPlaybackActions = object : ReactorPlaybackActions {
+        // BO-53 #1: play from Reactor must start narration the same way the Headphones button
+        // does (toggleNarration -> NarrationPrepare -> loadNarrationQueue -> watchNarrationPosition)
+        // when it isn't already on - playerManager.togglePlay() alone only resumes an already
+        // loaded queue and never starts one, so Reactor's Play button did nothing the first time.
         override fun play() {
-            if (!playerManager.state.value.isPlaying) playerManager.togglePlay()
+            if (_ui.value.narrationOn) {
+                if (!playerManager.state.value.isPlaying) playerManager.togglePlay()
+            } else if (!_ui.value.narrationLoading) {
+                toggleNarration()
+            }
         }
         override fun pause() {
             if (playerManager.state.value.isPlaying) playerManager.togglePlay()
+        }
+        override fun stop() {
+            if (_ui.value.narrationOn || _ui.value.narrationLoading) stopNarration()
         }
         override fun seek(positionSec: Double) { playerManager.seekToAbsolute(positionSec) }
         override fun setRate(rate: Double) { playerManager.setSpeed(rate.toFloat()) }

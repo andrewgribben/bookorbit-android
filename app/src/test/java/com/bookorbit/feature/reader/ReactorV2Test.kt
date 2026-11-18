@@ -120,6 +120,14 @@ class ReactorV2Test {
     }
 
     @Test
+    fun `playback intent parses stop action`() {
+        assertEquals(
+            ReactorV2Intent.Playback(action = "stop", positionSec = null, rate = null),
+            ReactorV2.parseIntent(intentFixture("playback-stop.json")),
+        )
+    }
+
+    @Test
     fun `close intent parses`() {
         assertEquals(ReactorV2Intent.Close, ReactorV2.parseIntent(intentFixture("close.json")))
     }
@@ -200,6 +208,27 @@ class ReactorV2Test {
             locale = "en-US",
         )
         assertJsonEquals(commandFixture("configure-host-chrome.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `configure command serialises narrationFollow host to match the fixture`() {
+        val command = ReactorV2Command.Configure(
+            chrome = "reactor",
+            eink = false,
+            insets = ReactorV2Command.Configure.Insets(top = 24.0, right = 0.0, bottom = 16.0, left = 0.0),
+            capabilities = ReactorV2Command.Configure.Capabilities(
+                starred = true,
+                related = true,
+                glossary = true,
+                notes = true,
+                bookmarks = true,
+                playback = true,
+                userGlossary = false,
+            ),
+            locale = "en-GB",
+            narrationFollow = "host",
+        )
+        assertJsonEquals(commandFixture("configure-narration-follow-host.json"), ReactorV2.encode(command))
     }
 
     @Test

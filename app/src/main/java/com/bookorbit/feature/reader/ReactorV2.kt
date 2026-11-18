@@ -83,6 +83,13 @@ sealed interface ReactorV2Command {
         val insets: Insets,
         val capabilities: Capabilities,
         val locale: String,
+        /** BO-53 #3: `null`/omitted defaults to `'shell'` on the Reactor side (protocol v2
+         * README's "Narration follow ownership"). This app always sends `"host"`: its own
+         * narration-position tracking (`NarrationLocator`/`watchNarrationPosition` in
+         * [ReaderViewModel]) already drives the frozen v1 `narrationHighlight`/
+         * `narrationUnhighlight` commands, so the shell must never run its own follow/prepare
+         * too or the two can disagree about which textHref is current. */
+        val narrationFollow: String? = null,
     ) : ReactorV2Command {
         data class Insets(val top: Double, val right: Double, val bottom: Double, val left: Double)
         data class Capabilities(
@@ -202,6 +209,7 @@ object ReactorV2 {
                 put("userGlossary", command.capabilities.userGlossary)
             }
             put("locale", command.locale)
+            put("narrationFollow", command.narrationFollow)
         }
         is ReactorV2Command.SetBookmarks -> buildJsonObject {
             put("type", "setBookmarks")

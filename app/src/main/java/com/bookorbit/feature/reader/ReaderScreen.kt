@@ -327,6 +327,10 @@ fun ReaderScreen(
                 insets = ReactorV2Command.Configure.Insets(top = topInsetCss, right = 0.0, bottom = bottomInsetCss, left = 0.0),
                 capabilities = capabilities,
                 locale = locale,
+                // BO-53 #3: this app's own narration-position tracking (watchNarrationPosition
+                // below) already drives the frozen v1 narrationHighlight/narrationUnhighlight
+                // commands, so the shell must never run its own follow/prepare too.
+                narrationFollow = "host",
             ),
         )
     }
@@ -361,16 +365,27 @@ fun ReaderScreen(
     }
 
     // setPlaybackState: throttled inside pushPlaybackState (PLAYBACK_PUSH_THROTTLE_MS) against a
-    // narration position that ticks far faster than Reactor's player bar needs updates.
+    // narration position that ticks far faster than Reactor's player bar needs updates; a
+    // `playing` transition always lands immediately regardless (see pushPlaybackState's own doc).
+    // BO-53 #2: narration can stop from somewhere other than Reactor's own Play/Pause button -
+    // the notification's stop action, another queue replacing this one, stopNarration() itself -
+    // and the shell must be told `playing: false` exactly once when that happens, not left
+    // showing a stale "playing" icon forever because s.narrationActive gates every further push.
+    var wasNarrationActive by remember { mutableStateOf(false) }
     LaunchedEffect(useReactorChrome, playerState.value) {
         if (!useReactorChrome) return@LaunchedEffect
         val s = playerState.value
-        if (!s.narrationActive) return@LaunchedEffect
-        reactorChromeController.pushPlaybackState(
-            playing = s.isPlaying,
-            positionSec = s.narrationPositionMs / 1000.0,
-            rate = s.speed.toDouble(),
-        )
+        if (s.narrationActive) {
+            wasNarrationActive = true
+            reactorChromeController.pushPlaybackState(
+                playing = s.isPlaying,
+                positionSec = s.narrationPositionMs / 1000.0,
+                rate = s.speed.toDouble(),
+            )
+        } else if (wasNarrationActive) {
+            wasNarrationActive = false
+            reactorChromeController.pushPlaybackState(playing = false, positionSec = 0.0, rate = s.speed.toDouble())
+        }
     }
 
     Box(
