@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -296,10 +297,12 @@ fun ReaderScreen(
     // Reactor chrome's own `configure.insets` (CSS px, same unit as ViewportRect - see its doc):
     // the same top/bottom bars Compose would otherwise draw, so Reactor's own chrome clears the
     // status bar/display cutout and navigation bar/cutout exactly like the Compose bars above.
-    // No left/right inset source exists here (phones/tablets don't reserve side bars in portrait
-    // or landscape the way a foldable's hinge might - left/right stay 0 until that's needed).
+    // Left/right cover a landscape camera cutout or side navigation bar; Ltr because these are
+    // physical edges, not start/end.
     val topInsetCss = insetPxToCssPx(topBarInsets.getTop(density), density.density)
     val bottomInsetCss = insetPxToCssPx(bottomBarInsets.getBottom(density), density.density)
+    val leftInsetCss = insetPxToCssPx(bottomBarInsets.getLeft(density, LayoutDirection.Ltr), density.density)
+    val rightInsetCss = insetPxToCssPx(bottomBarInsets.getRight(density, LayoutDirection.Ltr), density.density)
     // No e-ink detection exists in this app yet; always reports false until one is added.
     val eink = false
     val locale = remember { Locale.getDefault().toLanguageTag() }
@@ -318,13 +321,13 @@ fun ReaderScreen(
         }
     }
 
-    LaunchedEffect(lockedCapabilities, topInsetCss, bottomInsetCss, eink, locale) {
+    LaunchedEffect(lockedCapabilities, topInsetCss, bottomInsetCss, leftInsetCss, rightInsetCss, eink, locale) {
         val capabilities = lockedCapabilities ?: return@LaunchedEffect
         controller.sendReactorCommand(
             ReactorV2Command.Configure(
                 chrome = "reactor",
                 eink = eink,
-                insets = ReactorV2Command.Configure.Insets(top = topInsetCss, right = 0.0, bottom = bottomInsetCss, left = 0.0),
+                insets = ReactorV2Command.Configure.Insets(top = topInsetCss, right = rightInsetCss, bottom = bottomInsetCss, left = leftInsetCss),
                 capabilities = capabilities,
                 locale = locale,
                 // BO-53 #3: this app's own narration-position tracking (watchNarrationPosition
