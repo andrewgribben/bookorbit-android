@@ -28,6 +28,7 @@ class ReactorChromeController(
     private val settings: ReactorSettingsActions,
     private val playback: ReactorPlaybackActions,
     private val notes: ReactorNotesSource,
+    private val controls: ReactorControlsActions,
     private val onBack: () -> Unit,
     private val onClose: () -> Unit,
     private val sendCommand: suspend (ReactorV2Command) -> Unit,
@@ -59,6 +60,7 @@ class ReactorChromeController(
             is ReactorV2Intent.ChromeState -> Unit
             is ReactorV2Intent.NotesPageRequest ->
                 sendCommand(notes.page(intent.offset, intent.limit, intent.filter, intent.sort, intent.query))
+            is ReactorV2Intent.ControlsChange -> controls.change(intent.swipeEnabled, intent.volumeKeysEnabled)
         }
     }
 
@@ -153,6 +155,14 @@ interface ReactorNotesSource {
     suspend fun page(offset: Int, limit: Int, filter: String?, sort: String?, query: String?): ReactorV2Command.SetNotes
 }
 
+/** BO-53 #9: persists the settings sheet's Controls tab swipe/volume-keys toggles through the
+ * existing [ReaderViewModel.updateControlsSettings] setter - the same one the native
+ * [ReaderSettingsSheet] Controls tab uses, so there is exactly one path that writes
+ * [ReaderControlsSettings] regardless of which UI changed it. */
+interface ReactorControlsActions {
+    suspend fun change(swipeEnabled: Boolean, volumeKeysEnabled: Boolean)
+}
+
 /**
  * Decides `configure.capabilities` (README "Capability presence is decided once ... never from
  * whether a set* call has arrived yet"): bookmarks and notes are always-on app features;
@@ -169,6 +179,9 @@ object ReactorCapabilities {
             bookmarks = true,
             playback = hasNarration,
             userGlossary = false,
+            // BO-53 #9: always on - this app's Controls tab (ReaderControlsTab.kt) already has
+            // a volume-keys-turn-pages toggle, independent of narration.
+            volumeKeys = true,
         )
 }
 

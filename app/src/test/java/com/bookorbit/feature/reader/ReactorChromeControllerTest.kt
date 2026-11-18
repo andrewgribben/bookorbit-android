@@ -69,11 +69,21 @@ private class FakeNotesSource(private val all: List<ReactorV2Command.SetNotes.It
     }
 }
 
+private class FakeControlsActions : ReactorControlsActions {
+    var lastSwipeEnabled: Boolean? = null
+    var lastVolumeKeysEnabled: Boolean? = null
+    override suspend fun change(swipeEnabled: Boolean, volumeKeysEnabled: Boolean) {
+        lastSwipeEnabled = swipeEnabled
+        lastVolumeKeysEnabled = volumeKeysEnabled
+    }
+}
+
 class ReactorChromeControllerTest {
     private val annotations = FakeAnnotationActions()
     private val bookmarks = FakeBookmarkActions()
     private val settings = FakeSettingsActions()
     private val playback = FakePlaybackActions()
+    private val controls = FakeControlsActions()
     private var backCalled = false
     private var closeCalled = false
     private val sentCommands = mutableListOf<ReactorV2Command>()
@@ -86,6 +96,7 @@ class ReactorChromeControllerTest {
         settings = settings,
         playback = playback,
         notes = notes,
+        controls = controls,
         onBack = { backCalled = true },
         onClose = { closeCalled = true },
         sendCommand = { sentCommands.add(it) },
@@ -126,6 +137,13 @@ class ReactorChromeControllerTest {
         controller().handleIntent(ReactorV2Intent.SettingsChange("book", s))
         assertEquals("book", settings.lastScope)
         assertEquals(s, settings.lastSettings)
+    }
+
+    @Test
+    fun `controlsChange maps onto ReactorControlsActions with both current values`() = runTest {
+        controller().handleIntent(ReactorV2Intent.ControlsChange(swipeEnabled = false, volumeKeysEnabled = true))
+        assertEquals(false, controls.lastSwipeEnabled)
+        assertEquals(true, controls.lastVolumeKeysEnabled)
     }
 
     @Test
@@ -316,11 +334,13 @@ class ReactorChromeControllerTest {
         assertFalse(withNarration.related)
         assertFalse(withNarration.glossary)
         assertFalse(withNarration.userGlossary)
+        assertEquals(true, withNarration.volumeKeys)
 
         val withoutNarration = ReactorCapabilities.select(hasNarration = false)
         assertTrue(withoutNarration.bookmarks)
         assertTrue(withoutNarration.notes)
         assertFalse(withoutNarration.playback)
+        assertEquals(true, withoutNarration.volumeKeys)
     }
 
     // --- inset conversion ---

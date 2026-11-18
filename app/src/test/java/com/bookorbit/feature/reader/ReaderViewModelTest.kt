@@ -363,6 +363,19 @@ class ReaderViewModelTest {
         coVerify { annotationRepo.setStyle(1, 42, "strikethrough") }
     }
 
+    // BO-53 #9: controlsChange routes through the same updateControlsSettings setter the native
+    // ReaderSettingsSheet Controls tab uses, so it persists through ReaderControlsStore and the
+    // existing LaunchedEffects (ReaderScreen) pick the new value up without a second code path.
+    @Test
+    fun `reactor controlsChange updates ui controlsSettings and persists through the controls store`() = runTest {
+        val model = vm()
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, onOpenSleepTimer = {}, sendCommand = {})
+        controller.handleIntent(ReactorV2Intent.ControlsChange(swipeEnabled = false, volumeKeysEnabled = true))
+        assertEquals(false, model.ui.value.controlsSettings.swipeEnabled)
+        assertEquals(true, model.ui.value.controlsSettings.volumeKeysTurnPages)
+        coVerify { controlsStore.save(match { it.swipeEnabled == false && it.volumeKeysTurnPages == true }) }
+    }
+
     @Test
     fun `reactor notesPageRequest maps each annotation's style back to a coarse kind`() = runTest {
         coEvery { annotationRepo.local(1) } returns listOf(

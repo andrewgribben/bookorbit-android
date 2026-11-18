@@ -164,6 +164,14 @@ class ReactorV2Test {
     }
 
     @Test
+    fun `controlsChange intent parses`() {
+        assertEquals(
+            ReactorV2Intent.ControlsChange(swipeEnabled = false, volumeKeysEnabled = true),
+            ReactorV2.parseIntent(intentFixture("controlsChange.json")),
+        )
+    }
+
+    @Test
     fun `a v1 event type parses to null, not thrown`() {
         assertNull(ReactorV2.parseIntent("""{"type":"ready"}"""))
     }
@@ -239,6 +247,50 @@ class ReactorV2Test {
             narrationFollow = "host",
         )
         assertJsonEquals(commandFixture("configure-narration-follow-host.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `configure command serialises volumeKeys capability and controlsState to match the fixture`() {
+        val command = ReactorV2Command.Configure(
+            chrome = "reactor",
+            eink = false,
+            insets = ReactorV2Command.Configure.Insets(top = 24.0, right = 0.0, bottom = 16.0, left = 0.0),
+            capabilities = ReactorV2Command.Configure.Capabilities(
+                starred = false,
+                related = false,
+                glossary = false,
+                notes = true,
+                bookmarks = true,
+                playback = false,
+                userGlossary = false,
+                volumeKeys = true,
+            ),
+            locale = "en-GB",
+            controlsState = ReactorV2Command.Configure.ControlsState(swipeEnabled = false, volumeKeysEnabled = true),
+        )
+        assertJsonEquals(commandFixture("configure-controls-state.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `configure omits volumeKeys and controlsState keys when null`() {
+        val command = ReactorV2Command.Configure(
+            chrome = "reactor",
+            eink = false,
+            insets = ReactorV2Command.Configure.Insets(top = 0.0, right = 0.0, bottom = 0.0, left = 0.0),
+            capabilities = ReactorV2Command.Configure.Capabilities(
+                starred = false,
+                related = false,
+                glossary = false,
+                notes = false,
+                bookmarks = false,
+                playback = false,
+                userGlossary = false,
+            ),
+            locale = "en-GB",
+        )
+        val encoded = json.parseToJsonElement(ReactorV2.encode(command)).jsonObject
+        assertFalse((encoded["capabilities"] as JsonObject).containsKey("volumeKeys"))
+        assertFalse(encoded.containsKey("controlsState"))
     }
 
     @Test

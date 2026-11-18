@@ -328,7 +328,7 @@ fun ReaderScreen(
         }
     }
 
-    LaunchedEffect(lockedCapabilities, topInsetCss, bottomInsetCss, leftInsetCss, rightInsetCss, eink, locale) {
+    LaunchedEffect(lockedCapabilities, topInsetCss, bottomInsetCss, leftInsetCss, rightInsetCss, eink, locale, ui.controlsSettings) {
         val capabilities = lockedCapabilities ?: return@LaunchedEffect
         controller.sendReactorCommand(
             ReactorV2Command.Configure(
@@ -341,6 +341,13 @@ fun ReaderScreen(
                 // below) already drives the frozen v1 narrationHighlight/narrationUnhighlight
                 // commands, so the shell must never run its own follow/prepare too.
                 narrationFollow = "host",
+                // BO-53 #9: the Controls tab's current values, from the same ui.controlsSettings
+                // the existing setSwipeEnabled/setVolumeKeysEnabled LaunchedEffects below apply -
+                // this is not frozen like capabilities, so it resends whenever the setting changes.
+                controlsState = ReactorV2Command.Configure.ControlsState(
+                    swipeEnabled = ui.controlsSettings.swipeEnabled,
+                    volumeKeysEnabled = ui.controlsSettings.volumeKeysTurnPages,
+                ),
             ),
         )
     }

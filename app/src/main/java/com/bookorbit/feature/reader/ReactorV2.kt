@@ -73,6 +73,10 @@ sealed interface ReactorV2Intent {
         val sort: String?,
         val query: String?,
     ) : ReactorV2Intent
+
+    /** BO-53 #9: asks the host to persist the settings sheet's Controls tab swipe/volume-keys
+     * toggles. Full current value set, not a delta - same shape as [SettingsChange]. */
+    data class ControlsChange(val swipeEnabled: Boolean, val volumeKeysEnabled: Boolean) : ReactorV2Intent
 }
 
 /** A host -> Reactor `configure`/`set*` command, per the README's "Host -> Reactor" section. */
@@ -90,6 +94,11 @@ sealed interface ReactorV2Command {
          * `narrationUnhighlight` commands, so the shell must never run its own follow/prepare
          * too or the two can disagree about which textHref is current. */
         val narrationFollow: String? = null,
+        /** BO-53 #9: the Controls tab's current swipe/volume-keys values, pushed so the sheet
+         * mirrors this app's own [ReaderControlsSettings] instead of its old hardcoded
+         * defaults. Not frozen like [capabilities] - resent on every later `configure` (e.g.
+         * alongside an insets change) with the latest value. */
+        val controlsState: ControlsState? = null,
     ) : ReactorV2Command {
         data class Insets(val top: Double, val right: Double, val bottom: Double, val left: Double)
         data class Capabilities(
@@ -100,7 +109,11 @@ sealed interface ReactorV2Command {
             val bookmarks: Boolean,
             val playback: Boolean,
             val userGlossary: Boolean,
+            /** BO-53 #9: shows the settings sheet's volume-keys row. Omitted from the wire JSON
+             * when null, same back-compat-defaulting pattern as every other optional v2 field. */
+            val volumeKeys: Boolean? = null,
         )
+        data class ControlsState(val swipeEnabled: Boolean, val volumeKeysEnabled: Boolean)
     }
 
     data class SetBookmarks(val items: List<Item>) : ReactorV2Command {
@@ -204,6 +217,10 @@ object ReactorV2 {
                 sort = obj["sort"]?.jsonPrimitive?.contentOrNull,
                 query = obj["query"]?.jsonPrimitive?.contentOrNull,
             )
+            "controlsChange" -> ReactorV2Intent.ControlsChange(
+                swipeEnabled = obj["swipeEnabled"]!!.jsonPrimitive.booleanOrNull!!,
+                volumeKeysEnabled = obj["volumeKeysEnabled"]!!.jsonPrimitive.booleanOrNull!!,
+            )
             else -> null
         }
     }.getOrNull()
@@ -229,6 +246,7 @@ object ReactorV2 {
                 put("bookmarks", command.capabilities.bookmarks)
                 put("playback", command.capabilities.playback)
                 put("userGlossary", command.capabilities.userGlossary)
+                command.capabilities.volumeKeys?.let { put("volumeKeys", it) }
             }
             put("locale", command.locale)
             // BO-53 #3 review fix: `put("narrationFollow", null)` writes a JSON `null`, which
@@ -236,6 +254,12 @@ object ReactorV2 {
             // "host"/"shell", never a literal null) - omit the key entirely when unset instead,
             // same as every other optional field here.
             command.narrationFollow?.let { put("narrationFollow", it) }
+            command.controlsState?.let { state ->
+                putJsonObject("controlsState") {
+                    put("swipeEnabled", state.swipeEnabled)
+                    put("volumeKeysEnabled", state.volumeKeysEnabled)
+                }
+            }
         }
         is ReactorV2Command.SetBookmarks -> buildJsonObject {
             put("type", "setBookmarks")

@@ -929,6 +929,15 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
+    /** BO-53 #9: routes the `controlsChange` intent through the exact same setter the native
+     * [ReaderSettingsSheet] Controls tab uses - one owner for [ReaderControlsSettings] writes
+     * regardless of which UI changed it. */
+    private fun reactorControlsActions(): ReactorControlsActions = object : ReactorControlsActions {
+        override suspend fun change(swipeEnabled: Boolean, volumeKeysEnabled: Boolean) {
+            updateControlsSettings(_ui.value.controlsSettings.copy(swipeEnabled = swipeEnabled, volumeKeysTurnPages = volumeKeysEnabled))
+        }
+    }
+
     private fun reactorPlaybackActions(onOpenSleepTimer: () -> Unit): ReactorPlaybackActions = object : ReactorPlaybackActions {
         // BO-53 #1: play from Reactor must start narration the same way the Headphones button
         // does (toggleNarration -> NarrationPrepare -> loadNarrationQueue -> watchNarrationPosition)
@@ -992,6 +1001,7 @@ class ReaderViewModel @Inject constructor(
         settings = reactorSettingsActions(),
         playback = reactorPlaybackActions(onOpenSleepTimer),
         notes = reactorNotesSource(),
+        controls = reactorControlsActions(),
         onBack = onBack,
         onClose = onClose,
         sendCommand = sendCommand,

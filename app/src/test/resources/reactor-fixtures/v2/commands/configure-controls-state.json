@@ -1,0 +1,18 @@
+{
+  "type": "configure",
+  "chrome": "reactor",
+  "eink": false,
+  "insets": { "top": 24, "right": 0, "bottom": 16, "left": 0 },
+  "capabilities": {
+    "starred": false,
+    "related": false,
+    "glossary": false,
+    "notes": true,
+    "bookmarks": true,
+    "playback": false,
+    "userGlossary": false,
+    "volumeKeys": true
+  },
+  "locale": "en-GB",
+  "controlsState": { "swipeEnabled": false, "volumeKeysEnabled": true }
+}
