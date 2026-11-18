@@ -49,11 +49,13 @@ private class FakePlaybackActions : ReactorPlaybackActions {
     var stopped = false
     var seekedTo: Double? = null
     var rate: Double? = null
+    var sleepTimerOpened = false
     override fun play() { played = true }
     override fun pause() { paused = true }
     override fun stop() { stopped = true }
     override fun seek(positionSec: Double) { seekedTo = positionSec }
     override fun setRate(rate: Double) { this.rate = rate }
+    override fun openSleepTimer() { sleepTimerOpened = true }
 }
 
 private class FakeNotesSource(private val all: List<ReactorV2Command.SetNotes.Item>) : ReactorNotesSource {
@@ -155,6 +157,12 @@ class ReactorChromeControllerTest {
         controller().handleIntent(ReactorV2Intent.Playback("stop", null, null))
         assertTrue(playback.stopped)
         assertFalse(playback.paused)
+    }
+
+    @Test
+    fun `playback sleepTimer maps to openSleepTimer`() = runTest {
+        controller().handleIntent(ReactorV2Intent.Playback("sleepTimer", null, null))
+        assertTrue(playback.sleepTimerOpened)
     }
 
     @Test
@@ -265,6 +273,15 @@ class ReactorChromeControllerTest {
         c.pushPlaybackState(playing = true, positionSec = 1.01, rate = 1.5, nowMs = 1_010L)
         assertEquals(2, sentCommands.size)
         assertEquals(1.5, (sentCommands.last() as ReactorV2Command.SetPlaybackState).rate, 0.0)
+    }
+
+    @Test
+    fun `pushPlaybackState always delivers a sleepTimerActive change, bypassing the throttle`() = runTest {
+        val c = controller()
+        c.pushPlaybackState(playing = true, positionSec = 1.0, rate = 1.0, nowMs = 1_000L)
+        c.pushPlaybackState(playing = true, positionSec = 1.01, rate = 1.0, sleepTimerActive = true, nowMs = 1_010L)
+        assertEquals(2, sentCommands.size)
+        assertEquals(true, (sentCommands.last() as ReactorV2Command.SetPlaybackState).sleepTimerActive)
     }
 
     // --- capability selection ---

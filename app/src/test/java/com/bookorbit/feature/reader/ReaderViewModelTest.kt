@@ -316,7 +316,7 @@ class ReaderViewModelTest {
     @Test
     fun `reactor annotationCreate uses the intent's own style over the kind default`() = runTest {
         val model = vm()
-        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, onOpenSleepTimer = {}, sendCommand = {})
         controller.handleIntent(
             ReactorV2Intent.AnnotationCreate("epubcfi(/6/2)", "underline", "#fff", "squiggly", "txt", null),
         )
@@ -328,14 +328,14 @@ class ReaderViewModelTest {
     @Test
     fun `reactor annotationCreate without a style falls back to the kind's default style`() = runTest {
         val model = vm()
-        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, onOpenSleepTimer = {}, sendCommand = {})
         controller.handleIntent(ReactorV2Intent.AnnotationCreate("epubcfi(/6/2)", "underline", null, null, "txt", null))
         coVerify {
             annotationRepo.create(bookId = 1, fileId = 5, cfi = "epubcfi(/6/2)", text = "txt", color = any(), note = null, chapterTitle = any(), style = "underline")
         }
 
         val model2 = vm()
-        val controller2 = model2.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+        val controller2 = model2.buildReactorChromeController(onBack = {}, onClose = {}, onOpenSleepTimer = {}, sendCommand = {})
         controller2.handleIntent(ReactorV2Intent.AnnotationCreate("epubcfi(/6/2)", "highlight", null, null, "txt", null))
         coVerify {
             annotationRepo.create(bookId = 1, fileId = 5, cfi = "epubcfi(/6/2)", text = "txt", color = any(), note = null, chapterTitle = any(), style = "highlight")
@@ -345,7 +345,7 @@ class ReaderViewModelTest {
     @Test
     fun `reactor annotationUpdate with a style calls setStyle`() = runTest {
         val model = vm()
-        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, onOpenSleepTimer = {}, sendCommand = {})
         controller.handleIntent(ReactorV2Intent.AnnotationUpdate("42", null, "strikethrough", null))
         coVerify { annotationRepo.setStyle(1, 42, "strikethrough") }
     }
@@ -362,7 +362,7 @@ class ReaderViewModelTest {
         )
         val model = vm()
         var sent: ReactorV2Command? = null
-        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = { sent = it })
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, onOpenSleepTimer = {}, sendCommand = { sent = it })
         controller.handleIntent(ReactorV2Intent.NotesPageRequest(offset = 0, limit = 10, filter = null, sort = null, query = null))
 
         val notes = sent as ReactorV2Command.SetNotes
@@ -380,7 +380,7 @@ class ReaderViewModelTest {
         val commands = mutableListOf<ReaderViewModel.ReaderCommand>()
         val collectJob = launch { model.commands.toList(commands) }
         runCurrent()
-        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, onOpenSleepTimer = {}, sendCommand = {})
 
         controller.handleIntent(ReactorV2Intent.Playback("play", null, null))
         advanceUntilIdle()
@@ -400,7 +400,7 @@ class ReaderViewModelTest {
         val uiFlow = uiField.get(model) as kotlinx.coroutines.flow.MutableStateFlow<ReaderViewModel.UiState>
         uiFlow.value = uiFlow.value.copy(narrationOn = true)
         every { playerManager.state } returns MutableStateFlow(PlayerManager.UiState(narrationActive = true, isPlaying = false))
-        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, onOpenSleepTimer = {}, sendCommand = {})
 
         controller.handleIntent(ReactorV2Intent.Playback("play", null, null))
 
@@ -416,7 +416,7 @@ class ReaderViewModelTest {
         val uiFlow = uiField.get(model) as kotlinx.coroutines.flow.MutableStateFlow<ReaderViewModel.UiState>
         uiFlow.value = uiFlow.value.copy(narrationOn = true)
         every { playerManager.state } returns MutableStateFlow(PlayerManager.UiState(narrationActive = true, isPlaying = true))
-        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, onOpenSleepTimer = {}, sendCommand = {})
 
         controller.handleIntent(ReactorV2Intent.Playback("pause", null, null))
 
@@ -432,12 +432,23 @@ class ReaderViewModelTest {
         val uiFlow = uiField.get(model) as kotlinx.coroutines.flow.MutableStateFlow<ReaderViewModel.UiState>
         uiFlow.value = uiFlow.value.copy(narrationOn = true)
         every { playerManager.state } returns MutableStateFlow(PlayerManager.UiState(narrationActive = true, isPlaying = true))
-        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, sendCommand = {})
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, onOpenSleepTimer = {}, sendCommand = {})
 
         controller.handleIntent(ReactorV2Intent.Playback("stop", null, null))
 
         coVerify(exactly = 1) { playerManager.stopNarration() }
         coVerify(exactly = 0) { playerManager.togglePlay() }
         assertEquals(false, model.ui.value.narrationOn)
+    }
+
+    @Test
+    fun `reactor sleepTimer calls the onOpenSleepTimer callback, not a timer of its own`() = runTest {
+        val model = vm()
+        var opened = false
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, onOpenSleepTimer = { opened = true }, sendCommand = {})
+
+        controller.handleIntent(ReactorV2Intent.Playback("sleepTimer", null, null))
+
+        assertEquals(true, opened)
     }
 }

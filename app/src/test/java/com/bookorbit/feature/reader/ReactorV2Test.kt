@@ -130,6 +130,14 @@ class ReactorV2Test {
     }
 
     @Test
+    fun `playback intent parses sleepTimer action`() {
+        assertEquals(
+            ReactorV2Intent.Playback(action = "sleepTimer", positionSec = null, rate = null),
+            ReactorV2.parseIntent(intentFixture("playback-sleepTimer.json")),
+        )
+    }
+
+    @Test
     fun `close intent parses`() {
         assertEquals(ReactorV2Intent.Close, ReactorV2.parseIntent(intentFixture("close.json")))
     }
@@ -316,6 +324,19 @@ class ReactorV2Test {
     fun `setPlaybackState command serialises active false to match the fixture`() {
         val command = ReactorV2Command.SetPlaybackState(playing = false, positionSec = 0.0, rate = 1.0, active = false)
         assertJsonEquals(commandFixture("setPlaybackState-narration-off.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `setPlaybackState command serialises sleepTimerActive to match the fixture`() {
+        val command = ReactorV2Command.SetPlaybackState(playing = true, positionSec = 10.0, rate = 1.0, sleepTimerActive = true)
+        assertJsonEquals(commandFixture("setPlaybackState-sleep-timer-active.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `setPlaybackState omits the sleepTimerActive key when null`() {
+        val command = ReactorV2Command.SetPlaybackState(playing = true, positionSec = 184.5, rate = 1.25, sleepTimerActive = null)
+        val encoded = json.parseToJsonElement(ReactorV2.encode(command)).jsonObject
+        assertFalse(encoded.containsKey("sleepTimerActive"))
     }
 
     @Test

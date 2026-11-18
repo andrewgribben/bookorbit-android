@@ -113,6 +113,7 @@ fun ReaderScreen(
         vm.buildReactorChromeController(
             onBack = onBack,
             onClose = onBack,
+            onOpenSleepTimer = { showSleepTimerSheet = true },
             sendCommand = { controller.sendReactorCommand(it) },
         )
     }
@@ -385,6 +386,7 @@ fun ReaderScreen(
                 positionSec = s.narrationPositionMs / 1000.0,
                 rate = s.speed.toDouble(),
                 active = true,
+                sleepTimerActive = s.sleepTimerRemainingSec != null,
             )
         } else if (ui.narrationLoading) {
             // BO-53 #3 review fix: narration is extracting/preparing (the user already tapped
@@ -397,6 +399,7 @@ fun ReaderScreen(
                 positionSec = 0.0,
                 rate = s.speed.toDouble(),
                 active = true,
+                sleepTimerActive = s.sleepTimerRemainingSec != null,
             )
         } else if (wasNarrationActive) {
             wasNarrationActive = false

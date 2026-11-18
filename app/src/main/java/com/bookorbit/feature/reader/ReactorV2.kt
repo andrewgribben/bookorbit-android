@@ -136,6 +136,10 @@ sealed interface ReactorV2Command {
          * explicitly `false` on the one-off push when narration stops, see [ReaderScreen]'s
          * playback-state `LaunchedEffect`. */
         val active: Boolean? = null,
+        /** BO-53 #5: whether this host currently has a sleep timer running. Optional, defaults
+         * to `false` on the Reactor side when the key is absent (protocol v2 README's "Sleep
+         * timer"). Omitted from the wire JSON when null, same pattern as [active]. */
+        val sleepTimerActive: Boolean? = null,
     ) : ReactorV2Command
 
     data class SetSettingsScope(val scope: String, val settings: ReactorSettings) : ReactorV2Command
@@ -278,6 +282,7 @@ object ReactorV2 {
             put("positionSec", command.positionSec)
             put("rate", command.rate)
             command.active?.let { put("active", it) }
+            command.sleepTimerActive?.let { put("sleepTimerActive", it) }
         }
         ReactorV2Command.Dismiss -> buildJsonObject { put("type", "dismiss") }
         is ReactorV2Command.SetSettingsScope -> buildJsonObject {

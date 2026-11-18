@@ -36,6 +36,7 @@ class ReactorChromeController(
     private var lastPushedPlaying: Boolean? = null
     private var lastPushedRate: Double? = null
     private var lastPushedActive: Boolean? = null
+    private var lastPushedSleepTimerActive: Boolean? = null
 
     /** Applies one parsed intent. Unknown intents never reach here - [ReactorV2.parseIntent]
      * already returns null for them. */
@@ -66,6 +67,9 @@ class ReactorChromeController(
             "stop" -> playback.stop()
             "seek" -> intent.positionSec?.let(playback::seek)
             "rateChange" -> intent.rate?.let(playback::setRate)
+            // BO-53 #5: asks the host to open its own sleep timer UI; Reactor never runs a
+            // timer or a picker itself, see protocol v2 README's "Sleep timer".
+            "sleepTimer" -> playback.openSleepTimer()
         }
     }
 
@@ -86,15 +90,17 @@ class ReactorChromeController(
         positionSec: Double,
         rate: Double,
         active: Boolean? = null,
+        sleepTimerActive: Boolean? = null,
         nowMs: Long = System.currentTimeMillis(),
     ) {
-        val changed = playing != lastPushedPlaying || rate != lastPushedRate || active != lastPushedActive
+        val changed = playing != lastPushedPlaying || rate != lastPushedRate || active != lastPushedActive || sleepTimerActive != lastPushedSleepTimerActive
         if (!changed && nowMs - lastPlaybackPushAtMs < PLAYBACK_PUSH_THROTTLE_MS) return
         lastPlaybackPushAtMs = nowMs
         lastPushedPlaying = playing
         lastPushedRate = rate
         lastPushedActive = active
-        sendCommand(ReactorV2Command.SetPlaybackState(playing, positionSec, rate, active))
+        lastPushedSleepTimerActive = sleepTimerActive
+        sendCommand(ReactorV2Command.SetPlaybackState(playing, positionSec, rate, active, sleepTimerActive))
     }
 
     companion object {
@@ -125,6 +131,10 @@ interface ReactorPlaybackActions {
     fun stop()
     fun seek(positionSec: Double)
     fun setRate(rate: Double)
+    /** BO-53 #5: opens the app's existing sleep timer sheet (the same one the standalone
+     * audiobook player and the legacy reader's own playback bar use). Reactor never runs a
+     * timer or shows a picker itself; this only asks the host to. */
+    fun openSleepTimer()
 }
 
 interface ReactorNotesSource {

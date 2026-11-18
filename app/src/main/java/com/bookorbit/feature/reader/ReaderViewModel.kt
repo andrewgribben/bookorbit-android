@@ -927,7 +927,7 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    private fun reactorPlaybackActions(): ReactorPlaybackActions = object : ReactorPlaybackActions {
+    private fun reactorPlaybackActions(onOpenSleepTimer: () -> Unit): ReactorPlaybackActions = object : ReactorPlaybackActions {
         // BO-53 #1: play from Reactor must start narration the same way the Headphones button
         // does (toggleNarration -> NarrationPrepare -> loadNarrationQueue -> watchNarrationPosition)
         // when it isn't already on - playerManager.togglePlay() alone only resumes an already
@@ -947,6 +947,7 @@ class ReaderViewModel @Inject constructor(
         }
         override fun seek(positionSec: Double) { playerManager.seekToAbsolute(positionSec) }
         override fun setRate(rate: Double) { playerManager.setSpeed(rate.toFloat()) }
+        override fun openSleepTimer() { onOpenSleepTimer() }
     }
 
     /** Windowed, never "all of them" (scale conventions / WORKTREE_BRIEF.md rule 5): only the
@@ -981,12 +982,13 @@ class ReaderViewModel @Inject constructor(
     fun buildReactorChromeController(
         onBack: () -> Unit,
         onClose: () -> Unit,
+        onOpenSleepTimer: () -> Unit,
         sendCommand: suspend (ReactorV2Command) -> Unit,
     ): ReactorChromeController = ReactorChromeController(
         annotations = reactorAnnotationActions(),
         bookmarks = reactorBookmarkActions(),
         settings = reactorSettingsActions(),
-        playback = reactorPlaybackActions(),
+        playback = reactorPlaybackActions(onOpenSleepTimer),
         notes = reactorNotesSource(),
         onBack = onBack,
         onClose = onClose,
