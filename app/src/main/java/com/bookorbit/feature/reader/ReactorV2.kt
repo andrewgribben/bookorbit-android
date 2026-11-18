@@ -136,6 +136,14 @@ sealed interface ReactorV2Command {
          * ./README.md "Scope follow switch"). Optional and not frozen like [capabilities] -
          * absent means the switch row never renders under Reactor chrome. */
         val scopeFollowSwitch: ScopeFollowSwitch? = null,
+        /** BO-53 dark mode report: the app's own resolved dark/light decision (the same value
+         * [com.bookorbit.ui.theme.BookOrbitTheme] renders with via `LocalIsAppDarkTheme`,
+         * respecting [com.bookorbit.ui.theme.ThemeMode] - never the raw system dark-mode flag,
+         * since a user can force light/dark regardless of the system setting). `null`/omitted
+         * keeps Reactor's pre-existing chrome-theme behaviour unchanged (protocol v2 README's
+         * "Host colour scheme / dark mode"). Not frozen like [capabilities] - resent on every
+         * later `configure` whenever this app's own resolved dark-mode state changes. */
+        val colorScheme: String? = null,
     ) : ReactorV2Command {
         data class Insets(val top: Double, val right: Double, val bottom: Double, val left: Double)
         data class Capabilities(
@@ -373,6 +381,7 @@ object ReactorV2 {
                     put("bannerText", switch.bannerText)
                 }
             }
+            command.colorScheme?.let { put("colorScheme", it) }
         }
         is ReactorV2Command.SetBookmarks -> buildJsonObject {
             put("type", "setBookmarks")

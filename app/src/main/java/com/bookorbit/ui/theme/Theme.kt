@@ -9,6 +9,8 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
@@ -75,6 +77,15 @@ private val LightColors = lightColorScheme(
     error = ErrorRed,
 )
 
+// BO-53 (dark mode report): the resolved dark/light decision BookOrbitTheme actually renders
+// with, i.e. respecting ThemeMode (LIGHT/DARK/SYSTEM), not the raw isSystemInDarkTheme() OS
+// value. Composables nested under BookOrbitTheme that need to tell a *different* renderer
+// (e.g. the Reactor WebView, which has its own Material-independent colour scheme) what app
+// dark mode actually is read this instead of re-deriving it, since isSystemInDarkTheme() inside
+// a nested composable would give the raw OS state, not the resolved one, when ThemeMode
+// overrides it.
+val LocalIsAppDarkTheme = compositionLocalOf { false }
+
 @Composable
 fun BookOrbitTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -94,12 +105,15 @@ fun BookOrbitTheme(
         colorScheme = colorScheme,
         typography = BookOrbitTypography,
     ) {
-        // Surface establishes the app background and the default LocalContentColor (onBackground),
-        // so bare Text() renders in the foreground color instead of the Material default black.
-        Surface(
-            color = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground,
-            content = content,
-        )
+        CompositionLocalProvider(LocalIsAppDarkTheme provides darkTheme) {
+            // Surface establishes the app background and the default LocalContentColor
+            // (onBackground), so bare Text() renders in the foreground color instead of the
+            // Material default black.
+            Surface(
+                color = MaterialTheme.colorScheme.background,
+                contentColor = MaterialTheme.colorScheme.onBackground,
+                content = content,
+            )
+        }
     }
 }

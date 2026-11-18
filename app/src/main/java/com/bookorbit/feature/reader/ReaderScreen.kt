@@ -1,6 +1,7 @@
 package com.bookorbit.feature.reader
 
 import com.bookorbit.ui.asString
+import com.bookorbit.ui.theme.LocalIsAppDarkTheme
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.res.stringResource
 import com.bookorbit.R
@@ -116,6 +117,11 @@ fun ReaderScreen(
     val context = LocalContext.current
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
+
+    // BO-53 dark mode report: the app's own resolved dark/light decision, same value
+    // BookOrbitTheme renders with (respects ThemeMode, not the raw system flag) - see
+    // LocalIsAppDarkTheme's doc comment.
+    val isAppDarkTheme = LocalIsAppDarkTheme.current
 
     // Reactor protocol v2 chrome (A3): when the flag is on, the WebView shell drives the reader
     // chrome instead of the Compose bars/sheets below. Built once per screen instance; onBack and
@@ -388,7 +394,7 @@ fun ReaderScreen(
         )
     }
 
-    LaunchedEffect(lockedCapabilities, topInsetCss, bottomInsetCss, leftInsetCss, rightInsetCss, eink, locale, ui.controlsSettings, settingsActions) {
+    LaunchedEffect(lockedCapabilities, topInsetCss, bottomInsetCss, leftInsetCss, rightInsetCss, eink, locale, ui.controlsSettings, settingsActions, isAppDarkTheme) {
         val capabilities = lockedCapabilities ?: return@LaunchedEffect
         controller.sendReactorCommand(
             ReactorV2Command.Configure(
@@ -421,6 +427,12 @@ fun ReaderScreen(
                     label = context.getString(R.string.rs_use_global_settings),
                     bannerText = context.getString(R.string.rs_use_global_banner),
                 ),
+                // BO-53 dark mode report: this app's own resolved dark/light decision (not the
+                // raw system flag - LocalIsAppDarkTheme already respects ThemeMode), so the
+                // shell's chrome goes dark whenever this app's own UI does, resent whenever it
+                // changes (e.g. the system setting flips, or the user picks a different
+                // ThemeMode) via the isAppDarkTheme key above.
+                colorScheme = if (isAppDarkTheme) "dark" else "light",
             ),
         )
     }

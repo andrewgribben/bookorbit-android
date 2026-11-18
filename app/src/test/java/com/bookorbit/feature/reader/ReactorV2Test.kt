@@ -453,6 +453,50 @@ class ReactorV2Test {
         assertJsonEquals(commandFixture("configure-scope-follow-switch.json"), ReactorV2.encode(command))
     }
 
+    // BO-53 dark mode report: the app's own resolved dark/light decision, resent on every later
+    // configure whenever it changes (see ReaderScreen.kt's isAppDarkTheme key).
+    @Test
+    fun `configure command serialises colorScheme to match the fixture`() {
+        val command = ReactorV2Command.Configure(
+            chrome = "reactor",
+            eink = false,
+            insets = ReactorV2Command.Configure.Insets(top = 24.0, right = 0.0, bottom = 16.0, left = 0.0),
+            capabilities = ReactorV2Command.Configure.Capabilities(
+                starred = false,
+                related = false,
+                glossary = false,
+                notes = true,
+                bookmarks = true,
+                playback = false,
+                userGlossary = false,
+            ),
+            locale = "en-GB",
+            colorScheme = "dark",
+        )
+        assertJsonEquals(commandFixture("configure-color-scheme.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `configure omits the colorScheme key when null`() {
+        val command = ReactorV2Command.Configure(
+            chrome = "reactor",
+            eink = false,
+            insets = ReactorV2Command.Configure.Insets(top = 0.0, right = 0.0, bottom = 0.0, left = 0.0),
+            capabilities = ReactorV2Command.Configure.Capabilities(
+                starred = false,
+                related = false,
+                glossary = false,
+                notes = false,
+                bookmarks = false,
+                playback = false,
+                userGlossary = false,
+            ),
+            locale = "en-GB",
+        )
+        val encoded = json.parseToJsonElement(ReactorV2.encode(command)).jsonObject
+        assertFalse(encoded.containsKey("colorScheme"))
+    }
+
     @Test
     fun `configure omits the scopeFollowSwitch key when null`() {
         val command = ReactorV2Command.Configure(
