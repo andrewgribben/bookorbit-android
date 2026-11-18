@@ -74,9 +74,14 @@ sealed interface ReactorV2Intent {
         val query: String?,
     ) : ReactorV2Intent
 
-    /** BO-53 #9: asks the host to persist the settings sheet's Controls tab swipe/volume-keys
-     * toggles. Full current value set, not a delta - same shape as [SettingsChange]. */
-    data class ControlsChange(val swipeEnabled: Boolean, val volumeKeysEnabled: Boolean) : ReactorV2Intent
+    /** BO-53 #10: asks the host to persist the Controls tab's swipe/volume-keys toggles, plus
+     * the newly-selected tap-zone preset id when the host supplied a preset list in the first
+     * place. Full current value set, not a delta - same shape as [SettingsChange]. */
+    data class ControlsChange(
+        val swipeEnabled: Boolean,
+        val volumeKeysEnabled: Boolean,
+        val tapZonePreset: String? = null,
+    ) : ReactorV2Intent
 }
 
 /** A host -> Reactor `configure`/`set*` command, per the README's "Host -> Reactor" section. */
@@ -94,6 +99,13 @@ sealed interface ReactorV2Command {
          * `narrationUnhighlight` commands, so the shell must never run its own follow/prepare
          * too or the two can disagree about which textHref is current. */
         val narrationFollow: String? = null,
+        /** BO-53 #10: `null`/omitted defaults to `'shell'` on the Reactor side (protocol v2
+         * README's "Tap zone ownership"). This app always sends `"host"`: a tap already arrives
+         * here as the existing v1 `ReaderEvent.Tap{x,y}` (see [ReaderScreen]'s `onTap`), and this
+         * app's own saved [ReaderControlsSettings] preset decides what it does, exactly as it
+         * already did before Reactor chrome existed - the shell must never also resolve the same
+         * tap with its own fixed zone split or every tap would turn two pages. */
+        val tapZonesOwner: String? = null,
         /** BO-53 #9: the Controls tab's current swipe/volume-keys values, pushed so the sheet
          * mirrors this app's own [ReaderControlsSettings] instead of its old hardcoded
          * defaults. Not frozen like [capabilities] - resent on every later `configure` (e.g.
@@ -113,7 +125,16 @@ sealed interface ReactorV2Command {
              * when null, same back-compat-defaulting pattern as every other optional v2 field. */
             val volumeKeys: Boolean? = null,
         )
-        data class ControlsState(val swipeEnabled: Boolean, val volumeKeysEnabled: Boolean)
+        /** BO-53 #10: [tapZonePreset]/[tapZonePresets] let the Controls tab's tap-zone pills
+         * reflect/change this app's own saved [ZoneLayoutPreset] instead of staying the old
+         * inert Standard/Wide placeholder - see [ReactorCapabilities.tapZonePresets]. */
+        data class ControlsState(
+            val swipeEnabled: Boolean,
+            val volumeKeysEnabled: Boolean,
+            val tapZonePreset: String? = null,
+            val tapZonePresets: List<TapZonePresetOption>? = null,
+        )
+        data class TapZonePresetOption(val id: String, val label: String)
     }
 
     data class SetBookmarks(val items: List<Item>) : ReactorV2Command {
@@ -167,6 +188,11 @@ sealed interface ReactorV2Command {
 
     /** Closes Reactor's top-most open layer; when nothing is open Reactor answers with `back`. */
     data object Dismiss : ReactorV2Command
+
+    /** BO-53 #10: toggles the shell's own bars - the host's way to drive the shell's MENU zone
+     * action when it has declared [Configure.tapZonesOwner] `"host"`, since the shell (not the
+     * host) still owns its own bars visibility under Reactor chrome. No fields. */
+    data object ToggleBars : ReactorV2Command
 }
 
 object ReactorV2 {
@@ -220,6 +246,7 @@ object ReactorV2 {
             "controlsChange" -> ReactorV2Intent.ControlsChange(
                 swipeEnabled = obj["swipeEnabled"]!!.jsonPrimitive.booleanOrNull!!,
                 volumeKeysEnabled = obj["volumeKeysEnabled"]!!.jsonPrimitive.booleanOrNull!!,
+                tapZonePreset = obj["tapZonePreset"]?.jsonPrimitive?.contentOrNull,
             )
             else -> null
         }
@@ -254,10 +281,22 @@ object ReactorV2 {
             // "host"/"shell", never a literal null) - omit the key entirely when unset instead,
             // same as every other optional field here.
             command.narrationFollow?.let { put("narrationFollow", it) }
+            command.tapZonesOwner?.let { put("tapZonesOwner", it) }
             command.controlsState?.let { state ->
                 putJsonObject("controlsState") {
                     put("swipeEnabled", state.swipeEnabled)
                     put("volumeKeysEnabled", state.volumeKeysEnabled)
+                    state.tapZonePreset?.let { put("tapZonePreset", it) }
+                    state.tapZonePresets?.let { presets ->
+                        putJsonArray("tapZonePresets") {
+                            for (preset in presets) {
+                                addJsonObject {
+                                    put("id", preset.id)
+                                    put("label", preset.label)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -319,6 +358,7 @@ object ReactorV2 {
             command.skipForwardSec?.let { put("skipForwardSec", it) }
         }
         ReactorV2Command.Dismiss -> buildJsonObject { put("type", "dismiss") }
+        ReactorV2Command.ToggleBars -> buildJsonObject { put("type", "toggleBars") }
         is ReactorV2Command.SetSettingsScope -> buildJsonObject {
             put("type", "setSettingsScope")
             put("scope", command.scope)

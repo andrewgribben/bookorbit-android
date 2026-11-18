@@ -1,0 +1,29 @@
+{
+  "type": "configure",
+  "chrome": "reactor",
+  "eink": false,
+  "insets": { "top": 24, "right": 0, "bottom": 16, "left": 0 },
+  "capabilities": {
+    "starred": false,
+    "related": false,
+    "glossary": false,
+    "notes": true,
+    "bookmarks": true,
+    "playback": false,
+    "userGlossary": false,
+    "volumeKeys": true
+  },
+  "locale": "en-GB",
+  "tapZonesOwner": "host",
+  "controlsState": {
+    "swipeEnabled": true,
+    "volumeKeysEnabled": false,
+    "tapZonePreset": "sides",
+    "tapZonePresets": [
+      { "id": "sides", "label": "Sides" },
+      { "id": "sidesAndCorners", "label": "Sides and corners" },
+      { "id": "edges", "label": "Edges" },
+      { "id": "centreOnly", "label": "Centre only" }
+    ]
+  }
+}

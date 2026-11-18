@@ -376,6 +376,26 @@ class ReaderViewModelTest {
         coVerify { controlsStore.save(match { it.swipeEnabled == false && it.volumeKeysTurnPages == true }) }
     }
 
+    // BO-53 #10: the Controls tab's tap-zone pills send the enum name of a ZoneLayoutPreset -
+    // this applies it through the same setter, so the native tap-handling path picks it up too.
+    @Test
+    fun `reactor controlsChange with a tapZonePreset updates the saved ZoneLayoutPreset`() = runTest {
+        val model = vm()
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, onOpenSleepTimer = {}, sendCommand = {})
+        controller.handleIntent(ReactorV2Intent.ControlsChange(swipeEnabled = true, volumeKeysEnabled = false, tapZonePreset = "EDGES"))
+        assertEquals(ZoneLayoutPreset.EDGES, model.ui.value.controlsSettings.layoutPreset)
+    }
+
+    // BO-53 #10: an unrecognised id must never silently wipe out the user's saved preset.
+    @Test
+    fun `reactor controlsChange with an unrecognised tapZonePreset leaves the layout preset unchanged`() = runTest {
+        val model = vm()
+        val controller = model.buildReactorChromeController(onBack = {}, onClose = {}, onOpenSleepTimer = {}, sendCommand = {})
+        val before = model.ui.value.controlsSettings.layoutPreset
+        controller.handleIntent(ReactorV2Intent.ControlsChange(swipeEnabled = true, volumeKeysEnabled = false, tapZonePreset = "not-a-real-preset"))
+        assertEquals(before, model.ui.value.controlsSettings.layoutPreset)
+    }
+
     @Test
     fun `reactor notesPageRequest maps each annotation's style back to a coarse kind`() = runTest {
         coEvery { annotationRepo.local(1) } returns listOf(

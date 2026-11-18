@@ -72,9 +72,11 @@ private class FakeNotesSource(private val all: List<ReactorV2Command.SetNotes.It
 private class FakeControlsActions : ReactorControlsActions {
     var lastSwipeEnabled: Boolean? = null
     var lastVolumeKeysEnabled: Boolean? = null
-    override suspend fun change(swipeEnabled: Boolean, volumeKeysEnabled: Boolean) {
+    var lastTapZonePreset: String? = null
+    override suspend fun change(swipeEnabled: Boolean, volumeKeysEnabled: Boolean, tapZonePreset: String?) {
         lastSwipeEnabled = swipeEnabled
         lastVolumeKeysEnabled = volumeKeysEnabled
+        lastTapZonePreset = tapZonePreset
     }
 }
 
@@ -144,6 +146,13 @@ class ReactorChromeControllerTest {
         controller().handleIntent(ReactorV2Intent.ControlsChange(swipeEnabled = false, volumeKeysEnabled = true))
         assertEquals(false, controls.lastSwipeEnabled)
         assertEquals(true, controls.lastVolumeKeysEnabled)
+        assertEquals(null, controls.lastTapZonePreset)
+    }
+
+    @Test
+    fun `controlsChange passes an optional tapZonePreset through to ReactorControlsActions`() = runTest {
+        controller().handleIntent(ReactorV2Intent.ControlsChange(swipeEnabled = true, volumeKeysEnabled = false, tapZonePreset = "EDGES"))
+        assertEquals("EDGES", controls.lastTapZonePreset)
     }
 
     @Test

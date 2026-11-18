@@ -143,16 +143,24 @@ fun ReaderScreen(
     // per-zone action, mirrored for RTL using the book's own page-progression direction) - the
     // same pure function the comic reader uses. Any tap while the highlight toolbar is open just
     // dismisses it, taking priority over the zone action.
+    // Under Reactor chrome this app declares `tapZonesOwner: "host"` (see the Configure command
+    // below) and resolves every tap itself too - Reactor's shell never runs its own fixed zone
+    // split once that field is set, so there is exactly one owner acting on a tap either way.
     val onTap = remember { mutableStateOf<(Double, Double) -> Unit>({ _, _ -> }) }
     onTap.value = { x, y ->
         if (ui.toolbar != null) {
             vm.dismissToolbar()
-        } else if (!useReactorChrome) {
-            // Reactor's shell resolves its own tap zones; acting here too would turn two pages.
+        } else {
             when (ui.controlsSettings.resolveTapAction(x.toFloat(), y.toFloat(), ui.isRtl)) {
                 TapAction.NEXT -> controller.next()
                 TapAction.PREVIOUS -> controller.prev()
-                TapAction.MENU -> chromeVisible = !chromeVisible
+                TapAction.MENU -> if (useReactorChrome) {
+                    // Reactor (not this app) owns its own bars under Reactor chrome - ask it to
+                    // toggle them instead of flipping a local chromeVisible nothing reads.
+                    controller.sendReactorCommand(ReactorV2Command.ToggleBars)
+                } else {
+                    chromeVisible = !chromeVisible
+                }
                 TapAction.NOTHING -> Unit
             }
         }
@@ -315,6 +323,20 @@ fun ReaderScreen(
     val eink = false
     val locale = remember { Locale.getDefault().toLanguageTag() }
 
+    // BO-53 #10: the Controls tab's tap-zone pills are labelled with this app's own preset
+    // names (same strings ReaderControlsTab.kt uses) rather than a hardcoded shell vocabulary.
+    val tapZonePresetOptions = remember {
+        listOf(
+            ReactorV2Command.Configure.TapZonePresetOption(ZoneLayoutPreset.SIDES.name, context.getString(R.string.rc_layout_sides)),
+            ReactorV2Command.Configure.TapZonePresetOption(
+                ZoneLayoutPreset.SIDES_AND_CORNERS.name,
+                context.getString(R.string.rc_layout_sides_and_corners),
+            ),
+            ReactorV2Command.Configure.TapZonePresetOption(ZoneLayoutPreset.EDGES.name, context.getString(R.string.rc_layout_edges)),
+            ReactorV2Command.Configure.TapZonePresetOption(ZoneLayoutPreset.CENTRE_ONLY.name, context.getString(R.string.rc_layout_centre_only)),
+        )
+    }
+
     // Per the v2 README, `configure.capabilities` is decided ONCE from the first `configure` a
     // host sends - a later `configure` can update eink/insets but Reactor keeps whatever
     // capabilities it saw the first time, however this one disagrees. So the first send must
@@ -342,12 +364,18 @@ fun ReaderScreen(
                 // below) already drives the frozen v1 narrationHighlight/narrationUnhighlight
                 // commands, so the shell must never run its own follow/prepare too.
                 narrationFollow = "host",
+                // BO-53 #10: this app's saved ReaderControlsSettings preset already decides
+                // every tap (resolveTapAction in onTap above) - the shell must not also run its
+                // own fixed zone split on the same v1 tap event once this is set.
+                tapZonesOwner = "host",
                 // BO-53 #9: the Controls tab's current values, from the same ui.controlsSettings
                 // the existing setSwipeEnabled/setVolumeKeysEnabled LaunchedEffects below apply -
                 // this is not frozen like capabilities, so it resends whenever the setting changes.
                 controlsState = ReactorV2Command.Configure.ControlsState(
                     swipeEnabled = ui.controlsSettings.swipeEnabled,
                     volumeKeysEnabled = ui.controlsSettings.volumeKeysTurnPages,
+                    tapZonePreset = ui.controlsSettings.layoutPreset.name,
+                    tapZonePresets = tapZonePresetOptions,
                 ),
             ),
         )
@@ -584,8 +612,12 @@ fun ReaderScreen(
             }
         }
 
-        // One-time coach overlay teaching the (invisible) paginated tap zones.
-        if (!useReactorChrome && !rendererFailed && paginated && ui.loaded && ui.showPagingHint) {
+        // One-time coach overlay teaching the (invisible) paginated tap zones. Shown under
+        // Reactor chrome too (BO-53 #10): the overlay's own fixed 30/40/30 split already only
+        // exactly matches the SIDES preset at the MEDIUM zone size - same caveat that already
+        // existed for the legacy reader with any other preset/size, not a new one introduced
+        // here - so this stays faithful to what the legacy reader already showed.
+        if (!rendererFailed && paginated && ui.loaded && ui.showPagingHint) {
             PagingHintOverlay(onDismiss = { vm.dismissPagingHint() })
         }
     }

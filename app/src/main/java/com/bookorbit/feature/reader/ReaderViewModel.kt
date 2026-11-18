@@ -929,12 +929,23 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    /** BO-53 #9: routes the `controlsChange` intent through the exact same setter the native
+    /** BO-53 #10: routes the `controlsChange` intent through the exact same setter the native
      * [ReaderSettingsSheet] Controls tab uses - one owner for [ReaderControlsSettings] writes
-     * regardless of which UI changed it. */
+     * regardless of which UI changed it. [tapZonePreset] is the enum name of a [ZoneLayoutPreset]
+     * (see the matching ids this app sends in `configure.controlsState.tapZonePresets`); null
+     * when the pills were never shown (no preset list was sent) or an unrecognised id arrives,
+     * in which case the layout preset is left unchanged. */
     private fun reactorControlsActions(): ReactorControlsActions = object : ReactorControlsActions {
-        override suspend fun change(swipeEnabled: Boolean, volumeKeysEnabled: Boolean) {
-            updateControlsSettings(_ui.value.controlsSettings.copy(swipeEnabled = swipeEnabled, volumeKeysTurnPages = volumeKeysEnabled))
+        override suspend fun change(swipeEnabled: Boolean, volumeKeysEnabled: Boolean, tapZonePreset: String?) {
+            val preset = tapZonePreset?.let { id -> runCatching { ZoneLayoutPreset.valueOf(id) }.getOrNull() }
+            val current = _ui.value.controlsSettings
+            updateControlsSettings(
+                current.copy(
+                    swipeEnabled = swipeEnabled,
+                    volumeKeysTurnPages = volumeKeysEnabled,
+                    layoutPreset = preset ?: current.layoutPreset,
+                ),
+            )
         }
     }
 

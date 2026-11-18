@@ -166,8 +166,16 @@ class ReactorV2Test {
     @Test
     fun `controlsChange intent parses`() {
         assertEquals(
-            ReactorV2Intent.ControlsChange(swipeEnabled = false, volumeKeysEnabled = true),
+            ReactorV2Intent.ControlsChange(swipeEnabled = false, volumeKeysEnabled = true, tapZonePreset = null),
             ReactorV2.parseIntent(intentFixture("controlsChange.json")),
+        )
+    }
+
+    @Test
+    fun `controlsChange intent parses the optional tapZonePreset field`() {
+        assertEquals(
+            ReactorV2Intent.ControlsChange(swipeEnabled = true, volumeKeysEnabled = false, tapZonePreset = "edges"),
+            ReactorV2.parseIntent(intentFixture("controlsChange-tap-zone-preset.json")),
         )
     }
 
@@ -269,6 +277,65 @@ class ReactorV2Test {
             controlsState = ReactorV2Command.Configure.ControlsState(swipeEnabled = false, volumeKeysEnabled = true),
         )
         assertJsonEquals(commandFixture("configure-controls-state.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `configure command serialises tapZonesOwner and tapZonePresets to match the fixture`() {
+        val command = ReactorV2Command.Configure(
+            chrome = "reactor",
+            eink = false,
+            insets = ReactorV2Command.Configure.Insets(top = 24.0, right = 0.0, bottom = 16.0, left = 0.0),
+            capabilities = ReactorV2Command.Configure.Capabilities(
+                starred = false,
+                related = false,
+                glossary = false,
+                notes = true,
+                bookmarks = true,
+                playback = false,
+                userGlossary = false,
+                volumeKeys = true,
+            ),
+            locale = "en-GB",
+            tapZonesOwner = "host",
+            controlsState = ReactorV2Command.Configure.ControlsState(
+                swipeEnabled = true,
+                volumeKeysEnabled = false,
+                tapZonePreset = "sides",
+                tapZonePresets = listOf(
+                    ReactorV2Command.Configure.TapZonePresetOption("sides", "Sides"),
+                    ReactorV2Command.Configure.TapZonePresetOption("sidesAndCorners", "Sides and corners"),
+                    ReactorV2Command.Configure.TapZonePresetOption("edges", "Edges"),
+                    ReactorV2Command.Configure.TapZonePresetOption("centreOnly", "Centre only"),
+                ),
+            ),
+        )
+        assertJsonEquals(commandFixture("configure-tap-zones-host.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `configure omits tapZonesOwner key when null, never writes a literal JSON null`() {
+        val command = ReactorV2Command.Configure(
+            chrome = "reactor",
+            eink = false,
+            insets = ReactorV2Command.Configure.Insets(top = 0.0, right = 0.0, bottom = 0.0, left = 0.0),
+            capabilities = ReactorV2Command.Configure.Capabilities(
+                starred = false,
+                related = false,
+                glossary = false,
+                notes = false,
+                bookmarks = false,
+                playback = false,
+                userGlossary = false,
+            ),
+            locale = "en-GB",
+        )
+        val encoded = json.parseToJsonElement(ReactorV2.encode(command)).jsonObject
+        assertFalse(encoded.containsKey("tapZonesOwner"))
+    }
+
+    @Test
+    fun `toggleBars command serialises to match the fixture`() {
+        assertJsonEquals(commandFixture("toggleBars.json"), ReactorV2.encode(ReactorV2Command.ToggleBars))
     }
 
     @Test

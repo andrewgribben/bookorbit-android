@@ -60,7 +60,7 @@ class ReactorChromeController(
             is ReactorV2Intent.ChromeState -> Unit
             is ReactorV2Intent.NotesPageRequest ->
                 sendCommand(notes.page(intent.offset, intent.limit, intent.filter, intent.sort, intent.query))
-            is ReactorV2Intent.ControlsChange -> controls.change(intent.swipeEnabled, intent.volumeKeysEnabled)
+            is ReactorV2Intent.ControlsChange -> controls.change(intent.swipeEnabled, intent.volumeKeysEnabled, intent.tapZonePreset)
         }
     }
 
@@ -160,7 +160,7 @@ interface ReactorNotesSource {
  * [ReaderSettingsSheet] Controls tab uses, so there is exactly one path that writes
  * [ReaderControlsSettings] regardless of which UI changed it. */
 interface ReactorControlsActions {
-    suspend fun change(swipeEnabled: Boolean, volumeKeysEnabled: Boolean)
+    suspend fun change(swipeEnabled: Boolean, volumeKeysEnabled: Boolean, tapZonePreset: String?)
 }
 
 /**
