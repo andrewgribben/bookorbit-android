@@ -35,6 +35,7 @@ class ReactorChromeController(
     private var lastPlaybackPushAtMs = 0L
     private var lastPushedPlaying: Boolean? = null
     private var lastPushedRate: Double? = null
+    private var lastPushedActive: Boolean? = null
 
     /** Applies one parsed intent. Unknown intents never reach here - [ReactorV2.parseIntent]
      * already returns null for them. */
@@ -75,22 +76,25 @@ class ReactorChromeController(
         sendCommand(ReactorV2Command.SetSettingsScope(scope, settings))
 
     /** Throttled, but only for position ticks: a narration position ticks far faster than
-     * Reactor's player bar needs updates, but a `playing`/`rate` transition must always land
-     * immediately (BO-53 #2) - throttling those too can drop the one push that would have
-     * flipped the shell's play/pause icon, leaving it stuck out of sync with the real state and
-     * with no way for the user to tell the bar is actually paused/stopped. */
+     * Reactor's player bar needs updates, but a `playing`/`rate`/`active` transition must always
+     * land immediately (BO-53 #2/#3) - throttling those too can drop the one push that would
+     * have flipped the shell's play/pause icon or its narration toggle, leaving it stuck out of
+     * sync with the real state and with no way for the user to tell it is actually
+     * paused/stopped. */
     suspend fun pushPlaybackState(
         playing: Boolean,
         positionSec: Double,
         rate: Double,
+        active: Boolean? = null,
         nowMs: Long = System.currentTimeMillis(),
     ) {
-        val changed = playing != lastPushedPlaying || rate != lastPushedRate
+        val changed = playing != lastPushedPlaying || rate != lastPushedRate || active != lastPushedActive
         if (!changed && nowMs - lastPlaybackPushAtMs < PLAYBACK_PUSH_THROTTLE_MS) return
         lastPlaybackPushAtMs = nowMs
         lastPushedPlaying = playing
         lastPushedRate = rate
-        sendCommand(ReactorV2Command.SetPlaybackState(playing, positionSec, rate))
+        lastPushedActive = active
+        sendCommand(ReactorV2Command.SetPlaybackState(playing, positionSec, rate, active))
     }
 
     companion object {

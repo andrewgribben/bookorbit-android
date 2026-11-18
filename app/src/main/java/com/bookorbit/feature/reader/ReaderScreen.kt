@@ -372,7 +372,7 @@ fun ReaderScreen(
     // and the shell must be told `playing: false` exactly once when that happens, not left
     // showing a stale "playing" icon forever because s.narrationActive gates every further push.
     var wasNarrationActive by remember { mutableStateOf(false) }
-    LaunchedEffect(useReactorChrome, playerState.value) {
+    LaunchedEffect(useReactorChrome, playerState.value, ui.narrationLoading) {
         if (!useReactorChrome) return@LaunchedEffect
         val s = playerState.value
         if (s.narrationActive) {
@@ -381,10 +381,28 @@ fun ReaderScreen(
                 playing = s.isPlaying,
                 positionSec = s.narrationPositionMs / 1000.0,
                 rate = s.speed.toDouble(),
+                active = true,
+            )
+        } else if (ui.narrationLoading) {
+            // BO-53 #3 review fix: narration is extracting/preparing (the user already tapped
+            // the toggle, but the native player has not started yet) - push active=true right
+            // away so the shell's narration toggle flips on immediately instead of looking dead
+            // for however long loading takes.
+            wasNarrationActive = true
+            reactorChromeController.pushPlaybackState(
+                playing = false,
+                positionSec = 0.0,
+                rate = s.speed.toDouble(),
+                active = true,
             )
         } else if (wasNarrationActive) {
             wasNarrationActive = false
-            reactorChromeController.pushPlaybackState(playing = false, positionSec = 0.0, rate = s.speed.toDouble())
+            reactorChromeController.pushPlaybackState(
+                playing = false,
+                positionSec = 0.0,
+                rate = s.speed.toDouble(),
+                active = false,
+            )
         }
     }
 

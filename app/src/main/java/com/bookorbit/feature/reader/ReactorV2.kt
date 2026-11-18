@@ -126,7 +126,17 @@ sealed interface ReactorV2Command {
         )
     }
 
-    data class SetPlaybackState(val playing: Boolean, val positionSec: Double, val rate: Double) : ReactorV2Command
+    data class SetPlaybackState(
+        val playing: Boolean,
+        val positionSec: Double,
+        val rate: Double,
+        /** BO-53 #3: whether narration is turned on at all, distinct from [playing] (paused
+         * while on vs fully off). Optional, defaults to `true` on the Reactor side when the key
+         * is absent (protocol v2 README's "Narration on/off") - this app only ever sets it
+         * explicitly `false` on the one-off push when narration stops, see [ReaderScreen]'s
+         * playback-state `LaunchedEffect`. */
+        val active: Boolean? = null,
+    ) : ReactorV2Command
 
     data class SetSettingsScope(val scope: String, val settings: ReactorSettings) : ReactorV2Command
 
@@ -209,7 +219,11 @@ object ReactorV2 {
                 put("userGlossary", command.capabilities.userGlossary)
             }
             put("locale", command.locale)
-            put("narrationFollow", command.narrationFollow)
+            // BO-53 #3 review fix: `put("narrationFollow", null)` writes a JSON `null`, which
+            // the Reactor validator rejects outright (it only accepts the key being absent or
+            // "host"/"shell", never a literal null) - omit the key entirely when unset instead,
+            // same as every other optional field here.
+            command.narrationFollow?.let { put("narrationFollow", it) }
         }
         is ReactorV2Command.SetBookmarks -> buildJsonObject {
             put("type", "setBookmarks")
@@ -263,6 +277,7 @@ object ReactorV2 {
             put("playing", command.playing)
             put("positionSec", command.positionSec)
             put("rate", command.rate)
+            command.active?.let { put("active", it) }
         }
         ReactorV2Command.Dismiss -> buildJsonObject { put("type", "dismiss") }
         is ReactorV2Command.SetSettingsScope -> buildJsonObject {

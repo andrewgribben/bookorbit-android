@@ -8,7 +8,9 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -301,6 +303,40 @@ class ReactorV2Test {
     fun `setPlaybackState command serialises to match the fixture`() {
         val command = ReactorV2Command.SetPlaybackState(playing = true, positionSec = 184.5, rate = 1.25)
         assertJsonEquals(commandFixture("setPlaybackState.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `setPlaybackState omits the active key when null (no default narration state override)`() {
+        val command = ReactorV2Command.SetPlaybackState(playing = true, positionSec = 184.5, rate = 1.25, active = null)
+        val encoded = json.parseToJsonElement(ReactorV2.encode(command)).jsonObject
+        assertFalse(encoded.containsKey("active"))
+    }
+
+    @Test
+    fun `setPlaybackState command serialises active false to match the fixture`() {
+        val command = ReactorV2Command.SetPlaybackState(playing = false, positionSec = 0.0, rate = 1.0, active = false)
+        assertJsonEquals(commandFixture("setPlaybackState-narration-off.json"), ReactorV2.encode(command))
+    }
+
+    @Test
+    fun `configure omits the narrationFollow key when null, never writes a literal JSON null`() {
+        val command = ReactorV2Command.Configure(
+            chrome = "reactor",
+            eink = false,
+            insets = ReactorV2Command.Configure.Insets(top = 24.0, right = 0.0, bottom = 16.0, left = 0.0),
+            capabilities = ReactorV2Command.Configure.Capabilities(
+                starred = true,
+                related = true,
+                glossary = true,
+                notes = true,
+                bookmarks = true,
+                playback = false,
+                userGlossary = false,
+            ),
+            locale = "en-GB",
+        )
+        val encoded = json.parseToJsonElement(ReactorV2.encode(command)).jsonObject
+        assertFalse(encoded.containsKey("narrationFollow"))
     }
 
     @Test
