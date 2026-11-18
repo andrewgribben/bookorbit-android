@@ -12,5 +12,6 @@
     "playback": false,
     "userGlossary": false
   },
-  "locale": "en-US"
+  "locale": "en-US",
+  "narrationFollow": null
 }
